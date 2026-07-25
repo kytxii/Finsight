@@ -10,6 +10,7 @@ export const deletePaycheckSchedule = (id)        => isDemo() ? demo.deletePaych
 export const getPaychecks           = ()          => isDemo() ? demo.getPaychecks()                   : client.get('/paychecks/');
 export const updatePaycheckAmount   = (id, data)  => isDemo() ? demo.updatePaycheckAmount(id, data)   : client.patch(`/paychecks/${id}`, data);
 export const getSpendableSurplus    = ()          => isDemo() ? demo.getSpendableSurplus()            : client.get('/paychecks/spendable-surplus');
+export const getEstimatedSavings    = ()          => isDemo() ? demo.getEstimatedSavings()            : client.get('/paychecks/savings');
 export const getBalanceAnchor       = ()          => isDemo() ? demo.getBalanceAnchor()               : client.get('/paychecks/balance');
 export const setBalanceAnchor       = (data)      => isDemo() ? demo.setBalanceAnchor(data)           : client.put('/paychecks/balance', data);
 export const getRunningBalance      = ()          => isDemo() ? demo.getRunningBalance()              : client.get('/paychecks/running-balance');

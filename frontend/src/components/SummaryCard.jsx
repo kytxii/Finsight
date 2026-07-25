@@ -1,6 +1,6 @@
 import { useTheme } from "../hooks/useTheme";
 
-export default function SummaryCard({ label, value, activeColor, deltaLabel, deltaUp, valueColor, subLabel }) {
+export default function SummaryCard({ label, value, activeColor, deltaLabel, deltaUp, valueColor, subLabel, extraLabel, extraColor }) {
   const dark = useTheme();
 
   const bg     = dark ? "var(--dark-surface)" : "var(--light-surface)";
@@ -20,6 +20,11 @@ export default function SummaryCard({ label, value, activeColor, deltaLabel, del
       {subLabel != null && (
         <p className="text-xs mt-1" style={{ color: muted }}>
           {subLabel}
+        </p>
+      )}
+      {extraLabel != null && (
+        <p className="text-xs font-semibold mt-1" style={{ color: extraColor ?? muted }}>
+          {extraLabel}
         </p>
       )}
     </div>

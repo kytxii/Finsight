@@ -17,7 +17,7 @@ import {
 import { useAuth } from "../context/AuthContext";
 import { getTransactions, createTransaction, deleteTransaction } from "../api/transactions";
 import { deleteRecurringPayment } from "../api/recurringPayments";
-import { getSpendableSurplus, getRunningBalance } from "../api/paychecks";
+import { getSpendableSurplus, getRunningBalance, getEstimatedSavings } from "../api/paychecks";
 import {
   CATEGORIES,
   CATEGORY_CONFIG,
@@ -42,6 +42,8 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [safeToSpend, setSafeToSpend] = useState(null);
   const [safeToSpendStatus, setSafeToSpendStatus] = useState("loading"); // loading | ok | no-balance | no-schedule | error
+  const [savings, setSavings] = useState(null);
+  const [savingsStatus, setSavingsStatus] = useState("loading"); // loading | ok | no-schedule | no-amounts | no-history | error
   const [bankBalance, setBankBalance] = useState(null);
   const [bankBalanceStatus, setBankBalanceStatus] = useState("loading"); // loading | ok | no-balance | error
   const [backendSleeping, setBackendSleeping] = useState(false);
@@ -177,7 +179,21 @@ export default function Dashboard() {
     });
   }
 
-  useEffect(() => { loadSafeToSpend(); loadBankBalance(); }, []);
+  function loadSavings() {
+    getEstimatedSavings().then((res) => {
+      setSavings(res.data);
+      setSavingsStatus("ok");
+    }).catch((err) => {
+      const detail = err.response?.data?.detail;
+      setSavings(null);
+      if (detail === "No active paycheck schedule found") setSavingsStatus("no-schedule");
+      else if (detail === "No paycheck amounts yet") setSavingsStatus("no-amounts");
+      else if (detail === "Not enough spending history") setSavingsStatus("no-history");
+      else setSavingsStatus("error");
+    });
+  }
+
+  useEffect(() => { loadSafeToSpend(); loadBankBalance(); loadSavings(); }, []);
 
   function refreshTransactions() {
     devFetch().then((res) => {
@@ -186,6 +202,7 @@ export default function Dashboard() {
     }).catch(() => {});
     loadSafeToSpend();
     loadBankBalance();
+    loadSavings();
   }
 
   async function handleDelete(t) {
@@ -467,6 +484,24 @@ export default function Dashboard() {
   const bg      = dark ? "var(--dark-bg)"      : "var(--light-bg)";
   const border  = dark ? "var(--dark-border)"  : "var(--light-border)";
   const surface = dark ? "var(--dark-surface)" : "var(--light-surface)";
+  // Secondary "savings" line on the Safe to Spend card: plain target until a
+  // savings transaction lands, then saved/target progress. Muted prompts for the
+  // actionable not-ready states; hidden for loading/error and no-schedule (the
+  // card headline already prompts for setup).
+  const savingsExtra = (() => {
+    if (savingsStatus === "ok" && savings) {
+      if (parseFloat(savings.estimated_savings) <= 0) return null; // nothing to save this month - stay quiet
+      const target = fmt(savings.estimated_savings);
+      const saved = parseFloat(savings.saved_so_far);
+      const label = saved > 0
+        ? `${fmt(savings.saved_so_far)} / ${target} saved this month`
+        : `savable ~${target} this month`;
+      return { label, color: "var(--category-savings)" };
+    }
+    if (savingsStatus === "no-amounts") return { label: "Add a paycheck amount to project savings", color: muted };
+    if (savingsStatus === "no-history") return { label: "Savings estimate needs 3 months of history", color: muted };
+    return null;
+  })();
   const tooltipProps = {
     contentStyle: {
       backgroundColor: dark ? "var(--dark-surface)" : "var(--light-surface)",
@@ -768,18 +803,14 @@ export default function Dashboard() {
                 if (safeToSpendStatus === "ok") {
                   const val = parseFloat(safeToSpend.spendable_surplus);
                   const color = val >= 0 ? "var(--category-income)" : "var(--category-expense)";
-                  const shortDate = (d) => new Date(d + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
-                  const reserved = parseFloat(safeToSpend.spendable_surplus) - parseFloat(safeToSpend.free_to_allocate);
-                  const reserveNote = reserved > 0 ? ` · ${fmt(reserved)} reserved → ${fmt(safeToSpend.free_to_allocate)} free` : "";
                   return (
                     <SummaryCard
-                      label="SAFE TO SPEND"
+                      label="LEFTOVER"
                       value={fmt(safeToSpend.spendable_surplus)}
                       activeColor={color}
                       valueColor={color}
-                      deltaLabel={`before ${shortDate(safeToSpend.month_end)}`}
-                      deltaUp={val >= 0}
-                      subLabel={`-${fmt(safeToSpend.bills_before_next_payday)} before ${safeToSpend.next_payday_estimate != null ? `~${fmt(safeToSpend.next_payday_estimate)} ` : ""}paycheck on ${shortDate(safeToSpend.next_payday)}${reserveNote}`}
+                      extraLabel={savingsExtra?.label}
+                      extraColor={savingsExtra?.color}
                     />
                   );
                 }
@@ -790,11 +821,13 @@ export default function Dashboard() {
                     : safeToSpendStatus === "loading" ? "—" : "Unavailable";
                 return (
                   <SummaryCard
-                    label="SAFE TO SPEND"
+                    label="LEFTOVER"
                     value={safeToSpendStatus === "loading" ? "—" : "Not set up"}
                     activeColor={muted}
                     deltaLabel={safeToSpendStatus === "loading" ? null : prompt}
                     deltaUp={true}
+                    extraLabel={savingsExtra?.label}
+                    extraColor={savingsExtra?.color}
                   />
                 );
               })()}
