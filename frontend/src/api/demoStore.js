@@ -480,6 +480,11 @@ export const deleteRecurringPayment = (id) => {
 const PAYCHECK_EXPENSE_CATEGORIES = new Set(["EXPENSE", "BILL", "SUBSCRIPTION", "SAVINGS", "DEBT"]);
 const PAYCHECK_INCOME_CATEGORIES = new Set(["INCOME", "REIMBURSEMENT", "TIPS"]);
 
+// Estimated-savings spend/obligation categories exclude SAVINGS (saving, not
+// spending - surfaced separately as "saved so far").
+const NON_SAVINGS_EXPENSE_CATEGORIES = new Set(["EXPENSE", "BILL", "SUBSCRIPTION", "DEBT"]);
+const SAVINGS_HISTORY_MONTHS = 3;
+
 function toDateStr(d) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -818,5 +823,101 @@ export const getSpendableSurplus = () => {
     free_to_allocate: freeToAllocate.toFixed(2),
     bills_before_next_payday: billsBeforeNextPayday.toFixed(2),
     next_payday_estimate: nextPaydayEstimate != null ? nextPaydayEstimate.toFixed(2) : null,
+  });
+};
+
+// Sum every paycheck landing in [monthStart, monthEnd), across active schedules -
+// whole calendar month (received + upcoming), actual amount if entered else the
+// schedule's average estimate. Mirrors _full_month_income in the Python service.
+function fullMonthIncome(schedules, monthStartStr, monthEndStr) {
+  if (schedules.length === 0) return 0;
+
+  const allPaychecks = backfillPaychecks(new Date(monthEndStr + "T00:00:00"));
+  const scheduleIds = new Set(schedules.map((s) => s.id));
+  const inMonth = allPaychecks.filter(
+    (p) => scheduleIds.has(p.schedule_id) && p.pay_date >= monthStartStr && p.pay_date < monthEndStr
+  );
+
+  return inMonth.reduce((sum, p) => {
+    if (p.amount != null) return sum + parseFloat(p.amount);
+    const estimate = averageRecentAmounts(p.schedule_id, allPaychecks);
+    return sum + (estimate ?? 0);
+  }, 0);
+}
+
+export const getEstimatedSavings = () => {
+  const schedules = getAll(PS_KEY).filter((s) => s.active !== false);
+  if (schedules.length === 0) {
+    return Promise.reject({ response: { status: 404, data: { detail: "No active paycheck schedule found" } } });
+  }
+
+  const today = new Date(DEMO_TODAY + "T00:00:00");
+  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+  const monthEnd = nextMonthStart(today);
+  const monthStartStr = toDateStr(monthStart);
+  const monthEndStr = toDateStr(monthEnd);
+
+  // Without a known income figure the estimate is meaningless - a schedule whose
+  // checks have no amounts entered projects $0 and is treated as not-ready.
+  const projectedIncome = fullMonthIncome(schedules, monthStartStr, monthEndStr);
+  if (projectedIncome <= 0) {
+    return Promise.reject({ response: { status: 404, data: { detail: "No paycheck amounts yet" } } });
+  }
+
+  const historyStartStr = toDateStr(addMonthsClamped(monthStart, -SAVINGS_HISTORY_MONTHS));
+
+  // The real backend excludes recurring-linked transactions from the discretionary
+  // average via recurring_payment_id. Seed history predates that link, so mirror
+  // the intent by also excluding transactions whose name matches an active
+  // non-estimate recurring - those fixed bills are added back as committed_recurring.
+  const recurringNames = new Set(
+    getAll(RP_KEY)
+      .filter((rp) => rp.active !== false && !rp.is_estimate && NON_SAVINGS_EXPENSE_CATEGORIES.has(rp.category))
+      .map((rp) => rp.name)
+  );
+
+  const spendRows = getAll(TX_KEY).filter(
+    (t) =>
+      NON_SAVINGS_EXPENSE_CATEGORIES.has(t.category) &&
+      !t._recurring_id && !t.recurring_payment_id && !recurringNames.has(t.name) &&
+      t.transaction_date >= historyStartStr && t.transaction_date < monthStartStr
+  );
+
+  const totalsByMonth = {};
+  spendRows.forEach((t) => {
+    const key = t.transaction_date.slice(0, 7);
+    totalsByMonth[key] = (totalsByMonth[key] ?? 0) + parseFloat(t.amount);
+  });
+
+  const expectedMonths = [];
+  for (let n = 1; n <= SAVINGS_HISTORY_MONTHS; n++) {
+    expectedMonths.push(toDateStr(addMonthsClamped(monthStart, -n)).slice(0, 7));
+  }
+  if (!expectedMonths.every((m) => m in totalsByMonth)) {
+    return Promise.reject({ response: { status: 404, data: { detail: "Not enough spending history" } } });
+  }
+
+  const totalSpend = Object.values(totalsByMonth).reduce((a, b) => a + b, 0);
+  const projectedSpending = totalSpend / SAVINGS_HISTORY_MONTHS;
+
+  const committedRecurring = getAll(RP_KEY)
+    .filter((rp) => rp.active !== false && !rp.is_estimate && NON_SAVINGS_EXPENSE_CATEGORIES.has(rp.category))
+    .reduce((sum, rp) => sum + parseFloat(rp.amount), 0);
+
+  const savedSoFar = getAll(TX_KEY)
+    .filter((t) => t.category === "SAVINGS" && t.transaction_date >= monthStartStr && t.transaction_date < monthEndStr)
+    .reduce((sum, t) => sum + parseFloat(t.amount), 0);
+
+  const raw = projectedIncome - projectedSpending - committedRecurring;
+  const estimatedSavings = raw > 0 ? raw : 0;
+
+  return respond({
+    month_start: monthStartStr,
+    month_end: monthEndStr,
+    estimated_savings: estimatedSavings.toFixed(2),
+    saved_so_far: savedSoFar.toFixed(2),
+    projected_income: projectedIncome.toFixed(2),
+    projected_spending: projectedSpending.toFixed(2),
+    committed_recurring: committedRecurring.toFixed(2),
   });
 };

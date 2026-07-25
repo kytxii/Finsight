@@ -17,6 +17,7 @@ from app.schemas.paycheck import (
     RunningBalanceResponse,
     SetSpendingReserve,
     SpendingReserveResponse,
+    EstimatedSavingsResponse,
 )
 from app.services import paycheck_service
 
@@ -66,6 +67,22 @@ async def get_spendable_surplus(current_user: User = Depends(get_current_user), 
         free_to_allocate=result.free_to_allocate,
         bills_before_next_payday=result.bills_before_next_payday,
         next_payday_estimate=result.next_payday_estimate,
+    )
+
+@router.get("/savings", response_model=EstimatedSavingsResponse)
+async def get_estimated_savings(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    try:
+        result = await paycheck_service.get_estimated_savings(current_user.id, db)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return EstimatedSavingsResponse(
+        month_start=result.month_start,
+        month_end=result.month_end,
+        estimated_savings=result.estimated_savings,
+        saved_so_far=result.saved_so_far,
+        projected_income=result.projected_income,
+        projected_spending=result.projected_spending,
+        committed_recurring=result.committed_recurring,
     )
 
 @router.get("/balance", response_model=BalanceAnchorResponse | None)

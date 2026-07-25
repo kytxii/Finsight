@@ -81,3 +81,12 @@ class SetSpendingReserve(BaseModel):
 
 class SpendingReserveResponse(BaseModel):
     spending_reserve: Decimal
+
+class EstimatedSavingsResponse(BaseModel):
+    month_start: date
+    month_end: date
+    estimated_savings: Decimal
+    saved_so_far: Decimal
+    projected_income: Decimal
+    projected_spending: Decimal
+    committed_recurring: Decimal

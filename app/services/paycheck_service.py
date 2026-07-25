@@ -2,7 +2,7 @@ from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 from datetime import date, timedelta
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Iterator, NamedTuple
 import calendar
 from app.models import Paycheck, PaycheckSchedule, RecurringPayment, Transaction, BalanceAnchor, User
@@ -15,6 +15,18 @@ from app.schemas.paycheck import SetSpendingReserve
 # money going out. INCOME, TIPS, and REIMBURSEMENT are inflows, not expenses.
 EXPENSE_CATEGORIES = {Category.EXPENSE, Category.BILL, Category.SUBSCRIPTION, Category.SAVINGS, Category.DEBT}
 INCOME_CATEGORIES = {Category.INCOME, Category.REIMBURSEMENT, Category.TIPS}
+
+# Estimated-savings spend/obligation categories exclude SAVINGS: money moved into
+# savings is saving, not spending, and is surfaced separately as "saved so far".
+NON_SAVINGS_EXPENSE_CATEGORIES = EXPENSE_CATEGORIES - {Category.SAVINGS}
+
+# Full completed calendar months of spending history required before we'll project
+# a savings estimate, and the window the discretionary-spend average covers.
+SAVINGS_HISTORY_MONTHS = 3
+
+
+def _cents(value: Decimal) -> Decimal:
+    return value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 def _add_months(d: date, months: int) -> date:
@@ -449,3 +461,134 @@ async def set_spending_reserve(data: SetSpendingReserve, current_user: User, db:
     await db.commit()
     await db.refresh(current_user)
     return current_user.spending_reserve
+
+
+class EstimatedSavingsResult(NamedTuple):
+    month_start: date
+    month_end: date
+    estimated_savings: Decimal
+    saved_so_far: Decimal
+    projected_income: Decimal
+    projected_spending: Decimal
+    committed_recurring: Decimal
+
+
+async def _full_month_income(schedules: list[PaycheckSchedule], month_start: date, month_end: date, current_user: UUID, db: AsyncSession) -> Decimal:
+    """Sum every paycheck landing in [month_start, month_end), across all active schedules.
+
+    Unlike _projected_income_before this counts the whole calendar month (received
+    + upcoming), not just future paydays - the savings estimate is a stable
+    "this month" figure that shouldn't shrink as paydays pass. Actual amount if
+    entered, else that schedule's recent average.
+    """
+    schedule_ids = [s.id for s in schedules]
+    if not schedule_ids:
+        return Decimal("0")
+
+    await _backfill_paychecks(schedules, current_user, db, through=month_end)
+    await db.commit()
+
+    paychecks = (await db.scalars(
+        select(Paycheck).where(
+            Paycheck.schedule_id.in_(schedule_ids),
+            Paycheck.pay_date >= month_start,
+            Paycheck.pay_date < month_end,
+        )
+    )).all()
+
+    estimates_by_schedule = await _average_recent_amounts_by_schedule(schedule_ids, db)
+
+    return sum(
+        (p.amount if p.amount is not None else estimates_by_schedule.get(p.schedule_id) or Decimal("0") for p in paychecks),
+        start=Decimal("0"),
+    )
+
+
+async def get_estimated_savings(current_user: UUID, db: AsyncSession) -> EstimatedSavingsResult:
+    """How much can realistically be saved this month: full-month income minus
+    average discretionary spend minus this month's fixed obligations.
+
+    Deliberately independent of the balance anchor - it's a flow calc, so it works
+    for users who never set a starting balance. Two prerequisite gates raise
+    ValueError: no active schedule, or fewer than SAVINGS_HISTORY_MONTHS completed
+    months of discretionary spending to average.
+    """
+    today = date.today()
+    month_start = today.replace(day=1)
+    month_end = _next_month_start(today)
+
+    schedules = (await db.scalars(select(PaycheckSchedule).where(
+        PaycheckSchedule.created_by == current_user,
+        PaycheckSchedule.active.is_(True),
+    ))).all()
+    if not schedules:
+        raise ValueError("No active paycheck schedule found")
+
+    # Without a known income figure the estimate is meaningless, so a schedule
+    # whose checks have no amounts entered (and no history to average from) is
+    # treated as not-ready rather than projecting $0.
+    projected_income = await _full_month_income(schedules, month_start, month_end, current_user, db)
+    if projected_income <= 0:
+        raise ValueError("No paycheck amounts yet")
+
+    # Discretionary spend average over the completed months before this one.
+    # SAVINGS excluded (it's saving, surfaced separately) and recurring-linked
+    # transactions excluded (fixed bills are added back as committed_recurring,
+    # so counting them here too would double-count).
+    history_start = _add_months(month_start, -SAVINGS_HISTORY_MONTHS)
+    spend_rows = (await db.execute(
+        select(Transaction.transaction_date, Transaction.amount).where(
+            Transaction.created_by == current_user,
+            Transaction.category.in_(NON_SAVINGS_EXPENSE_CATEGORIES),
+            Transaction.recurring_payment_id.is_(None),
+            Transaction.transaction_date >= history_start,
+            Transaction.transaction_date < month_start,
+        )
+    )).all()
+
+    totals_by_month: dict[str, Decimal] = {}
+    for txn_date, amount in spend_rows:
+        key = txn_date.strftime("%Y-%m")
+        totals_by_month[key] = totals_by_month.get(key, Decimal("0")) + amount
+
+    expected_months = {_add_months(month_start, -n).strftime("%Y-%m") for n in range(1, SAVINGS_HISTORY_MONTHS + 1)}
+    if not expected_months.issubset(totals_by_month.keys()):
+        raise ValueError("Not enough spending history")
+
+    projected_spending = _cents(sum(totals_by_month.values(), start=Decimal("0")) / Decimal(SAVINGS_HISTORY_MONTHS))
+
+    # Fixed obligations for the month. is_estimate recurring (e.g. a grocery
+    # forecast) are excluded: they never hit the ledger, so the spend they model
+    # is already captured in the discretionary average above.
+    recurring = (await db.scalars(
+        select(RecurringPayment).where(
+            RecurringPayment.created_by == current_user,
+            RecurringPayment.active.is_(True),
+            RecurringPayment.is_estimate.is_(False),
+            RecurringPayment.category.in_(NON_SAVINGS_EXPENSE_CATEGORIES),
+        )
+    )).all()
+    committed_recurring = sum((rp.amount for rp in recurring), start=Decimal("0"))
+
+    saved_rows = (await db.scalars(
+        select(Transaction.amount).where(
+            Transaction.created_by == current_user,
+            Transaction.category == Category.SAVINGS,
+            Transaction.transaction_date >= month_start,
+            Transaction.transaction_date < month_end,
+        )
+    )).all()
+    saved_so_far = sum(saved_rows, start=Decimal("0"))
+
+    raw = projected_income - projected_spending - committed_recurring
+    estimated_savings = _cents(raw) if raw > 0 else Decimal("0.00")
+
+    return EstimatedSavingsResult(
+        month_start=month_start,
+        month_end=month_end,
+        estimated_savings=estimated_savings,
+        saved_so_far=saved_so_far,
+        projected_income=projected_income,
+        projected_spending=projected_spending,
+        committed_recurring=committed_recurring,
+    )

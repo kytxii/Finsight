@@ -23,7 +23,7 @@ import {
   createTransaction,
   deleteTransaction,
 } from "../api/transactions";
-import { getSpendableSurplus } from "../api/paychecks";
+import { getSpendableSurplus, getEstimatedSavings } from "../api/paychecks";
 import EditTransactionModal from "../components/EditTransactionModal";
 import {
   CATEGORIES,
@@ -361,6 +361,8 @@ export default function MobileDashboard() {
   const [backendSleeping, setBackendSleeping] = useState(false);
   const [safeToSpend, setSafeToSpend] = useState(null);
   const [safeToSpendStatus, setSafeToSpendStatus] = useState("loading"); // loading | ok | no-balance | no-schedule | error
+  const [savings, setSavings] = useState(null);
+  const [savingsStatus, setSavingsStatus] = useState("loading"); // loading | ok | no-schedule | no-amounts | no-history | error
 
   async function devFetch() {
     if (devForceErrorRef.current) {
@@ -385,6 +387,20 @@ export default function MobileDashboard() {
     });
   }
 
+  function loadSavings() {
+    getEstimatedSavings().then((res) => {
+      setSavings(res.data);
+      setSavingsStatus("ok");
+    }).catch((err) => {
+      const detail = err.response?.data?.detail;
+      setSavings(null);
+      if (detail === "No active paycheck schedule found") setSavingsStatus("no-schedule");
+      else if (detail === "No paycheck amounts yet") setSavingsStatus("no-amounts");
+      else if (detail === "Not enough spending history") setSavingsStatus("no-history");
+      else setSavingsStatus("error");
+    });
+  }
+
   useEffect(() => {
     const sleepTimer = setTimeout(() => setBackendSleeping(true), 4000);
     devFetch().then((res) => {
@@ -395,6 +411,7 @@ export default function MobileDashboard() {
       setDevLastFetch(new Date());
     }).catch(() => { clearTimeout(sleepTimer); setLoading(false); });
     loadSafeToSpend();
+    loadSavings();
     return () => clearTimeout(sleepTimer);
   }, []);
 
@@ -404,6 +421,7 @@ export default function MobileDashboard() {
       setDevLastFetch(new Date());
     }).catch(() => {});
     loadSafeToSpend();
+    loadSavings();
   }
 
   const [editingTransaction, setEditingTransaction] = useState(null);
@@ -921,6 +939,8 @@ export default function MobileDashboard() {
                     dashLastMonthSummary={dashLastMonthSummary}
                     safeToSpend={safeToSpend}
                     safeToSpendStatus={safeToSpendStatus}
+                    savings={savings}
+                    savingsStatus={savingsStatus}
                     dashSorted={dashSorted}
                     dashCategoryTotals={dashCategoryTotals}
                     searchVisible={searchVisible}
