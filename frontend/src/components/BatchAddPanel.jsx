@@ -3,6 +3,7 @@ import { CATEGORY_CONFIG } from "../utils/finance";
 import { useTheme } from "../hooks/useTheme";
 import { createTransaction } from "../api/transactions";
 import { getToday } from "../utils/time";
+import CurrencyInput from "./CurrencyInput";
 
 const today = () => getToday();
 
@@ -139,12 +140,10 @@ export default function BatchAddPanel({ active, onSaveStateChange, onSaved, onCa
                     />
                   </td>
                   <td style={tdStyle(false)}>
-                    <input
-                      type="number"
+                    <CurrencyInput
                       value={d.amount}
                       placeholder="0.00"
-                      min="0.01" step="0.01"
-                      onChange={e => setDrafts(prev => prev.map((x, xi) => xi === idx ? { ...x, amount: e.target.value } : x))}
+                      onChange={v => setDrafts(prev => prev.map((x, xi) => xi === idx ? { ...x, amount: v } : x))}
                       onKeyDown={e => e.key === "Escape" && setDrafts(prev => prev.filter((_, xi) => xi !== idx))}
                       style={{ width: "100%", background: "transparent", color: text, border: "none", outline: "none", fontSize: "13px", fontFamily: "inherit" }}
                     />

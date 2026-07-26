@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { CATEGORY_CONFIG, fmt } from "../utils/finance";
 import { useTheme } from "../hooks/useTheme";
+import CurrencyInput from "./CurrencyInput";
 import {
   getRecurringPayments,
   createRecurringPayment,
@@ -289,20 +290,32 @@ export default function RecurringPaymentsModal({ onClose, inline = false, onSave
     let content;
     if (isEditing) {
       content = (
-        <input autoFocus
-          type={field === "amount" || field === "day_of_month" ? "number" : "text"}
+        field === "amount" ? (
+        <CurrencyInput autoFocus
           value={editValue}
-          onChange={e => setEditValue(e.target.value)}
+          onChange={v => setEditValue(v)}
           onBlur={() => commitEdit(row.id, field)}
           onKeyDown={e => { if (e.key === "Enter") e.target.blur(); if (e.key === "Escape") setEditCell(null); }}
-          min={field === "day_of_month" ? 1 : field === "amount" ? 0.01 : undefined}
-          max={field === "day_of_month" ? 31 : undefined}
-          step={field === "amount" ? "0.01" : undefined}
           style={{
             width: "100%", background: "transparent", color: text,
             border: "none", outline: "none", fontSize: mobile ? "15px" : "13px", fontFamily: "inherit",
           }}
         />
+        ) : (
+        <input autoFocus
+          type={field === "day_of_month" ? "number" : "text"}
+          value={editValue}
+          onChange={e => setEditValue(e.target.value)}
+          onBlur={() => commitEdit(row.id, field)}
+          onKeyDown={e => { if (e.key === "Enter") e.target.blur(); if (e.key === "Escape") setEditCell(null); }}
+          min={field === "day_of_month" ? 1 : undefined}
+          max={field === "day_of_month" ? 31 : undefined}
+          style={{
+            width: "100%", background: "transparent", color: text,
+            border: "none", outline: "none", fontSize: mobile ? "15px" : "13px", fontFamily: "inherit",
+          }}
+        />
+        )
       );
     } else {
       content = (
@@ -493,6 +506,18 @@ export default function RecurringPaymentsModal({ onClose, inline = false, onSave
                   ].map(({ field, type, placeholder }, i) => (
                     <td key={field} style={tdStyle(false, i === 0)}>
                       <div style={{ display: "flex", alignItems: "center", gap: field === "day_of_month" ? 6 : 0 }}>
+                      {field === "amount" ? (
+                      <CurrencyInput
+                        value={d[field]}
+                        placeholder={placeholder}
+                        onChange={v => setDrafts(prev => prev.map((x, xi) => xi === idx ? { ...x, [field]: v } : x))}
+                        onKeyDown={e => { if (e.key === "Escape") setDrafts(prev => prev.filter((_, xi) => xi !== idx)); }}
+                        style={{
+                          width: "100%", background: "transparent", color: text,
+                          border: "none", outline: "none", fontSize: mobile ? "15px" : "13px", fontFamily: "inherit",
+                        }}
+                      />
+                      ) : (
                       <input
                         autoFocus={i === 0 && isLast}
                         type={type}
@@ -500,14 +525,14 @@ export default function RecurringPaymentsModal({ onClose, inline = false, onSave
                         placeholder={placeholder}
                         onChange={e => setDrafts(prev => prev.map((x, xi) => xi === idx ? { ...x, [field]: e.target.value } : x))}
                         onKeyDown={e => { if (e.key === "Escape") setDrafts(prev => prev.filter((_, xi) => xi !== idx)); }}
-                        min={field === "day_of_month" ? 1 : field === "amount" ? 0.01 : undefined}
+                        min={field === "day_of_month" ? 1 : undefined}
                         max={field === "day_of_month" ? 31 : undefined}
-                        step={field === "amount" ? "0.01" : undefined}
                         style={{
                           width: "100%", background: "transparent", color: text,
                           border: "none", outline: "none", fontSize: mobile ? "15px" : "13px", fontFamily: "inherit",
                         }}
                       />
+                      )}
                       {field === "day_of_month" && estimateToggle(d.is_estimate, () => setDrafts(prev => prev.map((x, xi) => xi === idx ? { ...x, is_estimate: !x.is_estimate } : x)))}
                       </div>
                     </td>

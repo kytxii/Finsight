@@ -14,6 +14,7 @@ import {
   setSpendingReserve,
 } from "../api/paychecks";
 import { IconIncomeTile } from "./categoryIcons";
+import CurrencyInput from "./CurrencyInput";
 import { HOME_TEXT, HOME_MUTED, HOME_SURFACE, HOME_DIVIDER, HOME_INCOME, HOME_EXPENSE, TILE_COLOR } from "./categoryVisuals";
 
 const GOLD = TILE_COLOR.SAVINGS; // "needs amount" / balance accent
@@ -501,10 +502,10 @@ export default function MobilePaychecks({ onSaved }) {
                   <div style={{ ...cardStyle, padding: 14, display: "flex", flexDirection: "column", gap: 8 }}>
                     <div>
                       <p style={labelStyle}>Checking balance</p>
-                      <input
-                        type="number" step="0.01" min="0" placeholder="0.00"
+                      <CurrencyInput
+                        placeholder="0.00"
                         value={balanceDraft.current_balance}
-                        onChange={e => setBalanceDraft(d => ({ ...d, current_balance: e.target.value }))}
+                        onChange={v => setBalanceDraft(d => ({ ...d, current_balance: v }))}
                         style={fieldStyle}
                       />
                     </div>
@@ -558,10 +559,10 @@ export default function MobilePaychecks({ onSaved }) {
                   <div style={{ ...cardStyle, padding: 14, display: "flex", flexDirection: "column", gap: 8 }}>
                     <div>
                       <p style={labelStyle}>Don't-touch floor</p>
-                      <input
-                        type="number" step="0.01" min="0" placeholder="0.00"
+                      <CurrencyInput
+                        placeholder="0.00"
                         value={reserveDraft}
-                        onChange={e => setReserveDraft(e.target.value)}
+                        onChange={v => setReserveDraft(v)}
                         style={fieldStyle}
                       />
                     </div>
@@ -699,10 +700,9 @@ export default function MobilePaychecks({ onSaved }) {
                                   </div>
                                   <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
                                     {isEditing ? (
-                                      <input autoFocus
-                                        type="number" step="0.01" min="0.01"
+                                      <CurrencyInput autoFocus
                                         value={editValue}
-                                        onChange={e => setEditValue(e.target.value)}
+                                        onChange={v => setEditValue(v)}
                                         onBlur={() => commitEdit(p.id)}
                                         onKeyDown={e => { if (e.key === "Enter") e.target.blur(); if (e.key === "Escape") setEditingId(null); }}
                                         style={{ width: 90, textAlign: "right", background: "transparent", color: HOME_TEXT, border: "none", outline: "none", fontSize: 16, fontFamily: "inherit" }}

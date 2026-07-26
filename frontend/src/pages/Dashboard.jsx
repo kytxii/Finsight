@@ -18,6 +18,7 @@ import { useAuth } from "../context/AuthContext";
 import { getTransactions, createTransaction, deleteTransaction } from "../api/transactions";
 import { deleteRecurringPayment } from "../api/recurringPayments";
 import { getSpendableSurplus, getRunningBalance, getEstimatedSavings } from "../api/paychecks";
+import CurrencyInput from "../components/CurrencyInput";
 import {
   CATEGORIES,
   CATEGORY_CONFIG,
@@ -611,9 +612,15 @@ export default function Dashboard() {
                 ].map(({ label, ...props }) => (
                   <div key={props.name}>
                     <p style={{ fontSize: 10, color: muted, marginBottom: 3, paddingLeft: 2 }}>{label}</p>
-                    <input {...props} value={addForm[props.name]} onChange={handleAddChange} min={props.type === "number" ? "0.01" : undefined} step={props.type === "number" ? "0.01" : undefined}
-                      style={{ width: "100%", borderRadius: 7, padding: "6px 8px", fontSize: 12, border: `1px solid ${border}`, backgroundColor: bg, backgroundImage: props.name === "name" && addForm.category === "TIPS" ? `repeating-linear-gradient(-45deg, transparent, transparent 4px, color-mix(in srgb, ${text} 6%, transparent) 4px, color-mix(in srgb, ${text} 6%, transparent) 6px)` : undefined, color: text, boxSizing: "border-box", outline: "none", opacity: props.name === "name" && addForm.category === "TIPS" ? 0.45 : 1, cursor: props.name === "name" && addForm.category === "TIPS" ? "not-allowed" : undefined }}
-                    />
+                    {props.name === "amount" ? (
+                      <CurrencyInput value={addForm.amount} onChange={v => setAddForm(f => ({ ...f, amount: v }))} placeholder="$0.00" required
+                        style={{ width: "100%", borderRadius: 7, padding: "6px 8px", fontSize: 12, border: `1px solid ${border}`, backgroundColor: bg, color: text, boxSizing: "border-box", outline: "none" }}
+                      />
+                    ) : (
+                      <input {...props} value={addForm[props.name]} onChange={handleAddChange}
+                        style={{ width: "100%", borderRadius: 7, padding: "6px 8px", fontSize: 12, border: `1px solid ${border}`, backgroundColor: bg, backgroundImage: props.name === "name" && addForm.category === "TIPS" ? `repeating-linear-gradient(-45deg, transparent, transparent 4px, color-mix(in srgb, ${text} 6%, transparent) 4px, color-mix(in srgb, ${text} 6%, transparent) 6px)` : undefined, color: text, boxSizing: "border-box", outline: "none", opacity: props.name === "name" && addForm.category === "TIPS" ? 0.45 : 1, cursor: props.name === "name" && addForm.category === "TIPS" ? "not-allowed" : undefined }}
+                      />
+                    )}
                   </div>
                 ))}
                 <div>

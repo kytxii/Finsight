@@ -3,6 +3,7 @@ import { CATEGORY_CONFIG } from "../utils/finance";
 import { createTransaction } from "../api/transactions";
 import { useTheme } from "../hooks/useTheme";
 import { getToday } from "../utils/time";
+import CurrencyInput from "./CurrencyInput";
 
 const CATEGORY_OPTIONS = Object.entries(CATEGORY_CONFIG).map(
   ([key, { label }]) => ({
@@ -117,14 +118,10 @@ export default function AddTransactionModal({
 
           <div>
             <label className="block text-sm font-medium mb-1.5">Amount</label>
-            <input
-              type="number"
-              name="amount"
+            <CurrencyInput
               value={form.amount}
-              onChange={handleChange}
+              onChange={(v) => setForm((f) => ({ ...f, amount: v }))}
               required
-              min="0.01"
-              step="0.01"
               placeholder="$0.00"
               className="w-full rounded-xl px-4 py-2.5 text-sm focus:outline-none border"
               style={inputStyle}
