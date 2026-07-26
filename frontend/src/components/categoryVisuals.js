@@ -23,13 +23,13 @@ export const HOME_MUTED = "#8e8e93";
 export const HOME_CHEVRON = "#55555c";
 export const HOME_SURFACE = "#0e1b21";
 export const HOME_DIVIDER = "rgba(255,255,255,0.09)";
-export const HOME_INCOME = "#43a047";
-export const HOME_EXPENSE = "#e53935";
+export const HOME_INCOME = "#52b757";
+export const HOME_EXPENSE = "#ef5350";
 export const HOME_ACCENT = "#4493f8";
 
 export const TILE_COLOR = {
-  INCOME: "#43a047",
-  EXPENSE: "#e53935",
+  INCOME: "#52b757",
+  EXPENSE: "#ef5350",
   BILL: "#1e88e5",
   SUBSCRIPTION: "#ab47bc",
   DEBT: "#fb8c00",

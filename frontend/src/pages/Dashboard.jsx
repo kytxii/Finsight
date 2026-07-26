@@ -34,7 +34,6 @@ import ChartCard from "../components/ChartCard";
 import TransactionTable from "../components/TransactionTable";
 import EditTransactionModal from "../components/EditTransactionModal";
 import Footer from "../components/Footer";
-import RenderWakeButton from "../components/RenderWakeButton";
 
 export default function Dashboard() {
   const dark = useTheme();
@@ -47,7 +46,6 @@ export default function Dashboard() {
   const [savingsStatus, setSavingsStatus] = useState("loading"); // loading | ok | no-schedule | no-amounts | no-history | error
   const [bankBalance, setBankBalance] = useState(null);
   const [bankBalanceStatus, setBankBalanceStatus] = useState("loading"); // loading | ok | no-balance | error
-  const [backendSleeping, setBackendSleeping] = useState(false);
   const [devMenuOpen, setDevMenuOpen] = useState(false);
   const [devForceEmpty, setDevForceEmpty] = useState(false);
   const [devDelay, setDevDelay] = useState(0);
@@ -145,15 +143,11 @@ export default function Dashboard() {
   }
 
   useEffect(() => {
-    const sleepTimer = setTimeout(() => setBackendSleeping(true), 4000);
     devFetch().then((res) => {
-      clearTimeout(sleepTimer);
       setTransactions(res.data);
       setLoading(false);
-      setBackendSleeping(false);
       setDevLastFetch(new Date());
-    }).catch(() => { clearTimeout(sleepTimer); setLoading(false); });
-    return () => clearTimeout(sleepTimer);
+    }).catch(() => { setLoading(false); });
   }, []);
 
   function loadSafeToSpend() {
@@ -747,8 +741,7 @@ export default function Dashboard() {
         <div style={{ marginLeft: addMode === "batch" ? 460 : 210, transition: "margin-left 250ms ease" }}>
         <main className="px-6 py-6 space-y-5">
         <style>{`@keyframes skel-shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }`}</style>
-        {backendSleeping && <BackendWaking dark={dark} text={text} muted={muted} />}
-        {!backendSleeping && loading ? (
+        {loading ? (
           <div className={`grid grid-cols-2 ${activeTab === "ALL" ? "lg:grid-cols-5" : "lg:grid-cols-4"} gap-4`}>
             {[...Array(activeTab === "ALL" ? 5 : 4)].map((_, i) => (
               <div key={i} className="rounded-2xl px-5 py-5 border" style={{ backgroundColor: surface, borderTopWidth: 3, borderTopColor: border, borderRightColor: border, borderBottomColor: border, borderLeftColor: border }}>
@@ -913,7 +906,7 @@ export default function Dashboard() {
         </div>
         )}
 
-        {!backendSleeping && loading ? (
+        {loading ? (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {/* donut chart skeleton */}
             <div className="rounded-2xl p-6 border" style={{ backgroundColor: surface, borderColor: border }}>
@@ -1182,7 +1175,7 @@ export default function Dashboard() {
         </div>
         )}
 
-        {!backendSleeping && loading ? (
+        {loading ? (
           <div className="rounded-2xl border" style={{ backgroundColor: surface, borderColor: border }}>
             {/* card header — matches px-6 py-4 */}
             <div className="px-6 py-4 border-b" style={{ borderColor: border }}>
@@ -1288,8 +1281,6 @@ export default function Dashboard() {
           </div>
         </div>
       )}
-
-      <RenderWakeButton />
 
       {isDemo() && (
         <div
@@ -1398,22 +1389,6 @@ function DevMenuRow({ label, active, onToggle, muted, text, border }) {
           transition: "left 180ms ease", boxShadow: "0 1px 3px rgba(0,0,0,0.25)",
         }} />
       </button>
-    </div>
-  );
-}
-
-function BackendWaking({ dark, text, muted }) {
-  const accentColor = dark ? "#81c784" : "#43a047";
-  return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "60vh", gap: 16 }}>
-      <div style={{ display: "flex", gap: 6 }}>
-        {[0, 1, 2].map(i => (
-          <div key={i} style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: accentColor, animation: `pulse-dot 1.2s ease-in-out ${i * 0.2}s infinite` }} />
-        ))}
-      </div>
-      <p style={{ fontSize: 16, fontWeight: 600, color: text, margin: 0 }}>Starting up…</p>
-      <p style={{ fontSize: 13, color: muted, margin: 0 }}>Backend is waking up, this usually takes ~50 seconds.</p>
-      <style>{`@keyframes pulse-dot { 0%,80%,100%{transform:scale(0.55);opacity:0.35} 40%{transform:scale(1);opacity:1} }`}</style>
     </div>
   );
 }

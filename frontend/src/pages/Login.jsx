@@ -16,34 +16,7 @@ export default function Login() {
   const [countdown, setCountdown] = useState(0);
   const [attempts, setAttempts] = useState(0);
   const [rememberMe, setRememberMe] = useState(false);
-  const [waking, setWaking] = useState(false);
-  const [symbolIdx, setSymbolIdx] = useState(0);
-  const [phraseIdx, setPhraseIdx] = useState(0);
   const { login, enterDemoMode } = useAuth();
-
-  const SYMBOLS = ["·", "✢", "✣", "✤", "✥", "✦", "✧", "✩", "✦", "✥", "✤", "✣", "✢", "·"];
-  const PHRASES = [
-    "Coaxing the server out of bed…",
-    "Sending the server a strongly worded email…",
-    "Bribing the cloud with extra RAM…",
-    "Waking up the server…",
-    "Brewing the coffee…",
-    "Warming up the engines…",
-    "Spinning up containers…",
-    "Tying the server's shoes…",
-    "Loading the database…",
-    "Hitting snooze one more time…",
-    "Almost ready…",
-    "Negotiating with the cloud…",
-    "Poking the backend with a stick…",
-  ];
-
-  useEffect(() => {
-    if (!loading && !waking) { setSymbolIdx(0); return; }
-    setPhraseIdx(Math.floor(Math.random() * PHRASES.length));
-    const symInt = setInterval(() => setSymbolIdx(i => (i + 1) % SYMBOLS.length), 100);
-    return () => clearInterval(symInt);
-  }, [loading, waking]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -69,12 +42,10 @@ export default function Login() {
         const meRes = await client.get("/users/me", {
           headers: { Authorization: `Bearer ${token}` },
         });
-        setWaking(false);
         login(token, meRes.data);
         navigate("/");
       } catch (err) {
         if (err.response?.status === 429) {
-          setWaking(false);
           setLoading(false);
           setRateLimited(true);
           setAttempts(0);
@@ -92,10 +63,9 @@ export default function Login() {
             });
           }, 1000);
         } else if (!err.response || err.response.status >= 500) {
-          setWaking(true);
-          setTimeout(attempt, 5000);
+          setLoading(false);
+          setError("Something went wrong. Please try again.");
         } else {
-          setWaking(false);
           setLoading(false);
           setAttempts((prev) => prev + 1);
           setError("Invalid email or password.");
@@ -136,10 +106,6 @@ export default function Login() {
         @keyframes finsight-grid-fade {
           0%, 100% { opacity: 0.03; }
           50%       { opacity: 0.06; }
-        }
-        @keyframes waking-in {
-          from { opacity: 0; transform: translateY(5px); }
-          to   { opacity: 1; transform: translateY(0);   }
         }
         @keyframes phrase-in {
           from { opacity: 0; transform: translateX(5px); }
@@ -295,17 +261,6 @@ export default function Login() {
               </span>
             )}
           </button>
-
-          {(loading || waking) && (
-            <div style={{ display: "flex", alignItems: "center", gap: "10px", animation: "waking-in 0.35s ease" }}>
-              <span style={{ fontSize: "15px", color: accentColor, width: "16px", textAlign: "center", flexShrink: 0, fontFamily: "monospace", lineHeight: 1 }}>
-                {SYMBOLS[symbolIdx]}
-              </span>
-              <span style={{ fontSize: "12px", color: dark ? "var(--dark-text)" : "var(--light-text)", opacity: 0.55 }}>
-                {PHRASES[phraseIdx]}
-              </span>
-            </div>
-          )}
 
           <p style={{ margin: 0, fontSize: "13px", textAlign: "center", color: dark ? "var(--dark-text)" : "var(--light-text)", opacity: 0.5 }}>
             Don't have an account?{" "}
