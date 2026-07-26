@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import SwipeableRow from "./SwipeableRow";
+import CurrencyInput from "./CurrencyInput";
 import { CATEGORY_CONFIG, fmt } from "../utils/finance";
 import {
   getRecurringPayments,
@@ -121,10 +122,9 @@ function EditSheet({ draft, setDraft, mode, saving, error, onCancel, onSave, onD
         <div style={{ display: "flex", gap: 10 }}>
           <div style={{ flex: 1 }}>
             <p style={labelStyle}>Amount</p>
-            <input
-              type="number" step="0.01" min="0.01"
+            <CurrencyInput
               value={draft.amount}
-              onChange={e => setDraft(d => ({ ...d, amount: e.target.value }))}
+              onChange={v => setDraft(d => ({ ...d, amount: v }))}
               placeholder="0.00"
               style={fieldStyle}
             />

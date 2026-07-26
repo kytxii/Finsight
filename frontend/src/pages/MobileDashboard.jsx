@@ -24,6 +24,7 @@ import {
   deleteTransaction,
 } from "../api/transactions";
 import { getSpendableSurplus, getEstimatedSavings } from "../api/paychecks";
+import CurrencyInput from "../components/CurrencyInput";
 import EditTransactionModal from "../components/EditTransactionModal";
 import {
   CATEGORIES,
@@ -1907,16 +1908,13 @@ export default function MobileDashboard() {
               }
             />
             <div className="grid grid-cols-2 gap-3">
-              <input
-                type="number"
+              <CurrencyInput
                 placeholder="0.00"
                 value={quickForm.amount}
-                onChange={(e) =>
-                  setQuickForm((f) => ({ ...f, amount: e.target.value }))
+                onChange={(v) =>
+                  setQuickForm((f) => ({ ...f, amount: v }))
                 }
                 required
-                min="0.01"
-                step="0.01"
                 className="rounded-xl px-4 py-2.5 text-sm border"
                 style={inputStyle}
               />
@@ -2167,19 +2165,16 @@ export default function MobileDashboard() {
                             : undefined,
                       }}
                     />
-                    <input
-                      type="number"
+                    <CurrencyInput
                       placeholder="0.00"
                       value={item.amount}
-                      onChange={(e) =>
+                      onChange={(v) =>
                         setBatchItems((prev) =>
                           prev.map((r, i) =>
-                            i === idx ? { ...r, amount: e.target.value } : r,
+                            i === idx ? { ...r, amount: v } : r,
                           ),
                         )
                       }
-                      min="0.01"
-                      step="0.01"
                       className="rounded-lg px-2 py-1.5 text-xs border"
                       style={{
                         width: 72,

@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { useTheme } from "../hooks/useTheme";
 import { fmt } from "../utils/finance";
 import { getToday } from "../utils/time";
+import CurrencyInput from "./CurrencyInput";
 import {
   getPaycheckSchedules,
   createPaycheckSchedule,
@@ -529,10 +530,10 @@ export default function PaychecksPanel({ mobile = false, onSaved }) {
                   <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "12px", borderRadius: 10, border: `1px solid ${border}`, backgroundColor: faint }}>
                     <div>
                       <p style={labelStyle}>Checking balance</p>
-                      <input
-                        type="number" step="0.01" min="0" placeholder="0.00"
+                      <CurrencyInput
+                        placeholder="0.00"
                         value={balanceDraft.current_balance}
-                        onChange={e => setBalanceDraft(d => ({ ...d, current_balance: e.target.value }))}
+                        onChange={v => setBalanceDraft(d => ({ ...d, current_balance: v }))}
                         style={fieldStyle}
                       />
                     </div>
@@ -604,10 +605,10 @@ export default function PaychecksPanel({ mobile = false, onSaved }) {
                   <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "12px", borderRadius: 10, border: `1px solid ${border}`, backgroundColor: faint }}>
                     <div>
                       <p style={labelStyle}>Don't-touch floor</p>
-                      <input
-                        type="number" step="0.01" min="0" placeholder="0.00"
+                      <CurrencyInput
+                        placeholder="0.00"
                         value={reserveDraft}
-                        onChange={e => setReserveDraft(e.target.value)}
+                        onChange={v => setReserveDraft(v)}
                         style={fieldStyle}
                       />
                     </div>
@@ -758,10 +759,9 @@ export default function PaychecksPanel({ mobile = false, onSaved }) {
 
                               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                               {isEditing ? (
-                                <input autoFocus
-                                  type="number" step="0.01" min="0.01"
+                                <CurrencyInput autoFocus
                                   value={editValue}
-                                  onChange={e => setEditValue(e.target.value)}
+                                  onChange={v => setEditValue(v)}
                                   onBlur={() => commitEdit(p.id)}
                                   onKeyDown={e => { if (e.key === "Enter") e.target.blur(); if (e.key === "Escape") setEditingId(null); }}
                                   style={{ width: 90, textAlign: "right", background: "transparent", color: text, border: "none", outline: "none", fontSize: mobile ? 14 : 13, fontFamily: "inherit" }}
