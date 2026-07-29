@@ -118,7 +118,7 @@ export default function Navbar({ transactions = [], onSelectTransaction, onDelet
                 : "linear-gradient(to right, #111827, #374151, #6b7280)",
             }}
           >
-            FinSight
+            Finsight
           </span>
 
           {/* Search */}

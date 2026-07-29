@@ -12,7 +12,7 @@ export default function Footer() {
       className="px-6 py-4 text-xs flex items-center justify-between border-t"
       style={{ color: muted, borderColor: border }}
     >
-      <span>© {new Date().getFullYear()} FinSight</span>
+      <span>© {new Date().getFullYear()} Finsight</span>
       <div className="flex items-center gap-3">
         <a
           target="_blank"

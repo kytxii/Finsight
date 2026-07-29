@@ -1,4 +1,4 @@
-# FinSight
+# Finsight
 
 > A personal finance tracker for monitoring expenses, income, and recurring payments.
 
