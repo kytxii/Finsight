@@ -38,6 +38,7 @@ import { PRESETS, getPresetRange } from "../components/DateRangeFilter";
 import { getToday } from "../utils/time";
 import Footer from "../components/Footer";
 import AccountPanel from "../components/AccountPanel";
+import OverviewBreakdownSheet from "../components/OverviewBreakdownSheet";
 import MobileHome from "../components/MobileHome";
 import MobileCategory from "../components/MobileCategory";
 import MobilePaychecks from "../components/MobilePaychecks";
@@ -347,6 +348,7 @@ export default function MobileDashboard() {
   const [recurringOpen, setRecurringOpen] = useState(false);
   const [recurringAddSignal, setRecurringAddSignal] = useState(0);
   const [paychecksOpen, setPaychecksOpen] = useState(false);
+  const [breakdownCell, setBreakdownCell] = useState(null); // null | balance | bills | cash | savings
   const [accountOpen, setAccountOpen] = useState(false);
   const [acctSave, setAcctSave] = useState({
     isDirty: false,
@@ -948,6 +950,7 @@ export default function MobileDashboard() {
                     onOpenAdd={() => setAddSheetOpen(true)}
                     onOpenRecurring={() => setRecurringOpen(true)}
                     onOpenPaychecks={() => setPaychecksOpen(true)}
+                    onOpenBreakdown={(key) => setBreakdownCell(key)}
                     onViewCategory={(cat) => setCategoryView(cat)}
                     onViewSpendingByCategory={() => { setNavTab("analytics"); setAnalyticsTab("ALL"); }}
                     onSeeAllTransactions={() => {
@@ -2254,6 +2257,17 @@ export default function MobileDashboard() {
           }}
         />
       )}
+
+      {/* ── Overview stat breakdown sheet (#42) ── */}
+      <OverviewBreakdownSheet
+        cell={breakdownCell}
+        onClose={() => setBreakdownCell(null)}
+        safeToSpend={safeToSpend}
+        safeToSpendStatus={safeToSpendStatus}
+        savings={savings}
+        savingsStatus={savingsStatus}
+        transactions={transactions}
+      />
 
       {/* ── Recurring payments overlay ── */}
       {recurringOpen && (

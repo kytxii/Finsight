@@ -12,6 +12,7 @@ from app.schemas.paycheck import (
     PaycheckResponse,
     PaycheckListResponse,
     SpendableSurplusResponse,
+    BillBreakdownItem,
     SetBalanceAnchor,
     BalanceAnchorResponse,
     RunningBalanceResponse,
@@ -67,6 +68,19 @@ async def get_spendable_surplus(current_user: User = Depends(get_current_user), 
         free_to_allocate=result.free_to_allocate,
         bills_before_next_payday=result.bills_before_next_payday,
         next_payday_estimate=result.next_payday_estimate,
+        running_balance=result.running_balance,
+        projected_income=result.projected_income,
+        bills_before_month_end=result.bills_before_month_end,
+        bills_breakdown=[
+            BillBreakdownItem(
+                name=b.name,
+                amount=b.amount,
+                day_of_month=b.day_of_month,
+                due_date=b.due_date,
+                category=b.category.value,
+            )
+            for b in result.bills_breakdown
+        ],
     )
 
 @router.get("/savings", response_model=EstimatedSavingsResponse)

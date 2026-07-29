@@ -249,31 +249,32 @@ function ChangeBadge({ current, previous, goodWhenUp }) {
 //   Estimated Cash    |   Estimated Savings
 // Balance is a placeholder until bank integration (#15). The rest come from the
 // spendable-surplus and estimated-savings endpoints.
-function StatField({ label, value, color }) {
+function StatField({ label, value, color, caption, onClick }) {
+  const interactive = typeof onClick === "function";
   return (
-    <div>
+    <div
+      onClick={onClick}
+      style={{
+        cursor: interactive ? "pointer" : "default",
+        margin: -6, padding: 6, borderRadius: 10,
+        transition: "background-color 0.12s",
+      }}
+      onPointerDown={interactive ? (e) => { e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.05)"; } : undefined}
+      onPointerUp={interactive ? (e) => { e.currentTarget.style.backgroundColor = "transparent"; } : undefined}
+      onPointerLeave={interactive ? (e) => { e.currentTarget.style.backgroundColor = "transparent"; } : undefined}
+    >
+      <p style={{ margin: 0, fontSize: 13, fontWeight: 500, color: HOME_MUTED }}>{label}</p>
       <p
         style={{
-          margin: 0,
-          fontSize: 13,
-          fontWeight: 500,
-          color: HOME_MUTED,
-        }}
-      >
-        {label}
-      </p>
-      <p
-        style={{
-          margin: "2px 0 0",
-          fontSize: 17,
-          fontWeight: 700,
-          letterSpacing: "-0.3px",
-          fontVariantNumeric: "tabular-nums",
-          color,
+          margin: "2px 0 0", fontSize: 17, fontWeight: 700, letterSpacing: "-0.3px",
+          fontVariantNumeric: "tabular-nums", color,
         }}
       >
         {value}
       </p>
+      {caption && (
+        <p style={{ margin: "2px 0 0", fontSize: 11, fontWeight: 500, color: HOME_MUTED }}>{caption}</p>
+      )}
     </div>
   );
 }
@@ -284,10 +285,11 @@ function OverviewCard({
   savings,
   savingsStatus,
   cardStyle,
-  onOpenPaychecks,
+  onOpenBreakdown,
 }) {
   // Placeholder until bank integration (#15) provides a live figure.
   const currentBalance = {
+    key: "balance",
     label: "Current Balance",
     value: "$3,284.19",
     color: HOME_TEXT,
@@ -296,20 +298,24 @@ function OverviewCard({
   let bills, discretionary;
   if (status === "ok" && safeToSpend) {
     const surplus = parseFloat(safeToSpend.spendable_surplus);
+    const billCount = safeToSpend.bills_breakdown?.length ?? 0;
     discretionary = {
+      key: "cash",
       label: "Estimated Cash",
       value: fmt(safeToSpend.spendable_surplus),
       color: surplus >= 0 ? HOME_INCOME : HOME_EXPENSE,
     };
     bills = {
+      key: "bills",
       label: "Upcoming Bills",
       value: `-${fmt(safeToSpend.bills_before_next_payday)}`,
       color: TILE_COLOR.BILL,
+      caption: billCount > 0 ? `${billCount} bill${billCount !== 1 ? "s" : ""} due` : "No bills due",
     };
   } else {
     const value = status === "loading" ? "—" : "Not set up";
-    discretionary = { label: "Estimated Cash", value, color: HOME_MUTED };
-    bills = { label: "Upcoming Bills", value: "—", color: HOME_MUTED };
+    discretionary = { key: "cash", label: "Estimated Cash", value, color: HOME_MUTED };
+    bills = { key: "bills", label: "Upcoming Bills", value: "—", color: HOME_MUTED };
   }
 
   let save;
@@ -319,28 +325,26 @@ function OverviewCard({
       target > 0
         ? `${fmt(savings.saved_so_far)}/${fmt(savings.estimated_savings)}`
         : fmt(savings.saved_so_far);
-    save = { label: "Estimated Savings", value, color: TILE_COLOR.SAVINGS };
+    save = { key: "savings", label: "Estimated Savings", value, color: TILE_COLOR.SAVINGS };
   } else {
-    save = { label: "Estimated Savings", value: "—", color: HOME_MUTED };
+    save = { key: "savings", label: "Estimated Savings", value: "—", color: HOME_MUTED };
   }
 
   const fields = [currentBalance, bills, discretionary, save];
 
   return (
     <div
-      onClick={onOpenPaychecks}
       style={{
         ...cardStyle,
         padding: "14px 16px",
         marginTop: 16,
-        cursor: "pointer",
         display: "grid",
         gridTemplateColumns: "1fr 1fr",
         gap: "14px 12px",
       }}
     >
       {fields.map((f) => (
-        <StatField key={f.label} {...f} />
+        <StatField key={f.key} {...f} onClick={() => onOpenBreakdown(f.key)} />
       ))}
     </div>
   );
@@ -371,6 +375,7 @@ export default function MobileHome({
   onOpenAdd,
   onOpenRecurring,
   onOpenPaychecks,
+  onOpenBreakdown,
   onViewCategory,
   onViewSpendingByCategory,
   onSeeAllTransactions,
@@ -749,7 +754,7 @@ export default function MobileHome({
         savings={savings}
         savingsStatus={savingsStatus}
         cardStyle={cardStyle}
-        onOpenPaychecks={onOpenPaychecks}
+        onOpenBreakdown={onOpenBreakdown}
       />
       {/* Primary nav card */}
       <div style={{ ...cardStyle, marginTop: 16 }}>
