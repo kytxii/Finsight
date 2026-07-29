@@ -89,6 +89,14 @@ def _next_month_start(today: date) -> date:
     return date(today.year, today.month + 1, 1)
 
 
+class BillItem(NamedTuple):
+    name: str
+    amount: Decimal
+    day_of_month: int | None
+    due_date: date | None  # None for no-fixed-date estimates
+    category: Category
+
+
 class SpendableSurplusResult(NamedTuple):
     next_payday: date
     month_end: date
@@ -96,6 +104,11 @@ class SpendableSurplusResult(NamedTuple):
     free_to_allocate: Decimal
     bills_before_next_payday: Decimal
     next_payday_estimate: Decimal | None
+    # Decomposition, surfaced so the client can explain each headline number.
+    running_balance: Decimal
+    projected_income: Decimal
+    bills_before_month_end: Decimal
+    bills_breakdown: list[BillItem]  # the bills making up bills_before_next_payday
 
 
 def _generate_pay_dates_through(schedule: PaycheckSchedule, through: date) -> list[date]:
@@ -355,16 +368,31 @@ async def get_running_balance(current_user: UUID, db: AsyncSession) -> RunningBa
     return RunningBalanceResult(balance=balance, as_of_date=anchor.as_of_date)
 
 
-def _committed_before(recurring_payments: list[RecurringPayment], today: date, horizon: date) -> Decimal:
+def _committed_items(recurring_payments: list[RecurringPayment], today: date, horizon: date) -> tuple[Decimal, list[BillItem]]:
+    """Bills committed before `horizon`, as (total, itemized list).
+
+    Fixed-date bills count when their next occurrence is on/before horizon;
+    estimates with no fixed due date count in full (due_date None). Conservative:
+    under-reporting surplus is safer than over-reporting it. Items are sorted by
+    due date, with no-fixed-date estimates last.
+    """
     total = Decimal("0")
+    items: list[BillItem] = []
     for rp in recurring_payments:
         if rp.day_of_month is None:
-            # Estimate with no fixed due date - count it in full. Conservative:
-            # under-reporting surplus is safer than over-reporting it.
             total += rp.amount
-        elif _next_occurrence(rp.day_of_month, today) <= horizon:
-            total += rp.amount
-    return total
+            items.append(BillItem(rp.name, rp.amount, None, None, rp.category))
+        else:
+            occurrence = _next_occurrence(rp.day_of_month, today)
+            if occurrence <= horizon:
+                total += rp.amount
+                items.append(BillItem(rp.name, rp.amount, rp.day_of_month, occurrence, rp.category))
+    items.sort(key=lambda b: (b.due_date is None, b.due_date or date.max))
+    return total, items
+
+
+def _committed_before(recurring_payments: list[RecurringPayment], today: date, horizon: date) -> Decimal:
+    return _committed_items(recurring_payments, today, horizon)[0]
 
 
 async def _projected_income_before(schedules: list[PaycheckSchedule], today: date, month_end: date, current_user: UUID, db: AsyncSession) -> Decimal:
@@ -435,7 +463,7 @@ async def get_spendable_surplus(current_user: UUID, spending_reserve: Decimal, d
     # the start of next month. Secondary: how much of that is already spoken
     # for before the next paycheck lands, shown separately for context.
     bills_before_month_end = _committed_before(recurring_payments, today, month_end)
-    bills_before_next_payday = _committed_before(recurring_payments, today, next_payday)
+    bills_before_next_payday, bills_breakdown = _committed_items(recurring_payments, today, next_payday)
 
     projected_income = await _projected_income_before(schedules, today, month_end, current_user, db)
 
@@ -449,6 +477,10 @@ async def get_spendable_surplus(current_user: UUID, spending_reserve: Decimal, d
         free_to_allocate=free_to_allocate,
         bills_before_next_payday=bills_before_next_payday,
         next_payday_estimate=next_payday_estimate,
+        running_balance=running_balance,
+        projected_income=projected_income,
+        bills_before_month_end=bills_before_month_end,
+        bills_breakdown=bills_breakdown,
     )
 
 

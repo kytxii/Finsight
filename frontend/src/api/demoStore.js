@@ -332,6 +332,25 @@ const SEED_PAYCHECK_SCHEDULES = [
   { id: "demo-ps-1", name: "Northwind Traders", frequency: "BIWEEKLY", start_date: "2026-01-02", active: true },
 ];
 
+// Past paydays for demo-ps-1 (biweekly from 2026-01-02) with amounts entered, so
+// the surplus/savings features have real projected income + estimates to show.
+// Dates must match iterPayDates output exactly or backfill will duplicate them.
+// The next payday (2026-05-08) is left for backfill to add unfilled.
+const SEED_PAYCHECKS = [
+  { id: "demo-pc-1", schedule_id: "demo-ps-1", pay_date: "2026-01-02", amount: "1820.00" },
+  { id: "demo-pc-2", schedule_id: "demo-ps-1", pay_date: "2026-01-16", amount: "1850.00" },
+  { id: "demo-pc-3", schedule_id: "demo-ps-1", pay_date: "2026-01-30", amount: "1795.00" },
+  { id: "demo-pc-4", schedule_id: "demo-ps-1", pay_date: "2026-02-13", amount: "1880.00" },
+  { id: "demo-pc-5", schedule_id: "demo-ps-1", pay_date: "2026-02-27", amount: "1840.00" },
+  { id: "demo-pc-6", schedule_id: "demo-ps-1", pay_date: "2026-03-13", amount: "1810.00" },
+  { id: "demo-pc-7", schedule_id: "demo-ps-1", pay_date: "2026-03-27", amount: "1905.00" },
+  { id: "demo-pc-8", schedule_id: "demo-ps-1", pay_date: "2026-04-10", amount: "1860.00" },
+  { id: "demo-pc-9", schedule_id: "demo-ps-1", pay_date: "2026-04-24", amount: "1875.00" },
+];
+
+// Starting balance so Estimated Cash / Upcoming Bills have a base to build from.
+const SEED_BALANCE_ANCHOR = { id: "demo-ba-1", current_balance: "2850.00", as_of_date: "2026-04-01" };
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 export function initDemo() {
   if (!localStorage.getItem(TX_KEY)) {
@@ -342,6 +361,12 @@ export function initDemo() {
   }
   if (!localStorage.getItem(PS_KEY)) {
     localStorage.setItem(PS_KEY, JSON.stringify(SEED_PAYCHECK_SCHEDULES));
+  }
+  if (!localStorage.getItem(PC_KEY)) {
+    localStorage.setItem(PC_KEY, JSON.stringify(SEED_PAYCHECKS));
+  }
+  if (!localStorage.getItem(BA_KEY)) {
+    localStorage.setItem(BA_KEY, JSON.stringify(SEED_BALANCE_ANCHOR));
   }
 }
 
@@ -725,13 +750,30 @@ function averageRecentAmounts(scheduleId, allPaychecks, limit = 3) {
   return amounts.reduce((a, b) => a + b, 0) / amounts.length;
 }
 
+// Bills committed before `horizon`, as { total, items } - mirrors the Python
+// service's _committed_items. Estimates (no fixed date) count in full with a
+// null due_date; items are sorted by due date, estimates last.
+function committedItems(recurring, today, horizon) {
+  let total = 0;
+  const items = [];
+  recurring.forEach((rp) => {
+    if (rp.day_of_month == null) {
+      total += parseFloat(rp.amount);
+      items.push({ name: rp.name, amount: parseFloat(rp.amount).toFixed(2), day_of_month: null, due_date: null, category: rp.category });
+    } else {
+      const occurrence = nextOccurrence(rp.day_of_month, today);
+      if (occurrence <= horizon) {
+        total += parseFloat(rp.amount);
+        items.push({ name: rp.name, amount: parseFloat(rp.amount).toFixed(2), day_of_month: rp.day_of_month, due_date: toDateStr(occurrence), category: rp.category });
+      }
+    }
+  });
+  items.sort((a, b) => (a.due_date == null) - (b.due_date == null) || (a.due_date ?? "").localeCompare(b.due_date ?? ""));
+  return { total, items };
+}
+
 function committedBefore(recurring, today, horizon) {
-  return recurring.reduce((sum, rp) => {
-    // Estimate with no fixed due date - count it in full (conservative).
-    if (rp.day_of_month == null) return sum + parseFloat(rp.amount);
-    const occurrence = nextOccurrence(rp.day_of_month, today);
-    return occurrence <= horizon ? sum + parseFloat(rp.amount) : sum;
-  }, 0);
+  return committedItems(recurring, today, horizon).total;
 }
 
 // Sum every future paycheck landing before monthEnd, across all active
@@ -810,7 +852,7 @@ export const getSpendableSurplus = () => {
   // the start of next month. Secondary: how much of that is already spoken
   // for before the next paycheck lands, shown separately for context.
   const billsBeforeMonthEnd = committedBefore(recurring, today, monthEnd);
-  const billsBeforeNextPayday = committedBefore(recurring, today, nextPayday);
+  const { total: billsBeforeNextPayday, items: billsBreakdown } = committedItems(recurring, today, nextPayday);
 
   const projectedIncome = projectedIncomeBefore(schedules, today, monthEnd);
   const spendableSurplus = runningBalance + projectedIncome - billsBeforeMonthEnd;
@@ -823,6 +865,10 @@ export const getSpendableSurplus = () => {
     free_to_allocate: freeToAllocate.toFixed(2),
     bills_before_next_payday: billsBeforeNextPayday.toFixed(2),
     next_payday_estimate: nextPaydayEstimate != null ? nextPaydayEstimate.toFixed(2) : null,
+    running_balance: runningBalance.toFixed(2),
+    projected_income: projectedIncome.toFixed(2),
+    bills_before_month_end: billsBeforeMonthEnd.toFixed(2),
+    bills_breakdown: billsBreakdown,
   });
 };
 
