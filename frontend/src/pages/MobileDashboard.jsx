@@ -1564,7 +1564,7 @@ export default function MobileDashboard() {
             >
               <IconAI size={36} />
               <p className="text-base font-semibold" style={{ color: text }}>
-                FinSight AI
+                Finsight AI
               </p>
               <p className="text-sm text-center px-8" style={{ color: muted }}>
                 AI assistant coming soon. Ask questions about your spending, get
