@@ -191,10 +191,7 @@ export default function MobileCategory({
                       {relativeDate(t.transaction_date)}
                     </p>
                   </div>
-                  <span style={{
-                    flex: "0 0 auto", marginLeft: 10, fontSize: 16, fontWeight: 600, letterSpacing: "-0.2px",
-                    fontVariantNumeric: "tabular-nums", color: isIncome ? HOME_INCOME : HOME_TEXT,
-                  }}>
+                  <span style={{ flex: "0 0 auto", marginLeft: 10, fontSize: 16, fontWeight: 600, letterSpacing: "-0.2px", fontVariantNumeric: "tabular-nums", color: isIncome ? HOME_INCOME : HOME_TEXT }}>
                     {isIncome ? "+" : "−"}{fmt(t.amount)}
                   </span>
                 </div>

@@ -7,3 +7,4 @@ from .oauth_account import OAuthAccount
 from .paycheck_schedule import PaycheckSchedule, PaycheckFrequency
 from .paycheck import Paycheck
 from .balance_anchor import BalanceAnchor
+from .tip_deposit import TipDeposit

@@ -41,6 +41,7 @@ import AccountPanel from "../components/AccountPanel";
 import OverviewBreakdownSheet from "../components/OverviewBreakdownSheet";
 import MobileHome from "../components/MobileHome";
 import MobileCategory from "../components/MobileCategory";
+import MobileTips from "../components/MobileTips";
 import MobilePaychecks from "../components/MobilePaychecks";
 import MobileRecurring from "../components/MobileRecurring";
 import SwipeableRow from "../components/SwipeableRow";
@@ -462,9 +463,10 @@ export default function MobileDashboard() {
     setQuickLoading(true);
     try {
       await createTransaction({
-        ...quickForm,
-        category: quickCat,
+        name: quickForm.name,
         amount: parseFloat(quickForm.amount),
+        transaction_date: quickForm.transaction_date,
+        category: quickCat,
       });
       setQuickForm((f) => ({ ...f, name: "", amount: "" }));
       setEntrySheetOpen(false);
@@ -914,7 +916,16 @@ export default function MobileDashboard() {
         {/* Dashboard tab */}
         {navTab === "dashboard" && (
           <>
-            {categoryView ? (
+            {categoryView === "TIPS" ? (
+              <MobileTips
+                transactions={transactions}
+                loading={loading}
+                onBack={() => setCategoryView(null)}
+                onEditTransaction={setEditingTransaction}
+                onDeleteTransaction={handleDelete}
+                onRefresh={refresh}
+              />
+            ) : categoryView ? (
               <MobileCategory
                 category={categoryView}
                 transactions={dashFiltered}
