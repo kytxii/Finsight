@@ -5,6 +5,7 @@ const PS_KEY = "demo_paycheck_schedules";
 const PC_KEY = "demo_paychecks";
 const BA_KEY = "demo_balance_anchor";
 const RES_KEY = "demo_spending_reserve";
+const TD_KEY = "demo_tip_deposits";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const getAll  = (key)       => JSON.parse(localStorage.getItem(key) || "[]");
@@ -33,7 +34,7 @@ const SEED_TRANSACTIONS = [
   { id: "demo-t-15",  name: "Pharmacy",              amount: "22.30",   category: "EXPENSE",      transaction_date: "2025-05-22" },
   { id: "demo-t-16",  name: "Lunch",                 amount: "16.80",   category: "EXPENSE",      transaction_date: "2025-05-24" },
   { id: "demo-t-17",  name: "Freelance",             amount: "400.00",  category: "INCOME",       transaction_date: "2025-05-25" },
-  { id: "demo-t-18",  name: "Cash",                  amount: "20.00",   category: "TIPS",         transaction_date: "2025-05-26" },
+  { id: "demo-t-18",  name: "Cash",                  amount: "20.00",   category: "TIPS",         transaction_date: "2025-05-26"  },
   { id: "demo-t-19",  name: "Clothing",              amount: "75.00",   category: "EXPENSE",      transaction_date: "2025-05-27" },
   { id: "demo-t-20",  name: "Savings Transfer",      amount: "500.00",  category: "SAVINGS",      transaction_date: "2025-05-28" },
   // June 2025
@@ -75,7 +76,7 @@ const SEED_TRANSACTIONS = [
   { id: "demo-t-55",  name: "Amazon",                amount: "54.99",   category: "EXPENSE",      transaction_date: "2025-07-21" },
   { id: "demo-t-56",  name: "Pharmacy",              amount: "18.90",   category: "EXPENSE",      transaction_date: "2025-07-25" },
   { id: "demo-t-57",  name: "Gas",                   amount: "48.30",   category: "EXPENSE",      transaction_date: "2025-07-26" },
-  { id: "demo-t-58",  name: "Cash",                  amount: "25.00",   category: "TIPS",         transaction_date: "2025-07-27" },
+  { id: "demo-t-58",  name: "Cash",                  amount: "25.00",   category: "TIPS",         transaction_date: "2025-07-27"  },
   { id: "demo-t-59",  name: "Dinner Out",            amount: "72.30",   category: "EXPENSE",      transaction_date: "2025-07-28" },
   { id: "demo-t-60",  name: "Savings Transfer",      amount: "300.00",  category: "SAVINGS",      transaction_date: "2025-07-28" },
   // August 2025
@@ -138,7 +139,7 @@ const SEED_TRANSACTIONS = [
   { id: "demo-t-115", name: "Dinner Out",            amount: "58.60",   category: "EXPENSE",      transaction_date: "2025-10-24" },
   { id: "demo-t-116", name: "Pharmacy",              amount: "27.40",   category: "EXPENSE",      transaction_date: "2025-10-25" },
   { id: "demo-t-117", name: "Pumpkin Patch",         amount: "32.00",   category: "EXPENSE",      transaction_date: "2025-10-26" },
-  { id: "demo-t-118", name: "Cash",                  amount: "20.00",   category: "TIPS",         transaction_date: "2025-10-27" },
+  { id: "demo-t-118", name: "Cash",                  amount: "20.00",   category: "TIPS",         transaction_date: "2025-10-27"  },
   { id: "demo-t-119", name: "Clothing",              amount: "95.00",   category: "EXPENSE",      transaction_date: "2025-10-28" },
   { id: "demo-t-120", name: "Savings Transfer",      amount: "500.00",  category: "SAVINGS",      transaction_date: "2025-10-28" },
   // November 2025
@@ -180,7 +181,7 @@ const SEED_TRANSACTIONS = [
   { id: "demo-t-155", name: "Freelance",             amount: "700.00",  category: "INCOME",       transaction_date: "2025-12-22" },
   { id: "demo-t-156", name: "Christmas Dinner",      amount: "94.80",   category: "EXPENSE",      transaction_date: "2025-12-25" },
   { id: "demo-t-157", name: "Dinner Out",            amount: "52.30",   category: "EXPENSE",      transaction_date: "2025-12-26" },
-  { id: "demo-t-158", name: "Cash",                  amount: "30.00",   category: "TIPS",         transaction_date: "2025-12-27" },
+  { id: "demo-t-158", name: "Cash",                  amount: "30.00",   category: "TIPS",         transaction_date: "2025-12-27"  },
   { id: "demo-t-159", name: "New Year Eve",          amount: "78.00",   category: "EXPENSE",      transaction_date: "2025-12-31" },
   { id: "demo-t-160", name: "Savings Transfer",      amount: "350.00",  category: "SAVINGS",      transaction_date: "2025-12-28" },
   // January 2026
@@ -192,7 +193,7 @@ const SEED_TRANSACTIONS = [
   { id: "demo-t-166", name: "Gas",                   amount: "55.20",   category: "EXPENSE",      transaction_date: "2026-01-08" },
   { id: "demo-t-167", name: "Internet",              amount: "60.00",   category: "BILL",         transaction_date: "2026-01-10" },
   { id: "demo-t-168", name: "New Year Dinner",       amount: "72.50",   category: "EXPENSE",      transaction_date: "2026-01-12" },
-  { id: "demo-t-169", name: "Cash",                  amount: "20.00",   category: "TIPS",         transaction_date: "2026-01-14" },
+  { id: "demo-t-169", name: "Cash",                  amount: "20.00",   category: "TIPS",         transaction_date: "2026-01-14"  },
   { id: "demo-t-170", name: "Netflix",               amount: "15.99",   category: "SUBSCRIPTION", transaction_date: "2026-01-15" },
   { id: "demo-t-171", name: "Student Loan",          amount: "250.00",  category: "DEBT",         transaction_date: "2026-01-15" },
   { id: "demo-t-172", name: "Coffee",                amount: "4.75",    category: "EXPENSE",      transaction_date: "2026-01-16" },
@@ -254,7 +255,7 @@ const SEED_TRANSACTIONS = [
   { id: "demo-t-225", name: "Gym Membership",        amount: "40.00",   category: "SUBSCRIPTION", transaction_date: "2026-04-05" },
   { id: "demo-t-226", name: "Uber",                  amount: "14.50",   category: "EXPENSE",      transaction_date: "2026-04-08" },
   { id: "demo-t-227", name: "Internet",              amount: "60.00",   category: "BILL",         transaction_date: "2026-04-10" },
-  { id: "demo-t-228", name: "Cash",                  amount: "20.00",   category: "TIPS",         transaction_date: "2026-04-10" },
+  { id: "demo-t-228", name: "Cash",                  amount: "165.00",  category: "TIPS",         transaction_date: "2026-04-10" },
   { id: "demo-t-229", name: "Coffee",                amount: "4.75",    category: "EXPENSE",      transaction_date: "2026-04-11" },
   { id: "demo-t-230", name: "Lunch",                 amount: "18.40",   category: "EXPENSE",      transaction_date: "2026-04-12" },
   { id: "demo-t-231", name: "Pharmacy",              amount: "23.10",   category: "EXPENSE",      transaction_date: "2026-04-14" },
@@ -316,6 +317,11 @@ const SEED_TRANSACTIONS = [
   { id: "demo-t-275", name: "Barber",                amount: "25.00",   category: "EXPENSE",      transaction_date: "2026-04-07" },
   { id: "demo-t-276", name: "Travel Reimbursement",  amount: "175.00",  category: "REIMBURSEMENT", transaction_date: "2026-04-16" },
   { id: "demo-t-277", name: "DoorDash",              amount: "27.80",   category: "EXPENSE",      transaction_date: "2026-04-17" },
+  // Cash tips this month: one banked, the rest still cash on hand (demo for #23)
+  { id: "demo-t-278", name: "Cash",                  amount: "150.00",  category: "TIPS",         transaction_date: "2026-04-05" },
+  { id: "demo-t-279", name: "Cash",                  amount: "190.00",  category: "TIPS",         transaction_date: "2026-04-17" },
+  { id: "demo-t-280", name: "Cash",                  amount: "145.00",  category: "TIPS",         transaction_date: "2026-04-22" },
+  { id: "demo-t-281", name: "Cash",                  amount: "210.00",  category: "TIPS",         transaction_date: "2026-04-26" },
 ];
 
 const SEED_RECURRING = [
@@ -351,6 +357,14 @@ const SEED_PAYCHECKS = [
 // Starting balance so Estimated Cash / Upcoming Bills have a base to build from.
 const SEED_BALANCE_ANCHOR = { id: "demo-ba-1", current_balance: "2850.00", as_of_date: "2026-04-01" };
 
+// Cash deposits (lump sums banked), independent of individual tips. Seed tips
+// total ~$975; these leave ~$325 cash on hand awaiting deposit.
+const SEED_TIP_DEPOSITS = [
+  { id: "demo-td-1", amount: "200.00", deposit_date: "2026-02-14" },
+  { id: "demo-td-2", amount: "250.00", deposit_date: "2026-03-20" },
+  { id: "demo-td-3", amount: "200.00", deposit_date: "2026-04-15" },
+];
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 export function initDemo() {
   if (!localStorage.getItem(TX_KEY)) {
@@ -368,6 +382,9 @@ export function initDemo() {
   if (!localStorage.getItem(BA_KEY)) {
     localStorage.setItem(BA_KEY, JSON.stringify(SEED_BALANCE_ANCHOR));
   }
+  if (!localStorage.getItem(TD_KEY)) {
+    localStorage.setItem(TD_KEY, JSON.stringify(SEED_TIP_DEPOSITS));
+  }
 }
 
 export function clearDemo() {
@@ -377,6 +394,7 @@ export function clearDemo() {
   localStorage.removeItem(PC_KEY);
   localStorage.removeItem(BA_KEY);
   localStorage.removeItem(RES_KEY);
+  localStorage.removeItem(TD_KEY);
   localStorage.removeItem("demo");
 }
 
@@ -710,6 +728,15 @@ export const setBalanceAnchor = (data) => {
   return respond(anchor);
 };
 
+// Signed contribution of a transaction to the checking balance. Tips are cash
+// on hand, not money in checking, so they never count here - cash reaches
+// checking only via a deposit. Mirrors _balance_delta in the Python service.
+function balanceDelta(t) {
+  const amt = parseFloat(t.amount);
+  if (t.category === "TIPS") return 0;
+  return PAYCHECK_INCOME_CATEGORIES.has(t.category) ? amt : -amt;
+}
+
 function computeRunningBalance() {
   const raw = localStorage.getItem(BA_KEY);
   if (!raw) return null;
@@ -720,9 +747,14 @@ function computeRunningBalance() {
   // surfaced explicitly via the projected-income sum in getSpendableSurplus.
   const net = getAll(TX_KEY)
     .filter((t) => t.transaction_date >= anchor.as_of_date && t.transaction_date <= DEMO_TODAY)
-    .reduce((sum, t) => sum + (PAYCHECK_INCOME_CATEGORIES.has(t.category) ? parseFloat(t.amount) : -parseFloat(t.amount)), 0);
+    .reduce((sum, t) => sum + balanceDelta(t), 0);
 
-  return parseFloat(anchor.current_balance) + net;
+  // Cash deposits credit checking as transfers-in, over the same window.
+  const depositTotal = getAll(TD_KEY)
+    .filter((d) => d.deposit_date >= anchor.as_of_date && d.deposit_date <= DEMO_TODAY)
+    .reduce((sum, d) => sum + parseFloat(d.amount), 0);
+
+  return parseFloat(anchor.current_balance) + net + depositTotal;
 }
 
 export const getRunningBalance = () => {
@@ -965,5 +997,46 @@ export const getEstimatedSavings = () => {
     projected_income: projectedIncome.toFixed(2),
     projected_spending: projectedSpending.toFixed(2),
     committed_recurring: committedRecurring.toFixed(2),
+  });
+};
+
+// ── Tip deposits ──────────────────────────────────────────────────────────────
+// Lump-sum cash deposits into checking, logged separately from tip entries.
+// Cash on hand = total tips earned - total deposited.
+export const getTipDeposits = () =>
+  respond(getAll(TD_KEY).slice().sort((a, b) => b.deposit_date.localeCompare(a.deposit_date)));
+
+export const createTipDeposit = (data) => {
+  const items = getAll(TD_KEY);
+  const item = { id: nextId(), amount: String(parseFloat(data.amount).toFixed(2)), deposit_date: data.deposit_date };
+  saveAll(TD_KEY, [...items, item]);
+  return respond(item);
+};
+
+export const updateTipDeposit = (id, data) => {
+  let updated;
+  const next = getAll(TD_KEY).map((d) => {
+    if (d.id !== id) return d;
+    updated = { ...d, ...data, amount: data.amount != null ? String(parseFloat(data.amount).toFixed(2)) : d.amount };
+    return updated;
+  });
+  saveAll(TD_KEY, next);
+  return respond(updated);
+};
+
+export const deleteTipDeposit = (id) => {
+  saveAll(TD_KEY, getAll(TD_KEY).filter((d) => d.id !== id));
+  return Promise.resolve({ data: null, status: 204 });
+};
+
+export const getCashOnHand = () => {
+  const tipsEarned = getAll(TX_KEY)
+    .filter((t) => t.category === "TIPS")
+    .reduce((s, t) => s + parseFloat(t.amount), 0);
+  const tipsDeposited = getAll(TD_KEY).reduce((s, d) => s + parseFloat(d.amount), 0);
+  return respond({
+    cash_on_hand: (tipsEarned - tipsDeposited).toFixed(2),
+    tips_earned: tipsEarned.toFixed(2),
+    tips_deposited: tipsDeposited.toFixed(2),
   });
 };

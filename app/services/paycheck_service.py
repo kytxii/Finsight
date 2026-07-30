@@ -5,7 +5,7 @@ from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Iterator, NamedTuple
 import calendar
-from app.models import Paycheck, PaycheckSchedule, RecurringPayment, Transaction, BalanceAnchor, User
+from app.models import Paycheck, PaycheckSchedule, RecurringPayment, Transaction, BalanceAnchor, User, TipDeposit
 from app.models.paycheck_schedule import PaycheckFrequency
 from app.models.category import Category
 from app.schemas import CreatePaycheckSchedule, UpdatePaycheckSchedule, UpdatePaycheckAmount, SetBalanceAnchor
@@ -333,6 +333,18 @@ async def set_balance_anchor(data: SetBalanceAnchor, current_user: UUID, db: Asy
     return anchor
 
 
+def _balance_delta(t: Transaction) -> Decimal:
+    """Signed contribution of a transaction to the checking running balance.
+
+    Tips are cash on hand, not money in checking, so they never count here -
+    cash reaches checking only via a TipDeposit. Other income adds, expenses
+    subtract.
+    """
+    if t.category == Category.TIPS:
+        return Decimal("0")
+    return t.amount if t.category in INCOME_CATEGORIES else -t.amount
+
+
 async def _get_running_balance(current_user: UUID, db: AsyncSession) -> Decimal | None:
     anchor = await get_balance_anchor(current_user, db)
     if anchor is None:
@@ -346,12 +358,17 @@ async def _get_running_balance(current_user: UUID, db: AsyncSession) -> Decimal 
         Transaction.transaction_date >= anchor.as_of_date,
         Transaction.transaction_date <= date.today(),
     ))).all()
+    net = sum((_balance_delta(t) for t in transactions), start=Decimal("0"))
 
-    net = sum(
-        (t.amount if t.category in INCOME_CATEGORIES else -t.amount for t in transactions),
-        start=Decimal("0"),
-    )
-    return anchor.current_balance + net
+    # Cash deposits credit checking as transfers-in, over the same window.
+    deposits = (await db.scalars(select(TipDeposit).where(
+        TipDeposit.created_by == current_user,
+        TipDeposit.deposit_date >= anchor.as_of_date,
+        TipDeposit.deposit_date <= date.today(),
+    ))).all()
+    deposit_total = sum((d.amount for d in deposits), start=Decimal("0"))
+
+    return anchor.current_balance + net + deposit_total
 
 
 class RunningBalanceResult(NamedTuple):

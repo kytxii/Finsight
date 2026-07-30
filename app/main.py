@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from app.routes import transaction, users, auth, recurring_payment, paycheck
+from app.routes import transaction, users, auth, recurring_payment, paycheck, tip_deposit
 from app.core.config import settings
 from app.core.limiter import limiter
 
@@ -32,3 +32,4 @@ app.include_router(users.router)
 app.include_router(auth.router)
 app.include_router(recurring_payment.router)
 app.include_router(paycheck.router)
+app.include_router(tip_deposit.router)

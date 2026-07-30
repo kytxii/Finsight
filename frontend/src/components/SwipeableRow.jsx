@@ -1,6 +1,4 @@
-import { useEffect, useRef } from "react";
-
-const REVEAL_W = 130;
+import { useEffect, useRef, useState } from "react";
 
 export default function SwipeableRow({
   id,
@@ -26,6 +24,10 @@ export default function SwipeableRow({
   const resolvedEditColor = editColor ?? text;
   const resolvedDeleteBg = deleteBg ?? fallbackBg;
   const resolvedDeleteColor = deleteColor ?? "var(--category-expense)";
+  // Reveal one lane per action, so a delete-only row (no onEdit) shows a single
+  // narrower action instead of an empty half.
+  const hasEdit = typeof onEdit === "function";
+  const REVEAL_W = hasEdit ? 130 : 65;
   const contentRef = useRef(null);
   const startXRef = useRef(0);
   const startYRef = useRef(0);
@@ -33,6 +35,10 @@ export default function SwipeableRow({
   const currentOffsetRef = useRef(0);
   const movedRef = useRef(false);
   const isOpen = openId === id;
+  // Only mount the colored action buttons while dragging or open, so they never
+  // bleed at the enclosing card's rounded corners when the row is at rest.
+  const [dragging, setDragging] = useState(false);
+  const showActions = isOpen || dragging;
 
   const setTransform = (x) => {
     currentOffsetRef.current = x;
@@ -80,17 +86,19 @@ export default function SwipeableRow({
     };
     el.addEventListener("touchmove", onMove, { passive: false });
     return () => el.removeEventListener("touchmove", onMove);
-  }, []);
+  }, [REVEAL_W]);
 
   const handleTouchStart = (e) => {
     startXRef.current = e.touches[0].clientX;
     startYRef.current = e.touches[0].clientY;
     startOffsetRef.current = currentOffsetRef.current;
     movedRef.current = false;
+    setDragging(true);
     if (contentRef.current) contentRef.current.style.transition = "none";
   };
 
   const handleTouchEnd = () => {
+    setDragging(false);
     if (!movedRef.current) return;
     snapTo(currentOffsetRef.current < -REVEAL_W / 2 ? -REVEAL_W : 0);
   };
@@ -104,6 +112,7 @@ export default function SwipeableRow({
         zIndex: isOpen ? 10 : "auto",
       }}
     >
+      {showActions && (
       <div
         style={{
           position: "absolute",
@@ -114,6 +123,7 @@ export default function SwipeableRow({
           display: "flex",
         }}
       >
+        {hasEdit && (
         <button
           onClick={() => {
             snapTo(0);
@@ -145,6 +155,7 @@ export default function SwipeableRow({
             <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
           </svg>
         </button>
+        )}
         <button
           onClick={() => {
             snapTo(0);
@@ -179,6 +190,7 @@ export default function SwipeableRow({
           </svg>
         </button>
       </div>
+      )}
       <div
         ref={contentRef}
         onTouchStart={handleTouchStart}
