@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import client from "../api/client";
 import { HOME_BG, HOME_SURFACE, HOME_TEXT, HOME_MUTED, HOME_DIVIDER } from "../components/categoryVisuals";
 import { LOADING_SYMBOLS as SYMBOLS, LOADING_PHRASES as PHRASES } from "../utils/authFlavor";
+import { Wordmark } from "../components/Logo";
 
 // Dark-only, pinned to the app's jade/teal theme (matches Login + the mobile
 // dashboard). No light/dark branching on these pages by design.
@@ -171,8 +172,8 @@ export default function Register() {
           }}
         >
           <div style={{ marginBottom: "26px" }}>
-            <h1 style={{ margin: 0, fontSize: "28px", fontWeight: 800, letterSpacing: "-0.5px", color: HOME_TEXT }}>Finsight</h1>
-            <p style={{ margin: "6px 0 0", fontSize: "15px", color: HOME_MUTED }}>Create your account</p>
+            <Wordmark size={32} textSize={28} />
+            <p style={{ margin: "10px 0 0", fontSize: "15px", color: HOME_MUTED }}>Create your account</p>
           </div>
 
           <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "18px" }}>

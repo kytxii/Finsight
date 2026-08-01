@@ -6,6 +6,8 @@ import { CATEGORY_CONFIG, fmt } from "../utils/finance";
 import RecurringPaymentsModal from "./RecurringPaymentsModal";
 import AccountPanel from "./AccountPanel";
 import PaychecksPanel from "./PaychecksPanel";
+import { Wordmark } from "./Logo";
+import { HOME_SURFACE, HOME_TEXT, HOME_MUTED, HOME_DIVIDER, FIELD, ACCENT } from "./categoryVisuals";
 
 export default function Navbar({ transactions = [], onSelectTransaction, onDeleteRecurringPayment, onSaveRecurringPayment, onPaycheckSaved, onCommand }) {
   const dark = useTheme();
@@ -37,11 +39,13 @@ export default function Navbar({ transactions = [], onSelectTransaction, onDelet
     return () => { document.body.style.overflow = previousOverflow; };
   }, [drawerOpen]);
 
-  const bg     = dark ? "var(--dark-surface)" : "var(--light-surface)";
-  const border = dark ? "var(--dark-border)"  : "var(--light-border)";
-  const text   = dark ? "var(--dark-text)"    : "var(--light-text)";
-  const input  = dark ? "var(--dark-bg)"      : "var(--light-bg)";
-  const muted  = `color-mix(in srgb, ${text} 50%, transparent)`;
+  // Pinned to the app's jade/teal dark theme (matches the auth pages and
+  // mobile dashboard), independent of the light/dark toggle — see #50.
+  const bg     = HOME_SURFACE;
+  const border = HOME_DIVIDER;
+  const text   = HOME_TEXT;
+  const input  = FIELD;
+  const muted  = HOME_MUTED;
 
   const handleQueryChange = (e) => {
     const val = e.target.value;
@@ -110,16 +114,7 @@ export default function Navbar({ transactions = [], onSelectTransaction, onDelet
         style={{ backgroundColor: bg, borderColor: border, color: text }}
       >
         <div className="px-6 py-4 flex items-center gap-4">
-          <span
-            className="text-4xl font-bold bg-clip-text text-transparent shrink-0"
-            style={{
-              backgroundImage: dark
-                ? "linear-gradient(to right, #ffffff, #d1d5db, #9ca3af)"
-                : "linear-gradient(to right, #111827, #374151, #6b7280)",
-            }}
-          >
-            Finsight
-          </span>
+          <Wordmark size={32} textSize={26} />
 
           {/* Search */}
           <div className="flex-1 flex justify-center" ref={containerRef}>
@@ -128,10 +123,11 @@ export default function Navbar({ transactions = [], onSelectTransaction, onDelet
                 value={query}
                 onChange={handleQueryChange}
                 onKeyDown={handleKeyDown}
-                onFocus={() => query && setOpen(true)}
+                onFocus={(e) => { query && setOpen(true); e.target.style.borderColor = ACCENT; }}
+                onBlur={(e) => { e.target.style.borderColor = border; }}
                 placeholder="Search transactions..."
                 className="w-full rounded-xl px-4 py-2 text-sm border"
-                style={{ backgroundColor: input, borderColor: border, color: text, outline: "none" }}
+                style={{ backgroundColor: input, borderColor: border, color: text, outline: "none", transition: "border-color 0.15s" }}
               />
 
               {/* Dropdown */}

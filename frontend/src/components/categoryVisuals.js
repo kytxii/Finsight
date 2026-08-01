@@ -27,6 +27,13 @@ export const HOME_INCOME = "#52b757";
 export const HOME_EXPENSE = "#ef5350";
 export const HOME_ACCENT = "#4493f8";
 
+// Jade/teal accent — shared with the auth pages (Login/Register) and any other
+// UI pinned to the dark theme regardless of the app's light/dark toggle.
+export const ACCENT = "#14b8a6";       // teal — primary action + focus
+export const ACCENT_TEXT = "#04140f";  // near-black text on a jade fill
+export const ACCENT_DEEP = "#0f766e";  // deep teal for ambient glow
+export const FIELD = "#08131a";        // input background, a step below the surface
+
 export const TILE_COLOR = {
   INCOME: "#52b757",
   EXPENSE: "#ef5350",
