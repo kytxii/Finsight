@@ -45,7 +45,7 @@ import MobileTips from "../components/MobileTips";
 import MobilePaychecks from "../components/MobilePaychecks";
 import MobileRecurring from "../components/MobileRecurring";
 import SwipeableRow from "../components/SwipeableRow";
-import { HOME_BG, HOME_TEXT, HOME_MUTED, HOME_DIVIDER, HOME_SURFACE, HOME_INCOME } from "../components/categoryVisuals";
+import { HOME_BG, HOME_TEXT, HOME_MUTED, HOME_DIVIDER, HOME_SURFACE, HOME_INCOME, ACCENT } from "../components/categoryVisuals";
 
 // ── Icons ────────────────────────────────────────────────────────────────────
 
@@ -1595,7 +1595,7 @@ export default function MobileDashboard() {
         style={{ paddingBottom: "max(7px, calc(env(safe-area-inset-bottom, 0px) / 2))" }}
       >
         <div
-          className="relative flex items-center gap-1 p-1.5 rounded-full pointer-events-auto w-full"
+          className="p-1.5 rounded-full pointer-events-auto w-full"
           style={{
             backgroundColor: "rgba(255,255,255,0.05)",
             backdropFilter: "blur(28px) saturate(200%)",
@@ -1604,6 +1604,14 @@ export default function MobileDashboard() {
             boxShadow: "0 10px 34px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.3), inset 0 -1px 0 rgba(255,255,255,0.04)",
           }}
         >
+          {/* Padding lives on the outer glass shell above; this inner element
+              carries no box-model offsets of its own, so the absolutely
+              positioned highlight slot below shares the exact same coordinate
+              space as the flex buttons (position:absolute resolves against
+              the padding box of the nearest positioned ancestor — if that
+              ancestor also had the padding, the slot's 0/100% math would be
+              measured against a wider box than the buttons actually occupy). */}
+          <div className="relative flex items-center w-full">
           {(() => {
             const items = [
               { id: "dashboard", label: "Dashboard", Icon: IconDashboard },
@@ -1629,7 +1637,7 @@ export default function MobileDashboard() {
                     }}
                   >
                     <div style={{
-                      position: "absolute", inset: "6px 3px",
+                      position: "absolute", inset: "4px 3px",
                       borderRadius: 999,
                       backgroundColor: "rgba(255,255,255,0.1)",
                     }} />
@@ -1655,7 +1663,7 @@ export default function MobileDashboard() {
                       key={id}
                       onClick={() => { setNavTab(id); setCategoryView(null); }}
                       className="relative z-10 flex-1 flex flex-col items-center justify-center gap-0.5 py-2.5 rounded-full transition-colors duration-200 cursor-pointer active:scale-95"
-                      style={{ color: active ? "#4493f8" : "#8e8e93" }}
+                      style={{ color: active ? ACCENT : "#8e8e93" }}
                     >
                       <Icon size={20} />
                       <span className="text-[10px] font-semibold">{label}</span>
@@ -1665,6 +1673,7 @@ export default function MobileDashboard() {
               </>
             );
           })()}
+          </div>
         </div>
       </nav>
 
