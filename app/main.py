@@ -14,7 +14,8 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler) # pyr
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.FRONTEND_URL, settings.DEV_URL],
+    allow_origin_regex=r"https://finsight-.*\.vercel\.app",
+    allow_origins=[settings.FRONTEND_URL] if settings.FRONTEND_URL else [],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
