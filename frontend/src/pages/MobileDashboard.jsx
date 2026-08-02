@@ -36,6 +36,7 @@ import { useTheme } from "../hooks/useTheme";
 import { useAuth } from "../context/AuthContext";
 import { PRESETS, getPresetRange } from "../components/DateRangeFilter";
 import { getToday } from "../utils/time";
+import { errorMessage } from "../utils/errors";
 import Footer from "../components/Footer";
 import AccountPanel from "../components/AccountPanel";
 import OverviewBreakdownSheet from "../components/OverviewBreakdownSheet";
@@ -463,17 +464,21 @@ export default function MobileDashboard() {
     setQuickLoading(true);
     try {
       await createTransaction({
-        name: quickForm.name,
+        name: quickCat === "TIPS" ? "Cash" : quickForm.name,
         amount: parseFloat(quickForm.amount),
         transaction_date: quickForm.transaction_date,
         category: quickCat,
       });
-      setQuickForm((f) => ({ ...f, name: "", amount: "" }));
+      setQuickForm((f) => ({
+        ...f,
+        name: quickCat === "TIPS" ? "Cash" : "",
+        amount: "",
+      }));
       setEntrySheetOpen(false);
       setAddSheetOpen(false);
       refresh();
     } catch (err) {
-      setQuickError(err.response?.data?.detail ?? "Something went wrong");
+      setQuickError(errorMessage(err));
     } finally {
       setQuickLoading(false);
     }
@@ -506,7 +511,7 @@ export default function MobileDashboard() {
       setBatchSheetOpen(false);
       refresh();
     } catch (err) {
-      setBatchError(err.response?.data?.detail ?? "Something went wrong");
+      setBatchError(errorMessage(err));
     } finally {
       setBatchLoading(false);
     }
