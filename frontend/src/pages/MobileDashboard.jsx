@@ -37,6 +37,9 @@ import { useAuth } from "../context/AuthContext";
 import { PRESETS, getPresetRange } from "../components/DateRangeFilter";
 import { getToday } from "../utils/time";
 import { errorMessage } from "../utils/errors";
+import MobilePageSlide from "../components/MobilePageSlide";
+import MobileScreen from "../components/MobileScreen";
+import { useSheetDrag } from "../hooks/useSheetDrag";
 import Footer from "../components/Footer";
 import AccountPanel from "../components/AccountPanel";
 import OverviewBreakdownSheet from "../components/OverviewBreakdownSheet";
@@ -336,6 +339,18 @@ export default function MobileDashboard() {
   // ── Navigation
   const [navTab, setNavTab] = useState("dashboard");
   const [categoryView, setCategoryView] = useState(null);
+  const mainRef = useRef(null);
+
+  // Slide direction is derived from these. Tabs sit at whole numbers in bottom-nav
+  // order; a category detail sits just past the dashboard it was pushed from, so
+  // pushing reads as forward and going back reads as back. (#46)
+  const NAV_ORDER = { dashboard: 0, analytics: 1, ai: 2 };
+  const pageKey = categoryView ? `category:${categoryView}` : navTab;
+  const pageOrder = categoryView ? NAV_ORDER.dashboard + 0.5 : NAV_ORDER[navTab] ?? 0;
+
+  useEffect(() => {
+    mainRef.current?.scrollTo({ top: 0 });
+  }, [pageKey]);
   const [addSheetOpen, setAddSheetOpen] = useState(false);
   const [entrySheetOpen, setEntrySheetOpen] = useState(false);
 
@@ -542,33 +557,13 @@ export default function MobileDashboard() {
   const debounceRef = useRef(null);
   const searchContainerRef = useRef(null);
   const analyticsTableRef = useRef(null);
-  const touchStartY = useRef(0);
-  const dragYRef = useRef(0);
-  const [dragY, setDragY] = useState(0);
-
-  function onSheetTouchStart(e) {
-    touchStartY.current = e.touches[0].clientY;
-    dragYRef.current = 0;
-    setDragY(0);
-  }
-
-  function onSheetTouchMove(e) {
-    const delta = e.touches[0].clientY - touchStartY.current;
-    if (delta > 0) {
-      dragYRef.current = delta;
-      setDragY(delta);
-    }
-  }
-
-  function onSheetTouchEnd() {
-    if (dragYRef.current > 80) {
-      setAddSheetOpen(false);
-      setEntrySheetOpen(false);
-      setBatchSheetOpen(false);
-    }
-    dragYRef.current = 0;
-    setDragY(0);
-  }
+  const { dragY, handlers: sheetDragHandlers } = useSheetDrag(() => {
+    setAddSheetOpen(false);
+    setEntrySheetOpen(false);
+    setBatchSheetOpen(false);
+  });
+  const { onTouchStart: onSheetTouchStart, onTouchMove: onSheetTouchMove, onTouchEnd: onSheetTouchEnd } =
+    sheetDragHandlers;
 
   const handleQueryChange = (e) => {
     const val = e.target.value;
@@ -914,10 +909,12 @@ export default function MobileDashboard() {
 
       {/* ── Main content ── */}
       <main
+        ref={mainRef}
         className="flex-1 px-4 pb-28 space-y-4 overflow-y-auto"
         style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 1rem)", WebkitOverflowScrolling: "touch" }}
       >
         <style>{`@keyframes skel-shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }`}</style>
+        <MobilePageSlide pageKey={pageKey} order={pageOrder} layerClassName="space-y-4">
         {/* Dashboard tab */}
         {navTab === "dashboard" && (
           <>
@@ -1592,6 +1589,7 @@ export default function MobileDashboard() {
             </div>
           </div>
         )}
+        </MobilePageSlide>
       </main>
 
       {/* ── Bottom nav — full-width liquid-glass bar, ported from the Cranberry project's BottomNav ── */}
@@ -2295,11 +2293,7 @@ export default function MobileDashboard() {
       />
 
       {/* ── Recurring payments overlay ── */}
-      {recurringOpen && (
-        <div
-          className="fixed inset-0 z-50 flex flex-col"
-          style={{ backgroundColor: HOME_BG, color: HOME_TEXT }}
-        >
+      <MobileScreen open={recurringOpen} style={{ backgroundColor: HOME_BG, color: HOME_TEXT }}>
           <div
             className="px-4 pb-3 flex items-center justify-between shrink-0"
             style={{ borderBottom: `1px solid ${HOME_DIVIDER}`, paddingTop: "calc(env(safe-area-inset-top, 0px) + 14px)" }}
@@ -2333,15 +2327,10 @@ export default function MobileDashboard() {
             </button>
           </div>
           <MobileRecurring onSaved={refresh} openAddSignal={recurringAddSignal} />
-        </div>
-      )}
+      </MobileScreen>
 
       {/* ── Paychecks overlay ── */}
-      {paychecksOpen && (
-        <div
-          className="fixed inset-0 z-50 flex flex-col"
-          style={{ backgroundColor: HOME_BG, color: HOME_TEXT }}
-        >
+      <MobileScreen open={paychecksOpen} style={{ backgroundColor: HOME_BG, color: HOME_TEXT }}>
           <div
             className="px-4 pb-3 flex items-center shrink-0"
             style={{ borderBottom: `1px solid ${HOME_DIVIDER}`, paddingTop: "calc(env(safe-area-inset-top, 0px) + 14px)" }}
@@ -2364,8 +2353,7 @@ export default function MobileDashboard() {
             </div>
           </div>
           <MobilePaychecks onSaved={refresh} />
-        </div>
-      )}
+      </MobileScreen>
 
       {/* ── Drawer (menu + account as sliding track) ── */}
       <div

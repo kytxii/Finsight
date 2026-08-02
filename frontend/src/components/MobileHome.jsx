@@ -413,7 +413,22 @@ export default function MobileHome({
           the shared <main> wrapper in MobileDashboard, so this only needs
           to cover the topbar's own height. */}
       <div style={{ height: 54 }} />
-      {/* Topbar - floats fixed over the content, no shared background behind the 3 buttons */}
+      {/* The controls pop in only after the page slide has finished. The topbar is
+          position: fixed, and while the slide animation runs the transformed page
+          layer is its containing block, so it resolves against the layer's inset box
+          instead of the viewport. That reverts the instant the transform is removed,
+          which reads as a 16px jump. Holding the controls scaled down until then
+          hides the switch. Delay must stay >= the slide duration in
+          MobilePageSlide. (#46) */}
+      <style>{`
+        @keyframes home-ctl-in {
+          from { opacity: 0; transform: scale(0.55); }
+          to   { opacity: 1; transform: scale(1); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .home-ctl { animation: none !important; }
+        }
+      `}</style>
       <div
         style={{
           position: "fixed",
@@ -429,7 +444,9 @@ export default function MobileHome({
         <button
           onClick={onOpenAccount}
           aria-label="Open account"
+          className="home-ctl"
           style={{
+            animation: "home-ctl-in 220ms cubic-bezier(0.34, 1.56, 0.64, 1) 240ms backwards",
             width: 40,
             height: 40,
             borderRadius: "50%",
@@ -470,7 +487,14 @@ export default function MobileHome({
             )}
           </div>
         </button>
-        <div style={{ display: "flex", gap: 11 }}>
+        <div
+          className="home-ctl"
+          style={{
+            display: "flex",
+            gap: 11,
+            animation: "home-ctl-in 220ms cubic-bezier(0.34, 1.56, 0.64, 1) 300ms backwards",
+          }}
+        >
           <button
             onClick={onOpenAdd}
             aria-label="Add transaction"
