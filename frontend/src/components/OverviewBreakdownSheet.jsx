@@ -1,5 +1,9 @@
+import { useEffect, useState } from "react";
 import { fmt, CATEGORY_CONFIG } from "../utils/finance";
+import { useSheetDrag, SHEET_EASE } from "../hooks/useSheetDrag";
 import { HOME_TEXT, HOME_MUTED, HOME_SURFACE, HOME_DIVIDER, HOME_INCOME, HOME_EXPENSE, TILE_COLOR } from "./categoryVisuals";
+
+const EXIT_MS = 260; // matches the breakdown-up entry duration
 
 // Bottom sheet explaining how a single overview-card stat was derived. Opened by
 // tapping a cell on the Home overview card (#42). `cell` is the tapped stat key
@@ -150,6 +154,30 @@ function SavingsBody({ savings, status, savingsTxns }) {
 }
 
 export default function OverviewBreakdownSheet({ cell, onClose, safeToSpend, safeToSpendStatus, savings, savingsStatus, transactions = [] }) {
+  // Closing is staged rather than immediate: the parent unmounts this component
+  // the moment onClose fires, which would cut the exit animation off. Hold it for
+  // one animation, then hand control back. (#46)
+  const [closing, setClosing] = useState(false);
+  const requestClose = () => setClosing(true);
+
+  // This component is mounted permanently by MobileDashboard and self-guards on
+  // `cell` below, so `closing` does not reset itself between openings. Without
+  // this it stays true after the first close and every later open renders the
+  // sheet off-screen behind a transparent, full-screen backdrop that swallows
+  // every click.
+  const [prevCell, setPrevCell] = useState(cell);
+  if (prevCell !== cell) {
+    setPrevCell(cell);
+    if (cell) setClosing(false);
+  }
+
+  useEffect(() => {
+    if (!closing) return;
+    const timer = setTimeout(onClose, EXIT_MS);
+    return () => clearTimeout(timer);
+  }, [closing, onClose]);
+
+  const { dragY, dragging, handlers } = useSheetDrag(requestClose);
   if (!cell) return null;
 
   const savingsTxns = savings
@@ -160,8 +188,12 @@ export default function OverviewBreakdownSheet({ cell, onClose, safeToSpend, saf
 
   return (
     <div
-      onClick={onClose}
-      style={{ position: "fixed", inset: 0, zIndex: 60, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "flex-end" }}
+      onClick={requestClose}
+      style={{
+        position: "fixed", inset: 0, zIndex: 60, display: "flex", alignItems: "flex-end",
+        background: closing ? "rgba(0,0,0,0)" : "rgba(0,0,0,0.55)",
+        transition: `background ${EXIT_MS}ms ease`,
+      }}
     >
       <style>{`@keyframes breakdown-up { from { transform: translateY(100%); } to { transform: translateY(0); } }`}</style>
       <div
@@ -170,21 +202,30 @@ export default function OverviewBreakdownSheet({ cell, onClose, safeToSpend, saf
           width: "100%", maxHeight: "82vh", overflowY: "auto", overscrollBehavior: "contain",
           background: HOME_SURFACE, borderTopLeftRadius: 22, borderTopRightRadius: 22,
           padding: "10px 18px calc(env(safe-area-inset-bottom, 0px) + 24px)",
-          animation: "breakdown-up 0.26s cubic-bezier(0.32, 0.72, 0, 1)",
+          // Exit rides a transition rather than a keyframe so it starts from
+          // wherever the sheet currently sits. Releasing a drag past the threshold
+          // resets dragY to 0 in the same batch as closing, but the transition
+          // interpolates from the last painted offset, so there is no snap back
+          // to rest before it slides away.
+          transform: closing ? "translateY(100%)" : dragging ? `translateY(${dragY}px)` : undefined,
+          // Skip the entry animation once a drag or close is under way, or it
+          // restarts mid-gesture and the sheet jumps back to the bottom.
+          animation: dragging || closing ? undefined : "breakdown-up 0.26s cubic-bezier(0.32, 0.72, 0, 1)",
+          transition: dragging ? "none" : `transform ${EXIT_MS}ms ${SHEET_EASE}`,
         }}
       >
-        <div style={{ display: "flex", justifyContent: "center", padding: "4px 0 12px" }}>
-          <div style={{ width: 38, height: 4, borderRadius: 999, background: "rgba(255,255,255,0.18)" }} />
-        </div>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, letterSpacing: "-0.4px", color: HOME_TEXT }}>{TITLES[cell]}</h2>
-          <button
-            onClick={onClose}
-            aria-label="Close"
-            style={{ background: "rgba(255,255,255,0.08)", border: "none", color: HOME_MUTED, width: 30, height: 30, borderRadius: "50%", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
-          >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
-          </button>
+        {/* Drag region spans the notch and the title row rather than the notch
+            alone, so the gesture does not demand a precise hit. It stops short of
+            the panel body, which is the scroll container (overflowY above) and
+            would fight the drag. Close still works: these handlers never call
+            preventDefault, so a tap that does not move falls through as a click. */}
+        <div {...handlers} style={{ touchAction: "none" }}>
+          <div style={{ display: "flex", justifyContent: "center", padding: "4px 0 12px", cursor: "grab" }}>
+            <div style={{ width: 38, height: 4, borderRadius: 999, background: "rgba(255,255,255,0.18)" }} />
+          </div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+            <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, letterSpacing: "-0.4px", color: HOME_TEXT }}>{TITLES[cell]}</h2>
+          </div>
         </div>
 
         {cell === "balance" && <BalanceBody />}
