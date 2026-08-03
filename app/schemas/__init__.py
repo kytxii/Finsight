@@ -13,3 +13,10 @@ from .paycheck import (
     SetBalanceAnchor,
     BalanceAnchorResponse,
 )
+from .import_profile import (
+    ImportPreviewRow,
+    ImportPreviewResponse,
+    ImportCommitRow,
+    ImportCommitRequest,
+    ImportCommitResponse,
+)

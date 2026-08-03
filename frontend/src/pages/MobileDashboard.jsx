@@ -49,6 +49,7 @@ import MobileTips from "../components/MobileTips";
 import MobilePaychecks from "../components/MobilePaychecks";
 import MobileRecurring from "../components/MobileRecurring";
 import SwipeableRow from "../components/SwipeableRow";
+import ImportPanel from "../components/ImportPanel";
 import { HOME_BG, HOME_TEXT, HOME_MUTED, HOME_DIVIDER, HOME_SURFACE, HOME_INCOME, ACCENT } from "../components/categoryVisuals";
 
 // ── Icons ────────────────────────────────────────────────────────────────────
@@ -327,7 +328,7 @@ const newBatchRow = () => ({
 
 export default function MobileDashboard() {
   const dark = useTheme();
-  const { logout, user } = useAuth();
+  const { logout, user, isDemo } = useAuth();
   const navigate = useNavigate();
 
   const bg = dark ? "var(--dark-bg)" : "var(--light-bg)";
@@ -464,6 +465,8 @@ export default function MobileDashboard() {
   const [deletingKeys, setDeletingKeys] = useState([]);
   const [enteringKey, setEnteringKey] = useState(null);
   const batchListRef = useRef(null);
+  const [importSheetOpen, setImportSheetOpen] = useState(false);
+  const [importSaveState, setImportSaveState] = useState({ isDirty: false, isSaving: false, saveStatus: "idle", validCount: 0, onSave: null });
 
   useEffect(() => {
     if (!batchSheetOpen) {
@@ -762,11 +765,11 @@ export default function MobileDashboard() {
 
   useEffect(() => {
     document.body.style.overflow =
-      addSheetOpen || entrySheetOpen || batchSheetOpen ? "hidden" : "";
+      addSheetOpen || entrySheetOpen || batchSheetOpen || importSheetOpen ? "hidden" : "";
     return () => {
       document.body.style.overflow = "";
     };
-  }, [addSheetOpen, entrySheetOpen, batchSheetOpen]);
+  }, [addSheetOpen, entrySheetOpen, batchSheetOpen, importSheetOpen]);
 
   const [keyboardOpen, setKeyboardOpen] = useState(false);
   useEffect(() => {
@@ -1780,11 +1783,22 @@ export default function MobileDashboard() {
           </div>
         </button>
         <button
-          className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl border text-left cursor-not-allowed opacity-50"
-          style={{ backgroundColor: bg, borderColor: border, color: text }}
-          disabled
+          onClick={() => {
+            setAddSheetOpen(false);
+            setImportSheetOpen(true);
+          }}
+          disabled={isDemo()}
+          title={isDemo() ? "Unavailable in demo mode" : undefined}
+          className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl border text-left transition-transform duration-150 ${isDemo() ? "cursor-not-allowed" : "cursor-pointer active:scale-[0.97]"}`}
+          style={{
+            backgroundColor: bg,
+            backgroundImage: isDemo() ? `repeating-linear-gradient(-45deg, transparent, transparent 4px, color-mix(in srgb, ${text} 6%, transparent) 4px, color-mix(in srgb, ${text} 6%, transparent) 6px)` : undefined,
+            borderColor: border,
+            color: text,
+            opacity: isDemo() ? 0.45 : 1,
+          }}
         >
-          <span style={{ color: muted }}>
+          <span style={{ color: "var(--category-income)" }}>
             <svg
               width="18"
               height="18"
@@ -1803,7 +1817,7 @@ export default function MobileDashboard() {
           <div>
             <p className="text-sm font-semibold">Import</p>
             <p className="text-xs" style={{ color: muted }}>
-              PDF, CSV — coming soon
+              CSV from your bank
             </p>
           </div>
         </button>
@@ -2267,6 +2281,87 @@ export default function MobileDashboard() {
             + Add row
           </button>
         </div>
+      </div>
+
+      {/* ── Import overlay ── */}
+      <div
+        className="fixed inset-0 z-40"
+        style={{
+          backgroundColor: "rgba(0,0,0,0.5)",
+          opacity: importSheetOpen ? 1 : 0,
+          pointerEvents: importSheetOpen ? "auto" : "none",
+          transition: "opacity 250ms ease",
+        }}
+        onClick={() => setImportSheetOpen(false)}
+      />
+
+      {/* ── Import sheet ── */}
+      <div
+        className="fixed bottom-0 left-0 right-0 z-50 rounded-t-2xl border-t border-x flex flex-col"
+        style={{
+          backgroundColor: surface,
+          borderColor: border,
+          maxHeight: "85dvh",
+          overflow: "hidden",
+          paddingBottom: "env(safe-area-inset-bottom)",
+          transform: `translateY(${importSheetOpen ? dragY : 100}${importSheetOpen && dragY > 0 ? "" : "%"})`,
+          transition:
+            dragY > 0
+              ? "none"
+              : "transform 300ms cubic-bezier(0.32, 0.72, 0, 1)",
+        }}
+      >
+        <div
+          className="flex justify-center py-3 shrink-0"
+          onTouchStart={onSheetTouchStart}
+          onTouchMove={onSheetTouchMove}
+          onTouchEnd={onSheetTouchEnd}
+        >
+          <div
+            className="w-10 h-1 rounded-full"
+            style={{ backgroundColor: border }}
+          />
+        </div>
+        <div
+          className="px-5 pb-3 flex items-center justify-between border-b shrink-0"
+          style={{ borderColor: border }}
+        >
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setImportSheetOpen(false)}
+              className="p-1 rounded-lg cursor-pointer active:scale-90 transition-transform duration-150"
+              style={{ color: muted }}
+            >
+              <IconChevronLeft />
+            </button>
+            <p className="text-sm font-semibold" style={{ color: text }}>
+              Import
+            </p>
+          </div>
+          <button
+            onClick={importSaveState.onSave}
+            disabled={!importSaveState.isDirty || importSaveState.isSaving}
+            className="px-4 py-1.5 rounded-xl text-xs font-bold border cursor-pointer disabled:opacity-50 active:scale-95 transition-transform duration-150"
+            style={{
+              color: "var(--category-income)",
+              borderColor: "var(--category-income)",
+              backgroundColor:
+                "color-mix(in srgb, var(--category-income) 12%, transparent)",
+            }}
+          >
+            {importSaveState.isSaving
+              ? "Importing…"
+              : importSaveState.validCount
+                ? `Import ${importSaveState.validCount} transaction${importSaveState.validCount === 1 ? "" : "s"}`
+                : "Import"}
+          </button>
+        </div>
+        <ImportPanel
+          active={importSheetOpen}
+          onSaveStateChange={setImportSaveState}
+          onSaved={(newTxs) => { setTransactions(prev => [...(newTxs || []), ...prev]); setImportSheetOpen(false); }}
+          onCancel={() => setImportSheetOpen(false)}
+        />
       </div>
 
       {/* ── Drawer overlay ── */}

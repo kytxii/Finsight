@@ -222,6 +222,10 @@ alembic/versions/*.pyc
 .DS_Store
 Thumbs.db
 
+# Real bank statement exports dropped in root for testing import — never commit (PII)
+/*.csv
+/*.pdf
+
 # Claude Code
 CLAUDE.md
 .claude/settings.local.json

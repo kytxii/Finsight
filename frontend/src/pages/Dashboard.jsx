@@ -28,6 +28,7 @@ import {
 import { getNow, getToday } from "../utils/time";
 import Navbar from "../components/Navbar";
 import BatchAddPanel from "../components/BatchAddPanel";
+import ImportPanel from "../components/ImportPanel";
 import { PRESETS, getPresetRange } from "../components/DateRangeFilter";
 import SummaryCard from "../components/SummaryCard";
 import ChartCard from "../components/ChartCard";
@@ -53,13 +54,14 @@ export default function Dashboard() {
   const [devLastFetch, setDevLastFetch] = useState(null);
   const devForceErrorRef = useRef(false);
   const [activeTab, setActiveTab] = useState("ALL");
-  const [addMode, setAddMode] = useState(null); // null | "menu" | "single" | "batch"
+  const [addMode, setAddMode] = useState(null); // null | "menu" | "single" | "batch" | "import"
   const addOpen = addMode !== null;
   const addToday = getToday();
   const [addForm, setAddForm] = useState({ name: "", amount: "", category: "EXPENSE", transaction_date: addToday });
   const [addLoading, setAddLoading] = useState(false);
   const [addError, setAddError] = useState("");
   const [batchSaveState, setBatchSaveState] = useState({ isDirty: false, isSaving: false, saveStatus: "idle", onSave: null });
+  const [importSaveState, setImportSaveState] = useState({ isDirty: false, isSaving: false, saveStatus: "idle", validCount: 0, onSave: null });
   const [editingTransaction, setEditingTransaction] = useState(null);
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(10);
@@ -459,7 +461,7 @@ export default function Dashboard() {
   }, [filtered, perPage, typeFilter, sortColumn, sortDir]);
 
   useEffect(() => {
-    if (!addOpen || addMode === "batch") return;
+    if (!addOpen || addMode === "batch" || addMode === "import") return;
     function handleOutsideClick(e) {
       if (addFormRef.current && !addFormRef.current.contains(e.target)) {
         setAddMode(null);
@@ -527,7 +529,7 @@ export default function Dashboard() {
           position: "fixed",
           top: 0,
           left: 0,
-          width: addMode === "batch" ? 460 : 210,
+          width: addMode === "batch" ? 460 : addMode === "import" ? 560 : 210,
           height: "100dvh",
           zIndex: 9,
           borderRight: `1px solid ${border}`,
@@ -535,7 +537,7 @@ export default function Dashboard() {
           overflow: "hidden",
           transition: "width 250ms ease",
         }}>
-          <div style={{ position: "absolute", inset: 0, overflowY: "auto", padding: "20px 10px", paddingTop: 96, display: "flex", flexDirection: "column", gap: 28, opacity: addMode === "batch" ? 0 : 1, pointerEvents: addMode === "batch" ? "none" : "auto", transition: "opacity 200ms ease" }}>
+          <div style={{ position: "absolute", inset: 0, overflowY: "auto", padding: "20px 10px", paddingTop: 96, display: "flex", flexDirection: "column", gap: 28, opacity: addMode === "batch" || addMode === "import" ? 0 : 1, pointerEvents: addMode === "batch" || addMode === "import" ? "none" : "auto", transition: "opacity 200ms ease" }}>
 
           {/* Add / inline form */}
           <div ref={addFormRef}>
@@ -592,8 +594,12 @@ export default function Dashboard() {
                     </svg>
                     Batch
                   </button>
-                  <button type="button" disabled
-                    style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "6px 0", borderRadius: 8, border: `1px solid color-mix(in srgb, ${text} 10%, transparent)`, backgroundColor: "transparent", color: `color-mix(in srgb, ${muted} 50%, transparent)`, fontSize: 11, fontWeight: 600, cursor: "not-allowed" }}>
+                  <button type="button" onClick={() => setAddMode("import")}
+                    disabled={isDemo()}
+                    title={isDemo() ? "Unavailable in demo mode" : undefined}
+                    onMouseEnter={e => { if (isDemo()) return; e.currentTarget.style.borderColor = `color-mix(in srgb, ${text} 35%, transparent)`; e.currentTarget.style.backgroundColor = `color-mix(in srgb, ${text} 8%, transparent)`; }}
+                    onMouseLeave={e => { if (isDemo()) return; e.currentTarget.style.borderColor = `color-mix(in srgb, ${text} 15%, transparent)`; e.currentTarget.style.backgroundColor = "transparent"; }}
+                    style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "6px 0", borderRadius: 8, border: `1px solid color-mix(in srgb, ${text} 15%, transparent)`, backgroundColor: "transparent", backgroundImage: isDemo() ? `repeating-linear-gradient(-45deg, transparent, transparent 4px, color-mix(in srgb, ${text} 6%, transparent) 4px, color-mix(in srgb, ${text} 6%, transparent) 6px)` : undefined, color: muted, fontSize: 11, fontWeight: 600, cursor: isDemo() ? "not-allowed" : "pointer", opacity: isDemo() ? 0.45 : 1, transition: "border-color 150ms ease, background-color 150ms ease" }}>
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
                     </svg>
@@ -735,10 +741,30 @@ export default function Dashboard() {
             <BatchAddPanel active={addMode === "batch"} onSaveStateChange={setBatchSaveState} onSaved={() => { refreshTransactions(); setAddMode(null); }} onCancel={() => setAddMode(null)} />
           </div>
 
+          {/* Import panel */}
+          <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", paddingTop: 84, opacity: addMode === "import" ? 1 : 0, pointerEvents: addMode === "import" ? "auto" : "none", transition: "opacity 200ms ease" }}>
+            <div style={{ padding: "12px 16px", borderBottom: `1px solid ${border}`, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+              <p style={{ fontSize: 16, fontWeight: 700, color: text, margin: 0 }}>Import Transactions</p>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                {importSaveState.saveStatus === "saved" && (
+                  <span style={{ fontSize: 11, color: "var(--category-income)" }}>Saved</span>
+                )}
+                <button
+                  onClick={importSaveState.onSave}
+                  disabled={!importSaveState.isDirty || importSaveState.isSaving}
+                  style={{ padding: "5px 12px", borderRadius: 8, border: "1px solid var(--category-income)", color: "var(--category-income)", backgroundColor: "color-mix(in srgb, var(--category-income) 12%, transparent)", fontSize: 12, fontWeight: 600, cursor: importSaveState.isDirty && !importSaveState.isSaving ? "pointer" : "default", opacity: !importSaveState.isDirty || importSaveState.isSaving ? 0.4 : 1, transition: "opacity 150ms ease" }}
+                >
+                  {importSaveState.isSaving ? "Importing…" : importSaveState.validCount ? `Import ${importSaveState.validCount} transaction${importSaveState.validCount !== 1 ? "s" : ""}` : "Import transactions"}
+                </button>
+              </div>
+            </div>
+            <ImportPanel active={addMode === "import"} onSaveStateChange={setImportSaveState} onSaved={(newTxs) => { setTransactions(prev => [...(newTxs || []), ...prev]); setAddMode(null); }} onCancel={() => setAddMode(null)} />
+          </div>
+
         </aside>
 
         {/* ── Main content ── */}
-        <div style={{ marginLeft: addMode === "batch" ? 460 : 210, transition: "margin-left 250ms ease" }}>
+        <div style={{ marginLeft: addMode === "batch" ? 460 : addMode === "import" ? 560 : 210, transition: "margin-left 250ms ease" }}>
         <main className="px-6 py-6 space-y-5">
         <style>{`@keyframes skel-shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }`}</style>
         {loading ? (

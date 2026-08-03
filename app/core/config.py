@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     GITHUB_CLIENT_SECRET: str
     REDIRECT_URI: str
 
+    GEMINI_API_KEY: str | None = None
+
     model_config = {"env_file": ".env"}
 
 settings = Settings() # pyright: ignore[reportCallIssue]
