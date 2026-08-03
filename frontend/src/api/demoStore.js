@@ -1,3 +1,5 @@
+import { parseCsvText, detectColumnMapping, annotateImportRows } from "../utils/csvImport";
+
 // ── Keys ──────────────────────────────────────────────────────────────────────
 const TX_KEY = "demo_transactions";
 const RP_KEY = "demo_recurring";
@@ -478,6 +480,44 @@ export const deleteTransaction = (id) => {
 
   return Promise.resolve({ data: null, status: 204 });
 };
+
+// ── Import (demo mode has no backend, so parsing/dedup/categorization all
+// happen client-side here — always auto-detects, demo data is throwaway) ──
+export const previewImport = async (file) => {
+  const text = await file.text();
+  const { headers, rows: rawRows } = parseCsvText(text);
+  const detectedMapping = detectColumnMapping(headers);
+  const rows = annotateImportRows(rawRows, detectedMapping, "MM/DD/YYYY", "negative_expense", getAll(TX_KEY));
+
+  return respond({ source_format: "csv", rows });
+};
+
+export const commitImport = async ({ rows, tip_deposit_rows }) => {
+  const toCreate = rows.filter(r => !r.skip);
+  const created = [];
+  for (const r of toCreate) {
+    const res = await createTransaction({
+      name: r.name, amount: r.amount, category: r.category, transaction_date: r.transaction_date,
+    });
+    created.push(res.data);
+  }
+
+  const createdDeposits = [];
+  for (const d of (tip_deposit_rows || [])) {
+    const res = await createTipDeposit({ amount: d.amount, deposit_date: d.deposit_date });
+    createdDeposits.push(res.data);
+  }
+
+  return respond({
+    created_count: created.length,
+    transactions: created,
+    tip_deposits_created: createdDeposits.length,
+    tip_deposits: createdDeposits,
+  });
+};
+
+export const aiCleanupNames = () =>
+  Promise.reject({ response: { status: 503, data: { detail: "AI cleanup needs a real account — not available in demo mode." } } });
 
 // ── Recurring payments ────────────────────────────────────────────────────────
 export const getRecurringPayments = () =>
