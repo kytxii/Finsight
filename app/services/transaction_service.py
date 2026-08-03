@@ -69,25 +69,32 @@ async def delete_transaction(transaction_id: UUID, current_user: UUID, db: Async
     await db.delete(transaction)
     await db.commit()
 
-async def apply_recurring_payments(user_id: UUID, db: AsyncSession) -> None:
-    today = date.today()
+async def apply_recurring_payments(user_id: UUID, db: AsyncSession, today: date | None = None) -> None:
+    today = today or date.today()
+    last_day_of_month = calendar.monthrange(today.year, today.month)[1]
 
-    due = await db.scalars(
+    # day_of_month is filtered here in Python rather than in the query: a bill due
+    # the 31st still needs to fire in a 30-day month, clamped to that month's last
+    # day, so the raw column value can't be compared against today.day directly.
+    active = await db.scalars(
         select(RecurringPayment)
         .where(RecurringPayment.created_by == user_id)
         .where(RecurringPayment.active.is_(True))
-        .where(RecurringPayment.day_of_month <= today.day)
+        .where(RecurringPayment.day_of_month.is_not(None))
     )
 
     current_month = today.strftime("%Y-%m")
 
-    for rp in due.all():
+    for rp in active.all():
         if rp.is_estimate:
             continue  # estimates inform surplus math only - never generate ledger transactions
         if rp.last_applied_month == current_month:
             continue
 
-        day = min(rp.day_of_month, calendar.monthrange(today.year, today.month)[1])
+        day = min(rp.day_of_month, last_day_of_month)
+        if day > today.day:
+            continue
+
         db.add(Transaction(
             created_by=user_id,
             updated_by=user_id,
