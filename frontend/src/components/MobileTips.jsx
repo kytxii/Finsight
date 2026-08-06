@@ -8,12 +8,15 @@ import { getTipDeposits, createTipDeposit, updateTipDeposit, deleteTipDeposit } 
 import { HOME_TEXT, HOME_MUTED, HOME_SURFACE, HOME_DIVIDER, HOME_EXPENSE, HOME_ACCENT, TILE_COLOR } from "./categoryVisuals";
 import { IconTipsTile } from "./categoryIcons";
 
-// Dedicated Tips surface: a Tips table (everything earned) over a Deposits table
-// (lump-sum cash banked into checking). The two are separate logs - real
-// deposits rarely match individual tips. Cash on hand = tips - deposits. (#23)
+// Dedicated Tips surface: a Tips table (this month's tips) over a Deposits table
+// (this month's lump-sum cash banked into checking). Both lists are scoped to
+// the current month, as are the three hero stats above them: cash on hand
+// (this month's tips, independent of deposits) + deposited (this month's
+// deposits) = the top number. See #56.
 const TIPS = TILE_COLOR.TIPS;        // #26a69a
 const TIPS_DEPOSITED = "#5ccfc0";    // lighter teal for the deposit state
-const PAGE = 5;
+const TIPS_PAGE = 4;
+const DEPOSITS_PAGE = 5;
 
 const shortDate = (d) => new Date(d + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 
@@ -97,28 +100,27 @@ export default function MobileTips({ transactions, loading, onBack, onEditTransa
   }
   useEffect(() => { loadDeposits(); }, []);
 
-  const tips = transactions
-    .filter((t) => t.category === "TIPS")
-    .sort((a, b) => b.transaction_date.localeCompare(a.transaction_date));
-
-  const tipsEarned = tips.reduce((s, t) => s + parseFloat(t.amount), 0);
-  const depositedTotal = deposits.reduce((s, d) => s + parseFloat(d.amount), 0);
-  const cashOnHand = tipsEarned - depositedTotal;
-
-  // Headline = tips earned in the current month; cash on hand is all-time.
   const thisMonth = getToday().slice(0, 7);
-  const monthlyEarned = tips
-    .filter((t) => t.transaction_date.slice(0, 7) === thisMonth)
-    .reduce((s, t) => s + parseFloat(t.amount), 0);
 
-  const shownTips = showAllTips ? tips : tips.slice(0, PAGE);
-  const shownDeposits = showAllDeposits ? deposits : deposits.slice(0, PAGE);
+  // Everything on this screen - the tips list, the deposits list, and the cash
+  // on hand / deposited split - is scoped to the current month. A tip earned in
+  // a prior month but deposited this month (or vice versa) falls out of view;
+  // that's an accepted tradeoff, not an oversight. (#56)
+  const tips = transactions
+    .filter((t) => t.category === "TIPS" && t.transaction_date.slice(0, 7) === thisMonth)
+    .sort((a, b) => b.transaction_date.localeCompare(a.transaction_date));
+  const monthDeposits = deposits.filter((d) => d.deposit_date.slice(0, 7) === thisMonth);
 
-  function openAddForm() {
-    setEditingId(null);
-    setDraft({ amount: "", deposit_date: getToday() });
-    setShowForm((v) => !v);
-  }
+  // Cash on hand and deposited are independent sub-stats, not a split of one
+  // pool - a deposit isn't assumed to come out of this month's logged tips (it
+  // may be older/untracked cash), so it doesn't reduce cash on hand. The top
+  // number is their sum: cash on hand + deposited.
+  const cashOnHand = tips.reduce((s, t) => s + parseFloat(t.amount), 0);
+  const monthDepositedTotal = monthDeposits.reduce((s, d) => s + parseFloat(d.amount), 0);
+  const monthlyEarned = cashOnHand + monthDepositedTotal;
+
+  const shownTips = showAllTips ? tips : tips.slice(0, TIPS_PAGE);
+  const shownDeposits = showAllDeposits ? monthDeposits : monthDeposits.slice(0, DEPOSITS_PAGE);
 
   function startEditDeposit(d) {
     setEditingId(d.id);
@@ -190,14 +192,22 @@ export default function MobileTips({ transactions, loading, onBack, onEditTransa
           <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
             <div style={tile(TIPS, null, 30)}><IconHandCash size={17} /></div>
             <div style={{ display: "flex", flexDirection: "column" }}>
-              <span style={{ fontSize: 15, fontWeight: 700, color: HOME_TEXT, fontVariantNumeric: "tabular-nums", lineHeight: 1.15 }}>{fmt(cashOnHand)}</span>
+              {loading || depositsLoading ? (
+                <Skel h={17} w={54} />
+              ) : (
+                <span style={{ fontSize: 15, fontWeight: 700, color: HOME_TEXT, fontVariantNumeric: "tabular-nums", lineHeight: 1.15 }}>{fmt(cashOnHand)}</span>
+              )}
               <span style={{ fontSize: 11, fontWeight: 500, color: HOME_MUTED }}>cash on hand</span>
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
             <div style={tile("transparent", TIPS_DEPOSITED, 30)}><IconBank color={TIPS_DEPOSITED} size={15} /></div>
             <div style={{ display: "flex", flexDirection: "column" }}>
-              <span style={{ fontSize: 15, fontWeight: 700, color: TIPS_DEPOSITED, fontVariantNumeric: "tabular-nums", lineHeight: 1.15 }}>{fmt(depositedTotal)}</span>
+              {loading || depositsLoading ? (
+                <Skel h={17} w={54} />
+              ) : (
+                <span style={{ fontSize: 15, fontWeight: 700, color: TIPS_DEPOSITED, fontVariantNumeric: "tabular-nums", lineHeight: 1.15 }}>{fmt(monthDepositedTotal)}</span>
+              )}
               <span style={{ fontSize: 11, fontWeight: 500, color: HOME_MUTED }}>deposited</span>
             </div>
           </div>
@@ -213,7 +223,7 @@ export default function MobileTips({ transactions, loading, onBack, onEditTransa
       <div style={{ marginBottom: 22 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "0 4px 12px" }}>
           <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, letterSpacing: "-0.4px", color: HOME_TEXT }}>Tips</h2>
-          {tips.length > PAGE && (
+          {tips.length > TIPS_PAGE && (
             <span onClick={() => setShowAllTips((v) => !v)} style={{ color: HOME_ACCENT, fontSize: 15, fontWeight: 600, cursor: "pointer" }}>
               {showAllTips ? "See less" : "See all"}
             </span>
@@ -263,21 +273,11 @@ export default function MobileTips({ transactions, loading, onBack, onEditTransa
       <div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "0 4px 12px" }}>
           <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, letterSpacing: "-0.4px", color: HOME_TEXT }}>Deposits</h2>
-          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-            {deposits.length > PAGE && (
-              <span onClick={() => setShowAllDeposits((v) => !v)} style={{ color: HOME_ACCENT, fontSize: 15, fontWeight: 600, cursor: "pointer" }}>
-                {showAllDeposits ? "See less" : "See all"}
-              </span>
-            )}
-            <button onClick={showForm ? closeForm : openAddForm} aria-label={showForm ? "Close" : "Add deposit"} style={{
-              width: 34, height: 34, borderRadius: "50%", background: HOME_SURFACE,
-              border: "1px solid rgba(255,255,255,0.07)", display: "flex", alignItems: "center", justifyContent: "center",
-              color: "#e6e6ea", cursor: "pointer", flexShrink: 0,
-              transform: showForm ? "rotate(45deg)" : "none", transition: "transform 0.18s ease",
-            }}>
-              <IconPlus />
-            </button>
-          </div>
+          {monthDeposits.length > DEPOSITS_PAGE && (
+            <span onClick={() => setShowAllDeposits((v) => !v)} style={{ color: HOME_ACCENT, fontSize: 15, fontWeight: 600, cursor: "pointer" }}>
+              {showAllDeposits ? "See less" : "See all"}
+            </span>
+          )}
         </div>
 
         {showForm && (
@@ -304,7 +304,7 @@ export default function MobileTips({ transactions, loading, onBack, onEditTransa
         <div style={cardStyle}>
           {depositsLoading ? (
             <div style={{ padding: "20px 0" }} />
-          ) : deposits.length === 0 ? (
+          ) : monthDeposits.length === 0 ? (
             <p style={{ fontSize: 13, color: HOME_MUTED, textAlign: "center", padding: "22px 0" }}>No deposits yet</p>
           ) : (
             shownDeposits.map((d, i) => (

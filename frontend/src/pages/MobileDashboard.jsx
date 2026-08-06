@@ -24,6 +24,7 @@ import {
   deleteTransaction,
 } from "../api/transactions";
 import { getSpendableSurplus, getEstimatedSavings } from "../api/paychecks";
+import { getTipDeposits } from "../api/tipDeposits";
 import CurrencyInput from "../components/CurrencyInput";
 import EditTransactionModal from "../components/EditTransactionModal";
 import {
@@ -378,6 +379,7 @@ export default function MobileDashboard() {
   // ── Data
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [tipDeposits, setTipDeposits] = useState([]);
   const [safeToSpend, setSafeToSpend] = useState(null);
   const [safeToSpendStatus, setSafeToSpendStatus] = useState("loading"); // loading | ok | no-balance | no-schedule | error
   const [savings, setSavings] = useState(null);
@@ -420,6 +422,10 @@ export default function MobileDashboard() {
     });
   }
 
+  function loadTipDeposits() {
+    getTipDeposits().then((res) => setTipDeposits(res.data)).catch(() => {});
+  }
+
   useEffect(() => {
     devFetch().then((res) => {
       setTransactions(res.data);
@@ -428,6 +434,7 @@ export default function MobileDashboard() {
     }).catch(() => { setLoading(false); });
     loadSafeToSpend();
     loadSavings();
+    loadTipDeposits();
   }, []);
 
   function refresh() {
@@ -437,6 +444,7 @@ export default function MobileDashboard() {
     }).catch(() => {});
     loadSafeToSpend();
     loadSavings();
+    loadTipDeposits();
   }
 
   const [editingTransaction, setEditingTransaction] = useState(null);
@@ -686,27 +694,53 @@ export default function MobileDashboard() {
       ),
     [dashFiltered],
   );
+  // Tip deposits add to Tips/Income on top of the logged tip transactions -
+  // they aren't a subset of them, mirroring MobileTips.jsx's own cash-on-hand
+  // + deposited = total split (#56).
+  const depositsInRange = useCallback(
+    (from, to) =>
+      tipDeposits
+        .filter((d) => {
+          const dt = new Date(d.deposit_date + "T00:00:00");
+          if (from && dt < from) return false;
+          if (to && dt > to) return false;
+          return true;
+        })
+        .reduce((s, d) => s + parseFloat(d.amount), 0),
+    [tipDeposits],
+  );
+
+  const dashMonthDeposits = useMemo(
+    () => depositsInRange(dashDateRange.from, dashDateRange.to),
+    [depositsInRange, dashDateRange],
+  );
+
   const dashSummary = useMemo(() => {
     const totalIn = dashFiltered
       .filter((t) => INCOME_TYPES.has(t.category))
-      .reduce((s, t) => s + parseFloat(t.amount), 0);
+      .reduce((s, t) => s + parseFloat(t.amount), 0) + dashMonthDeposits;
     const totalOut = dashFiltered
       .filter((t) => !INCOME_TYPES.has(t.category))
       .reduce((s, t) => s + parseFloat(t.amount), 0);
     const net = totalIn - totalOut;
     return { totalIn, totalOut, net };
-  }, [dashFiltered]);
+  }, [dashFiltered, dashMonthDeposits]);
 
   const dashCategoryTotals = useMemo(() => {
     const totals = {};
     dashFiltered.forEach((t) => {
       totals[t.category] = (totals[t.category] ?? 0) + parseFloat(t.amount);
     });
+    if (dashMonthDeposits) totals.TIPS = (totals.TIPS ?? 0) + dashMonthDeposits;
     return totals;
-  }, [dashFiltered]);
+  }, [dashFiltered, dashMonthDeposits]);
 
   // ── Last month (for the small +/-% badges on Home's Income/Expense cards)
   const dashLastMonthRange = useMemo(() => getPresetRange("Last Month"), []);
+  const dashLastMonthDeposits = useMemo(
+    () => depositsInRange(dashLastMonthRange.from, dashLastMonthRange.to),
+    [depositsInRange, dashLastMonthRange],
+  );
   const dashLastMonthSummary = useMemo(() => {
     const inRange = transactions.filter((t) => {
       const d = new Date(t.transaction_date + "T00:00:00");
@@ -714,12 +748,12 @@ export default function MobileDashboard() {
     });
     const totalIn = inRange
       .filter((t) => INCOME_TYPES.has(t.category))
-      .reduce((s, t) => s + parseFloat(t.amount), 0);
+      .reduce((s, t) => s + parseFloat(t.amount), 0) + dashLastMonthDeposits;
     const totalOut = inRange
       .filter((t) => !INCOME_TYPES.has(t.category))
       .reduce((s, t) => s + parseFloat(t.amount), 0);
     return { totalIn, totalOut };
-  }, [transactions, dashLastMonthRange]);
+  }, [transactions, dashLastMonthRange, dashLastMonthDeposits]);
 
   // ── Analytics computed
   const analyticsColor = `var(--category-${analyticsTab.toLowerCase()})`;
