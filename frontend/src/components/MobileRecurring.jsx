@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import SwipeableRow from "./SwipeableRow";
 import CurrencyInput from "./CurrencyInput";
+import Skel from "./Skel";
 import { CATEGORY_CONFIG, fmt } from "../utils/finance";
 import {
   getRecurringPayments,
@@ -24,17 +25,6 @@ function isDraftValid(d) {
     (d.is_estimate || (parseInt(d.day_of_month, 10) >= 1 && parseInt(d.day_of_month, 10) <= 31));
 }
 
-function Skel({ w = "100%", h = 16, style: extra = {} }) {
-  return (
-    <div style={{
-      width: w, height: h, borderRadius: 6, flexShrink: 0,
-      background: "linear-gradient(90deg, rgba(255,255,255,0.05) 25%, rgba(255,255,255,0.11) 50%, rgba(255,255,255,0.05) 75%)",
-      backgroundSize: "200% 100%",
-      animation: "skel-shimmer 1.4s ease-in-out infinite",
-      ...extra,
-    }} />
-  );
-}
 
 const fieldStyle = {
   width: "100%", borderRadius: 10, padding: "9px 11px", fontSize: 15,

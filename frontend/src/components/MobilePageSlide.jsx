@@ -8,7 +8,7 @@ import { useEffect, useRef, useState } from "react";
 // lets tab switches and the category push/pop share one rule.
 //
 // Keyframes are injected here rather than living in a stylesheet, matching how
-// MobileDashboard already injects skel-shimmer. (#46)
+// MobileDashboard already injects the skel-pulse* keyframes. (#46)
 
 export const SLIDE_DURATION = 240;
 export const SLIDE_EASE = "cubic-bezier(0.32, 0.72, 0, 1)"; // same curve as the sheet slide-up

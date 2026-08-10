@@ -1,5 +1,6 @@
 import { CATEGORY_CONFIG, INCOME_TYPES, fmt } from "../utils/finance";
 import { periodLabel, relativeDate } from "../utils/mobileFormat";
+import Skel from "./Skel";
 import {
   HOME_TEXT,
   HOME_MUTED,
@@ -64,24 +65,6 @@ const NAV_ROWS = [
 ];
 
 const BILLS_DUE_PLACEHOLDER = 3;
-
-function Skel({ w = "100%", h = 16, style: extra = {} }) {
-  return (
-    <div
-      style={{
-        width: w,
-        height: h,
-        borderRadius: 6,
-        flexShrink: 0,
-        background:
-          "linear-gradient(90deg, rgba(255,255,255,0.05) 25%, rgba(255,255,255,0.11) 50%, rgba(255,255,255,0.05) 75%)",
-        backgroundSize: "200% 100%",
-        animation: "skel-shimmer 1.4s ease-in-out infinite",
-        ...extra,
-      }}
-    />
-  );
-}
 
 // ── Shared row (nav card / tools) ───────────────────────────────────────────
 
@@ -216,11 +199,11 @@ function ChangeBadge({ current, previous, goodWhenUp }) {
 //   Estimated Cash    |   Estimated Savings
 // Balance is a placeholder until bank integration (#15). The rest come from the
 // spendable-surplus and estimated-savings endpoints.
-function StatField({ label, value, color, caption, onClick }) {
-  const interactive = typeof onClick === "function";
+function StatField({ label, value, color, caption, onClick, loading }) {
+  const interactive = typeof onClick === "function" && !loading;
   return (
     <div
-      onClick={onClick}
+      onClick={interactive ? onClick : undefined}
       style={{
         cursor: interactive ? "pointer" : "default",
         margin: -6, padding: 6, borderRadius: 10,
@@ -231,15 +214,19 @@ function StatField({ label, value, color, caption, onClick }) {
       onPointerLeave={interactive ? (e) => { e.currentTarget.style.backgroundColor = "transparent"; } : undefined}
     >
       <p style={{ margin: 0, fontSize: 13, fontWeight: 500, color: HOME_MUTED }}>{label}</p>
-      <p
-        style={{
-          margin: "2px 0 0", fontSize: 17, fontWeight: 700, letterSpacing: "-0.3px",
-          fontVariantNumeric: "tabular-nums", color,
-        }}
-      >
-        {value}
-      </p>
-      {caption && (
+      {loading ? (
+        <Skel h={17} w="65%" style={{ marginTop: 4 }} />
+      ) : (
+        <p
+          style={{
+            margin: "2px 0 0", fontSize: 17, fontWeight: 700, letterSpacing: "-0.3px",
+            fontVariantNumeric: "tabular-nums", color,
+          }}
+        >
+          {value}
+        </p>
+      )}
+      {caption && !loading && (
         <p style={{ margin: "2px 0 0", fontSize: 11, fontWeight: 500, color: HOME_MUTED }}>{caption}</p>
       )}
     </div>
@@ -279,9 +266,11 @@ function OverviewCard({
       color: TILE_COLOR.BILL,
       caption: billCount > 0 ? `${billCount} bill${billCount !== 1 ? "s" : ""} due` : "No bills due",
     };
+  } else if (status === "loading") {
+    discretionary = { key: "cash", label: "Estimated Cash", color: HOME_MUTED, loading: true };
+    bills = { key: "bills", label: "Upcoming Bills", color: HOME_MUTED, loading: true };
   } else {
-    const value = status === "loading" ? "—" : "Not set up";
-    discretionary = { key: "cash", label: "Estimated Cash", value, color: HOME_MUTED };
+    discretionary = { key: "cash", label: "Estimated Cash", value: "Not set up", color: HOME_MUTED };
     bills = { key: "bills", label: "Upcoming Bills", value: "—", color: HOME_MUTED };
   }
 
@@ -293,6 +282,8 @@ function OverviewCard({
         ? `${fmt(savings.saved_so_far)}/${fmt(savings.estimated_savings)}`
         : fmt(savings.saved_so_far);
     save = { key: "savings", label: "Estimated Savings", value, color: TILE_COLOR.SAVINGS };
+  } else if (savingsStatus === "loading") {
+    save = { key: "savings", label: "Estimated Savings", color: HOME_MUTED, loading: true };
   } else {
     save = { key: "savings", label: "Estimated Savings", value: "—", color: HOME_MUTED };
   }
@@ -502,7 +493,7 @@ export default function MobileHome({
               icon={<Icon />}
               iconBg={TILE_COLOR[cat]}
               label={CATEGORY_CONFIG[cat]?.label ?? cat}
-              trailing={loading ? undefined : fmt(dashCategoryTotals[cat] ?? 0)}
+              trailing={loading ? <Skel w={50} h={14} /> : fmt(dashCategoryTotals[cat] ?? 0)}
               badge={cat === "BILL" ? `${BILLS_DUE_PLACEHOLDER} due` : null}
               badgeColor={TILE_COLOR.BILL}
               onClick={() => onViewCategory(cat)}

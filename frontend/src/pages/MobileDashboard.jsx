@@ -266,15 +266,27 @@ export default function MobileDashboard() {
       setTransactions(res.data);
       setLoading(false);
       setDevLastFetch(new Date());
-    }).catch(() => { setLoading(false); });
+    }).catch(() => {
+      // Stay in the loading state rather than flipping to "loaded with zero
+      // transactions" - transactions never got set, so every stat derived
+      // from it (dashSummary, dashCategoryTotals, ...) would otherwise
+      // render as real $0.00/-$0.00 values indistinguishable from an
+      // account that's genuinely empty, instead of skeletons.
+    });
     loadSafeToSpend();
     loadSavings();
     loadTipDeposits();
   }, []);
 
   function refresh() {
+    // setLoading(false) here is a no-op for the normal silent-refresh caller
+    // (already false, React bails out) - it only matters for Dev Tools'
+    // "Re-fetch" button, which sets loading=true before calling this to
+    // re-test the skeleton flow; without it, a successful re-fetch through
+    // that button would leave skeletons stuck on regardless of outcome.
     devFetch().then((res) => {
       setTransactions(res.data);
+      setLoading(false);
       setDevLastFetch(new Date());
     }).catch(() => {});
     loadSafeToSpend();
@@ -650,7 +662,7 @@ export default function MobileDashboard() {
         className="flex-1 px-4 pb-28 space-y-4 overflow-y-auto"
         style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 1rem + 54px)", WebkitOverflowScrolling: "touch" }}
       >
-        <style>{`@keyframes skel-shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }`}</style>
+        <style>{`@keyframes skel-pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }`}</style>
         <MobilePageSlide pageKey={pageKey} order={pageOrder} layerClassName="space-y-4">
         {/* Dashboard tab */}
         {navTab === "dashboard" && (
