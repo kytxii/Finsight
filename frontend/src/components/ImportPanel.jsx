@@ -3,6 +3,7 @@ import { CATEGORY_CONFIG, INCOME_TYPES } from "../utils/finance";
 import { useTheme } from "../hooks/useTheme";
 import { previewImport, commitImport, aiCleanupNames } from "../api/imports";
 import { LOADING_SYMBOLS, IMPORT_LOADING_PHRASES } from "../utils/authFlavor";
+import { HOME_SURFACE, HOME_DIVIDER, HOME_TEXT, HOME_MUTED } from "./categoryVisuals";
 
 const isDemo = () => localStorage.getItem("demo") === "true";
 
@@ -76,13 +77,18 @@ function needsAction(r) {
   return r.is_duplicate || r.is_credit_card_payment_candidate || r.errors?.length > 0;
 }
 
-export default function ImportPanel({ active, onSaveStateChange, onSaved, onCancel }) {
+export default function ImportPanel({ active, onSaveStateChange, onSaved, onCancel, mobile = false }) {
+  // `mobile` branches onto the pinned-dark HOME_* palette instead of the
+  // light/dark-toggle system - this component is shared with desktop
+  // (Dashboard.jsx), which keeps its existing theme untouched. Desktop's own
+  // dark-UI pass is tracked separately (#65), not assumed here.
   const dark   = useTheme();
-  const bg     = dark ? "var(--dark-surface)" : "var(--light-surface)";
-  const border = dark ? "var(--dark-border)"  : "var(--light-border)";
-  const text   = dark ? "var(--dark-text)"    : "var(--light-text)";
-  const muted  = `color-mix(in srgb, ${text} 45%, transparent)`;
-  const faint  = `color-mix(in srgb, ${text} 5%, ${bg})`;
+  const bg     = mobile ? HOME_SURFACE : (dark ? "var(--dark-surface)" : "var(--light-surface)");
+  const border = mobile ? HOME_DIVIDER : (dark ? "var(--dark-border)"  : "var(--light-border)");
+  const text   = mobile ? HOME_TEXT    : (dark ? "var(--dark-text)"    : "var(--light-text)");
+  const muted  = mobile ? HOME_MUTED   : `color-mix(in srgb, ${text} 45%, transparent)`;
+  const faint  = mobile ? "rgba(255,255,255,0.04)" : `color-mix(in srgb, ${text} 5%, ${bg})`;
+  const colorScheme = mobile ? "dark" : (dark ? "dark" : "light");
 
   const fileInputRef = useRef(null);
   const nameEditRef = useRef({});
@@ -584,12 +590,12 @@ export default function ImportPanel({ active, onSaveStateChange, onSaved, onCanc
                       </span>
                     ) : (
                       <select value={r.category} onChange={e => update({ category: e.target.value })}
-                        style={{ width: 132, boxSizing: "border-box", flexShrink: 0, padding: "3px 8px", borderRadius: 999, fontSize: 11, fontWeight: 600, color: catColor, backgroundColor: `color-mix(in srgb, ${catColor} 15%, transparent)`, border: `1px solid color-mix(in srgb, ${catColor} 35%, transparent)`, outline: "none", cursor: "pointer", fontFamily: "inherit", colorScheme: dark ? "dark" : "light" }}>
+                        style={{ width: 132, boxSizing: "border-box", flexShrink: 0, padding: "3px 8px", borderRadius: 999, fontSize: 11, fontWeight: 600, color: catColor, backgroundColor: `color-mix(in srgb, ${catColor} 15%, transparent)`, border: `1px solid color-mix(in srgb, ${catColor} 35%, transparent)`, outline: "none", cursor: "pointer", fontFamily: "inherit", colorScheme }}>
                         {Object.entries(CATEGORY_CONFIG).map(([key, cfg]) => <option key={key} value={key} style={{ backgroundColor: bg, color: text }}>{cfg.label}</option>)}
                       </select>
                     )}
                     <input type="date" value={r.transaction_date} onChange={e => update({ transaction_date: e.target.value })}
-                      style={{ width: 132, boxSizing: "border-box", flexShrink: 0, background: "transparent", color: text, border: `1px solid ${border}`, borderRadius: 6, outline: "none", fontSize: 13, fontFamily: "inherit", padding: "3px 6px", colorScheme: dark ? "dark" : "light" }} />
+                      style={{ width: 132, boxSizing: "border-box", flexShrink: 0, background: "transparent", color: text, border: `1px solid ${border}`, borderRadius: 6, outline: "none", fontSize: 13, fontFamily: "inherit", padding: "3px 6px", colorScheme }} />
                   </div>
 
                   {/* Split menu — animates open/closed; fixed height with its own
@@ -642,14 +648,14 @@ export default function ImportPanel({ active, onSaveStateChange, onSaved, onCanc
                                 </div>
                                 <select
                                   value={item.category} onChange={e => updateSplitItem(r, item._sid, { category: e.target.value })}
-                                  style={{ padding: "3px 6px", borderRadius: 6, fontSize: 11, border: `1px solid ${border}`, backgroundColor: bg, color: text, outline: "none", cursor: "pointer", fontFamily: "inherit", colorScheme: dark ? "dark" : "light" }}
+                                  style={{ padding: "3px 6px", borderRadius: 6, fontSize: 11, border: `1px solid ${border}`, backgroundColor: bg, color: text, outline: "none", cursor: "pointer", fontFamily: "inherit", colorScheme }}
                                 >
                                   {Object.entries(CATEGORY_CONFIG).map(([key, cfg]) => <option key={key} value={key}>{cfg.label}</option>)}
                                 </select>
                                 <input
                                   type="date" value={item.transaction_date}
                                   onChange={e => updateSplitItem(r, item._sid, { transaction_date: e.target.value })}
-                                  style={{ background: "transparent", color: text, border: `1px solid ${border}`, borderRadius: 6, outline: "none", fontSize: 12, fontFamily: "inherit", padding: "3px 6px", colorScheme: dark ? "dark" : "light" }}
+                                  style={{ background: "transparent", color: text, border: `1px solid ${border}`, borderRadius: 6, outline: "none", fontSize: 12, fontFamily: "inherit", padding: "3px 6px", colorScheme }}
                                 />
                                 <button
                                   type="button" onClick={() => removeSplitItem(r, item._sid)} aria-label="Remove charge"

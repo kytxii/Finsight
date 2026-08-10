@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { CATEGORY_CONFIG } from "../utils/finance";
 import { updateTransaction } from "../api/transactions";
 import { updateRecurringPayment } from "../api/recurringPayments";
 import { errorMessage } from "../utils/errors";
 import CurrencyInput from "./CurrencyInput";
+import CategoryPicker from "./CategoryPicker";
+import CompactDateField from "./CompactDateField";
 import {
   HOME_TEXT, HOME_MUTED, HOME_SURFACE, HOME_DIVIDER, HOME_EXPENSE, HOME_INCOME,
   TILE_COLOR, CATEGORY_ICON,
@@ -42,54 +43,6 @@ function IconClear({ size = 15 }) {
   );
 }
 
-function IconCalendar({ size = 15 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="5" width="18" height="16" rx="2.5" />
-      <path d="M16 3v4M8 3v4M3 10h18" />
-    </svg>
-  );
-}
-
-// Two rows of pills sized to label length, same layout as the quick-add
-// entry sheet's category picker (MobileDashboard.jsx) - reused here with the
-// dark TILE_COLOR palette instead of the light/dark-toggle `--category-*`
-// vars, since this modal is pinned dark like the rest of the #22 mobile UI.
-function CategoryPicker({ value, onChange }) {
-  const entries = Object.entries(CATEGORY_CONFIG);
-  const rows = [entries.slice(0, 4), entries.slice(4)];
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      {rows.map((row, ri) => (
-        <div key={ri} style={{ display: "flex", gap: 8 }}>
-          {row.map(([key, cfg]) => {
-            const active = value === key;
-            const color = TILE_COLOR[key];
-            return (
-              <button
-                key={key}
-                type="button"
-                onClick={() => onChange(key)}
-                style={{
-                  flex: cfg.label.length + 4,
-                  minWidth: 0,
-                  padding: "7px 0", borderRadius: 10, fontSize: 12.5, fontWeight: 600, textAlign: "center",
-                  border: "none",
-                  color: active ? "#fff" : HOME_MUTED,
-                  backgroundColor: active ? color : "rgba(255,255,255,0.06)",
-                  cursor: "pointer",
-                }}
-              >
-                {cfg.label}
-              </button>
-            );
-          })}
-        </div>
-      ))}
-    </div>
-  );
-}
-
 export default function MobileTransactionModal({ transaction, onClose, onSaved, onDelete, onLocate }) {
   const [form, setForm] = useState({
     name: transaction.name,
@@ -105,12 +58,6 @@ export default function MobileTransactionModal({ transaction, onClose, onSaved, 
   const Icon = CATEGORY_ICON[form.category];
   const tileColor = TILE_COLOR[form.category] ?? HOME_MUTED;
   const busy = saving || deleting;
-  // Short display label for the Date field's custom rendering - no year,
-  // matching the same compact format MobileTopbar's search suggestions
-  // already use elsewhere in this component tree.
-  const dateLabel = form.transaction_date
-    ? new Date(form.transaction_date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })
-    : "Select date";
 
   function setCategory(category) {
     setForm((f) => ({ ...f, category, name: category === "TIPS" ? "Cash" : f.name }));
@@ -249,16 +196,11 @@ export default function MobileTransactionModal({ transaction, onClose, onSaved, 
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <p style={labelStyle}>Date</p>
-            <div style={{ ...fieldStyle, position: "relative", display: "flex", alignItems: "center", gap: 7, cursor: "pointer" }}>
-              <IconCalendar />
-              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{dateLabel}</span>
-              <input
-                type="date"
-                value={form.transaction_date}
-                onChange={(e) => setForm((f) => ({ ...f, transaction_date: e.target.value }))}
-                style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0, border: "none", padding: 0, cursor: "pointer" }}
-              />
-            </div>
+            <CompactDateField
+              value={form.transaction_date}
+              onChange={(v) => setForm((f) => ({ ...f, transaction_date: v }))}
+              style={fieldStyle}
+            />
           </div>
         </div>
 

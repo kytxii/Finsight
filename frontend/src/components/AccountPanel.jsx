@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { useTheme } from "../hooks/useTheme";
 import { useAuth } from "../context/AuthContext";
 import { updateUser, deleteUser } from "../api/users";
+import { HOME_SURFACE, HOME_DIVIDER, HOME_TEXT, HOME_MUTED, HOME_EXPENSE } from "./categoryVisuals";
+import { errorMessage } from "../utils/errors";
 
 const CONFIRM_PHRASE = "DELETE MY ACCOUNT";
 
@@ -29,15 +30,16 @@ function resizeImage(file, size = 400) {
 }
 
 export default function AccountPanel({ onSaveStateChange }) {
-  const dark = useTheme();
   const { user, setUser, logout, isDemo } = useAuth();
   const navigate = useNavigate();
 
-  const bg     = dark ? "var(--dark-bg)"      : "var(--light-bg)";
-  const border = dark ? "var(--dark-border)"  : "var(--light-border)";
-  const text   = dark ? "var(--dark-text)"    : "var(--light-text)";
-  const muted  = `color-mix(in srgb, ${text} 50%, transparent)`;
-  const danger = "var(--category-expense)";
+  // Pinned dark (#30) - mobile-only, embedded in the drawer's Account slide,
+  // no desktop equivalent shares it, so no theme-toggle branching needed.
+  const bg     = "rgba(255,255,255,0.04)";
+  const border = HOME_DIVIDER;
+  const text   = HOME_TEXT;
+  const muted  = HOME_MUTED;
+  const danger = HOME_EXPENSE;
 
   const [form, setForm] = useState({
     first_name: user?.first_name ?? "",
@@ -107,7 +109,7 @@ export default function AccountPanel({ onSaveStateChange }) {
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus(null), 3000);
     } catch (err) {
-      setError(err.response?.data?.detail ?? "Something went wrong");
+      setError(errorMessage(err));
     } finally {
       setSaving(false);
     }
@@ -130,7 +132,7 @@ export default function AccountPanel({ onSaveStateChange }) {
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus(null), 3000);
     } catch (err) {
-      setError(err.response?.data?.detail ?? "Something went wrong");
+      setError(errorMessage(err));
     } finally {
       setSaving(false);
     }
@@ -146,20 +148,20 @@ export default function AccountPanel({ onSaveStateChange }) {
       logout();
       navigate("/login");
     } catch (err) {
-      setDeleteError(err.response?.data?.detail ?? "Something went wrong");
+      setDeleteError(errorMessage(err));
       setDeleting(false);
     }
   }
 
   const createdAt = user?.created_at
-    ? new Date(user.created_at).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })
+    ? new Date(user.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
     : null;
 
   const inputStyle = {
     width: "100%",
-    borderRadius: "12px",
-    padding: "10px 16px",
-    fontSize: "14px",
+    borderRadius: "10px",
+    padding: "8px 12px",
+    fontSize: "13.5px",
     border: `1px solid ${border}`,
     backgroundColor: bg,
     color: text,
@@ -173,20 +175,17 @@ export default function AccountPanel({ onSaveStateChange }) {
     cursor: "not-allowed",
   };
 
+  const labelStyle = { display: "block", fontSize: "11px", fontWeight: 500, marginBottom: "4px", color: muted };
+
   const confirmReady = deletePhrase === CONFIRM_PHRASE;
 
   return (
-    <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px 32px", display: "flex", flexDirection: "column", gap: "32px" }}>
+    <div style={{ flex: 1, overflowY: "auto", padding: "14px 20px 20px", display: "flex", flexDirection: "column", gap: "18px" }}>
 
-      {/* Joined date — top left */}
-      {createdAt && (
-        <p style={{ fontSize: "11px", color: muted, marginBottom: "-20px" }}>
-          Joined {createdAt}
-        </p>
-      )}
-
-      {/* Avatar */}
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "12px" }}>
+      {/* Avatar row - horizontal, name/email/joined stacked beside it instead
+          of centered below a bigger avatar, condensed so the whole page fits
+          without scrolling in the drawer's capped height. */}
+      <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
         <input
           ref={fileInputRef}
           type="file"
@@ -194,14 +193,14 @@ export default function AccountPanel({ onSaveStateChange }) {
           style={{ display: "none" }}
           onChange={handleFileChange}
         />
-        <div style={{ position: "relative", width: 80, height: 80, flexShrink: 0 }}>
+        <div style={{ position: "relative", width: 60, height: 60, flexShrink: 0 }}>
         <button
           onClick={() => fileInputRef.current?.click()}
           onMouseEnter={() => setAvatarHovered(true)}
           onMouseLeave={() => setAvatarHovered(false)}
           style={{
             position: "relative",
-            width: 80, height: 80,
+            width: 60, height: 60,
             borderRadius: "50%",
             overflow: "hidden",
             border: "none",
@@ -221,8 +220,8 @@ export default function AccountPanel({ onSaveStateChange }) {
               style={{
                 width: "100%", height: "100%",
                 display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: "2rem", fontWeight: 700,
-                backgroundColor: `color-mix(in srgb, ${text} 12%, transparent)`,
+                fontSize: "1.5rem", fontWeight: 700,
+                backgroundColor: "rgba(255,255,255,0.1)",
                 color: text,
               }}
             >
@@ -239,7 +238,7 @@ export default function AccountPanel({ onSaveStateChange }) {
               transition: "opacity 150ms ease",
             }}
           >
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
               <circle cx="12" cy="13" r="4"/>
             </svg>
@@ -248,81 +247,86 @@ export default function AccountPanel({ onSaveStateChange }) {
         {/* Camera badge */}
         <div
           style={{
-            position: "absolute", bottom: 2, right: 2,
-            width: 22, height: 22, borderRadius: "50%",
-            backgroundColor: dark ? "var(--dark-surface)" : "var(--light-surface)",
+            position: "absolute", bottom: 0, right: 0,
+            width: 18, height: 18, borderRadius: "50%",
+            backgroundColor: HOME_SURFACE,
             border: `1.5px solid ${border}`,
             display: "flex", alignItems: "center", justifyContent: "center",
             pointerEvents: "none",
           }}
         >
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={muted} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke={muted} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
             <circle cx="12" cy="13" r="4"/>
           </svg>
         </div>
         </div>
 
-        <p style={{ fontSize: "14px", fontWeight: 600, color: text }}>
-          {form.first_name || user?.first_name} {form.last_name || user?.last_name}
-        </p>
-        <p style={{ fontSize: "12px", color: muted }}>{user?.email_address ?? "—"}</p>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <p style={{ fontSize: "14px", fontWeight: 600, color: text, margin: 0 }}>
+            {form.first_name || user?.first_name} {form.last_name || user?.last_name}
+          </p>
+          <p style={{ fontSize: "12px", color: muted, margin: "2px 0 0" }}>{user?.email_address ?? "—"}</p>
+          {createdAt && (
+            <p style={{ fontSize: "10.5px", color: muted, margin: "2px 0 0", opacity: 0.8 }}>
+              Joined {createdAt}
+            </p>
+          )}
+        </div>
       </div>
 
-      {/* Profile fields */}
-      <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-        <div>
-          <label style={{ display: "block", fontSize: "12px", fontWeight: 500, marginBottom: "6px", color: muted }}>
-            First Name
-          </label>
-          <input
-            type="text"
-            value={form.first_name}
-            onChange={(e) => setForm((f) => ({ ...f, first_name: e.target.value }))}
-            disabled={isDemo()}
-            maxLength={20}
-            style={isDemo() ? disabledInputStyle : inputStyle}
-          />
+      {/* Profile fields - first/last name share a row instead of stacking */}
+      <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+        <div style={{ display: "flex", gap: "10px" }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <label style={labelStyle}>First Name</label>
+            <input
+              type="text"
+              value={form.first_name}
+              onChange={(e) => setForm((f) => ({ ...f, first_name: e.target.value }))}
+              disabled={isDemo()}
+              maxLength={20}
+              style={isDemo() ? disabledInputStyle : inputStyle}
+            />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <label style={labelStyle}>Last Name</label>
+            <input
+              type="text"
+              value={form.last_name}
+              onChange={(e) => setForm((f) => ({ ...f, last_name: e.target.value }))}
+              disabled={isDemo()}
+              maxLength={20}
+              style={isDemo() ? disabledInputStyle : inputStyle}
+            />
+          </div>
         </div>
         <div>
-          <label style={{ display: "block", fontSize: "12px", fontWeight: 500, marginBottom: "6px", color: muted }}>
-            Last Name
-          </label>
-          <input
-            type="text"
-            value={form.last_name}
-            onChange={(e) => setForm((f) => ({ ...f, last_name: e.target.value }))}
-            disabled={isDemo()}
-            maxLength={20}
-            style={isDemo() ? disabledInputStyle : inputStyle}
-          />
-        </div>
-        <div>
-          <label style={{ display: "block", fontSize: "12px", fontWeight: 500, marginBottom: "6px", color: muted }}>
-            Email
-          </label>
+          <label style={labelStyle}>Email</label>
           <div style={disabledInputStyle}>{user?.email_address ?? "—"}</div>
         </div>
 
         {error && (
-          <p style={{ fontSize: "13px", color: danger }}>{error}</p>
+          <p style={{ fontSize: "13px", color: danger, margin: 0 }}>{error}</p>
         )}
       </div>
 
-      {/* Bottom: danger zone pushed to end */}
+      {/* Danger zone */}
       <div style={{ marginTop: "auto" }}>
         <div
           style={{
-            borderRadius: "14px",
+            borderRadius: "12px",
             border: `1px solid color-mix(in srgb, ${danger} 35%, transparent)`,
             overflow: "hidden",
           }}
         >
-            <div style={{ padding: "14px 16px", borderBottom: deleteOpen ? `1px solid color-mix(in srgb, ${danger} 20%, transparent)` : "none" }}>
-              <p style={{ fontSize: "13px", fontWeight: 600, color: danger, marginBottom: "4px" }}>Delete Account</p>
-              <p style={{ fontSize: "12px", color: muted, marginBottom: "12px" }}>
-                Permanently deletes your account and all associated data. This cannot be undone.
-              </p>
+            <div style={{ padding: "12px 14px", borderBottom: deleteOpen ? `1px solid color-mix(in srgb, ${danger} 20%, transparent)` : "none" }}>
+              <p style={{ fontSize: "12.5px", fontWeight: 600, color: danger, margin: "0 0 3px" }}>Delete Account</p>
+              {!deleteOpen && (
+                <p style={{ fontSize: "11px", color: muted, margin: "0 0 10px" }}>
+                  Permanently deletes your account. This cannot be undone.
+                </p>
+              )}
               {!deleteOpen && (
                 <button
                   onClick={() => setDeleteOpen(true)}
@@ -343,8 +347,8 @@ export default function AccountPanel({ onSaveStateChange }) {
             </div>
 
             {deleteOpen && (
-              <div style={{ padding: "16px", display: "flex", flexDirection: "column", gap: "12px", backgroundColor: `color-mix(in srgb, ${danger} 4%, transparent)` }}>
-                <p style={{ fontSize: "12px", color: text }}>
+              <div style={{ padding: "14px", display: "flex", flexDirection: "column", gap: "10px", backgroundColor: `color-mix(in srgb, ${danger} 4%, transparent)` }}>
+                <p style={{ fontSize: "11.5px", color: text, margin: 0 }}>
                   To confirm, type{" "}
                   <span style={{ fontFamily: "monospace", fontWeight: 600, color: danger }}>
                     {CONFIRM_PHRASE}
@@ -367,7 +371,7 @@ export default function AccountPanel({ onSaveStateChange }) {
                   }}
                 />
                 {deleteError && (
-                  <p style={{ fontSize: "12px", color: danger }}>{deleteError}</p>
+                  <p style={{ fontSize: "11.5px", color: danger, margin: 0 }}>{deleteError}</p>
                 )}
                 <div style={{ display: "flex", gap: "8px" }}>
                   <button
@@ -375,8 +379,8 @@ export default function AccountPanel({ onSaveStateChange }) {
                     onMouseEnter={e => e.currentTarget.style.backgroundColor = `color-mix(in srgb, ${text} 8%, transparent)`}
                     onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}
                     style={{
-                      flex: 1, fontSize: "13px", fontWeight: 500,
-                      padding: "8px", borderRadius: "10px",
+                      flex: 1, fontSize: "12.5px", fontWeight: 500,
+                      padding: "7px", borderRadius: "10px",
                       border: `1px solid ${border}`,
                       color: muted, backgroundColor: "transparent", cursor: "pointer",
                       transition: "background-color 150ms ease",
@@ -390,8 +394,8 @@ export default function AccountPanel({ onSaveStateChange }) {
                     onMouseEnter={e => { if (confirmReady && !deleting) e.currentTarget.style.backgroundColor = `color-mix(in srgb, ${danger} 22%, transparent)`; }}
                     onMouseLeave={e => { e.currentTarget.style.backgroundColor = confirmReady ? `color-mix(in srgb, ${danger} 12%, transparent)` : "transparent"; }}
                     style={{
-                      flex: 1, fontSize: "13px", fontWeight: 600,
-                      padding: "8px", borderRadius: "10px",
+                      flex: 1, fontSize: "12.5px", fontWeight: 600,
+                      padding: "7px", borderRadius: "10px",
                       border: `1px solid color-mix(in srgb, ${danger} 60%, transparent)`,
                       color: danger,
                       backgroundColor: confirmReady

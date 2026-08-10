@@ -38,7 +38,9 @@ import MobilePaychecks from "../components/MobilePaychecks";
 import MobileRecurring from "../components/MobileRecurring";
 import MobileAnalytics from "../components/MobileAnalytics";
 import ImportPanel from "../components/ImportPanel";
-import { HOME_BG, HOME_TEXT, HOME_MUTED, HOME_DIVIDER, HOME_SURFACE, HOME_INCOME, ACCENT } from "../components/categoryVisuals";
+import { HOME_BG, HOME_TEXT, HOME_MUTED, HOME_DIVIDER, HOME_SURFACE, HOME_INCOME, HOME_EXPENSE, ACCENT, TILE_COLOR } from "../components/categoryVisuals";
+import CategoryPicker from "../components/CategoryPicker";
+import CompactDateField from "../components/CompactDateField";
 
 // ── Icons ────────────────────────────────────────────────────────────────────
 
@@ -296,8 +298,8 @@ export default function MobileDashboard() {
   });
   const [quickLoading, setQuickLoading] = useState(false);
   const [quickError, setQuickError] = useState("");
-  const quickColor = `var(--category-${quickCat.toLowerCase()})`;
-  const inputStyle = { backgroundColor: bg, borderColor: border, color: text };
+  const quickTileColor = TILE_COLOR[quickCat];
+  const quickFieldStyle = { backgroundColor: "rgba(255,255,255,0.04)", borderColor: HOME_DIVIDER, color: HOME_TEXT };
 
   const [batchSheetOpen, setBatchSheetOpen] = useState(false);
   const [batchItems, setBatchItems] = useState(() => [newBatchRow()]);
@@ -368,6 +370,7 @@ export default function MobileDashboard() {
         ),
       );
       setBatchSheetOpen(false);
+      setAddSheetOpen(false);
       refresh();
     } catch (err) {
       setBatchError(errorMessage(err));
@@ -402,6 +405,15 @@ export default function MobileDashboard() {
   });
   const { onTouchStart: onSheetTouchStart, onTouchMove: onSheetTouchMove, onTouchEnd: onSheetTouchEnd } =
     sheetDragHandlers;
+  // Separate drag instance for the drawer - its own dismiss target
+  // (Menu/Account, not Add/Entry/Batch), kept independent of the shared one
+  // above so the two sheets' drag states can't clash.
+  const { dragY: drawerDragY, handlers: drawerDragHandlers } = useSheetDrag(() => {
+    setDrawerOpen(false);
+    setAccountOpen(false);
+  });
+  const { onTouchStart: onDrawerTouchStart, onTouchMove: onDrawerTouchMove, onTouchEnd: onDrawerTouchEnd } =
+    drawerDragHandlers;
 
   const handleQueryChange = (e) => {
     const val = e.target.value;
@@ -587,11 +599,11 @@ export default function MobileDashboard() {
 
   useEffect(() => {
     document.body.style.overflow =
-      addSheetOpen || entrySheetOpen || batchSheetOpen || importSheetOpen ? "hidden" : "";
+      addSheetOpen || entrySheetOpen || batchSheetOpen || importSheetOpen || drawerOpen || accountOpen ? "hidden" : "";
     return () => {
       document.body.style.overflow = "";
     };
-  }, [addSheetOpen, entrySheetOpen, batchSheetOpen, importSheetOpen]);
+  }, [addSheetOpen, entrySheetOpen, batchSheetOpen, importSheetOpen, drawerOpen, accountOpen]);
 
   const [keyboardOpen, setKeyboardOpen] = useState(false);
   useEffect(() => {
@@ -817,17 +829,18 @@ export default function MobileDashboard() {
         onClick={() => {
           setAddSheetOpen(false);
           setEntrySheetOpen(false);
+          setBatchSheetOpen(false);
+          setImportSheetOpen(false);
         }}
       />
 
       {/* ── Add sheet ── */}
       <div
-        className="fixed bottom-0 left-0 right-0 z-50 rounded-t-2xl border-t border-x p-5 space-y-3"
+        className="fixed bottom-0 left-0 right-0 z-50 rounded-t-2xl p-5 space-y-3"
         style={{
-          backgroundColor: surface,
-          borderColor: border,
+          backgroundColor: HOME_SURFACE,
           paddingBottom: "calc(1.25rem + env(safe-area-inset-bottom))",
-          transform: `translateY(${addSheetOpen && !entrySheetOpen ? dragY : 100}${addSheetOpen && !entrySheetOpen && dragY > 0 ? "" : "%"})`,
+          transform: `translateY(${addSheetOpen && !entrySheetOpen && !batchSheetOpen && !importSheetOpen ? dragY : 100}${addSheetOpen && !entrySheetOpen && !batchSheetOpen && !importSheetOpen && dragY > 0 ? "" : "%"})`,
           transition:
             dragY > 0
               ? "none"
@@ -839,18 +852,18 @@ export default function MobileDashboard() {
       >
         <div
           className="w-10 h-1 rounded-full mx-auto mb-4"
-          style={{ backgroundColor: border }}
+          style={{ backgroundColor: HOME_DIVIDER }}
         />
-        <p className="text-sm font-semibold mb-1" style={{ color: muted }}>
+        <p className="text-sm font-semibold mb-1" style={{ color: HOME_MUTED }}>
           Add
         </p>
 
         <button
           onClick={() => setEntrySheetOpen(true)}
-          className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl border text-left cursor-pointer active:scale-[0.97] transition-transform duration-150"
-          style={{ backgroundColor: bg, borderColor: border, color: text }}
+          className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-left cursor-pointer active:scale-[0.97] transition-transform duration-150"
+          style={{ backgroundColor: "rgba(255,255,255,0.04)", border: "none", color: HOME_TEXT }}
         >
-          <span style={{ color: "var(--category-income)" }}>
+          <span style={{ color: HOME_INCOME }}>
             <svg
               width="18"
               height="18"
@@ -867,20 +880,17 @@ export default function MobileDashboard() {
           </span>
           <div>
             <p className="text-sm font-semibold">Transaction</p>
-            <p className="text-xs" style={{ color: muted }}>
+            <p className="text-xs" style={{ color: HOME_MUTED }}>
               Add a single transaction
             </p>
           </div>
         </button>
         <button
-          onClick={() => {
-            setAddSheetOpen(false);
-            setBatchSheetOpen(true);
-          }}
-          className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl border text-left cursor-pointer active:scale-[0.97] transition-transform duration-150"
-          style={{ backgroundColor: bg, borderColor: border, color: text }}
+          onClick={() => setBatchSheetOpen(true)}
+          className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-left cursor-pointer active:scale-[0.97] transition-transform duration-150"
+          style={{ backgroundColor: "rgba(255,255,255,0.04)", border: "none", color: HOME_TEXT }}
         >
-          <span style={{ color: "var(--category-income)" }}>
+          <span style={{ color: HOME_INCOME }}>
             <svg
               width="18"
               height="18"
@@ -899,28 +909,25 @@ export default function MobileDashboard() {
           </span>
           <div>
             <p className="text-sm font-semibold">Batch Add</p>
-            <p className="text-xs" style={{ color: muted }}>
+            <p className="text-xs" style={{ color: HOME_MUTED }}>
               Add multiple at once
             </p>
           </div>
         </button>
         <button
-          onClick={() => {
-            setAddSheetOpen(false);
-            setImportSheetOpen(true);
-          }}
+          onClick={() => setImportSheetOpen(true)}
           disabled={isDemo()}
           title={isDemo() ? "Unavailable in demo mode" : undefined}
-          className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl border text-left transition-transform duration-150 ${isDemo() ? "cursor-not-allowed" : "cursor-pointer active:scale-[0.97]"}`}
+          className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-left transition-transform duration-150 ${isDemo() ? "cursor-not-allowed" : "cursor-pointer active:scale-[0.97]"}`}
           style={{
-            backgroundColor: bg,
-            backgroundImage: isDemo() ? `repeating-linear-gradient(-45deg, transparent, transparent 4px, color-mix(in srgb, ${text} 6%, transparent) 4px, color-mix(in srgb, ${text} 6%, transparent) 6px)` : undefined,
-            borderColor: border,
-            color: text,
+            backgroundColor: "rgba(255,255,255,0.04)",
+            backgroundImage: isDemo() ? `repeating-linear-gradient(-45deg, transparent, transparent 4px, rgba(255,255,255,0.06) 4px, rgba(255,255,255,0.06) 6px)` : undefined,
+            border: "none",
+            color: HOME_TEXT,
             opacity: isDemo() ? 0.45 : 1,
           }}
         >
-          <span style={{ color: "var(--category-income)" }}>
+          <span style={{ color: HOME_INCOME }}>
             <svg
               width="18"
               height="18"
@@ -938,7 +945,7 @@ export default function MobileDashboard() {
           </span>
           <div>
             <p className="text-sm font-semibold">Import</p>
-            <p className="text-xs" style={{ color: muted }}>
+            <p className="text-xs" style={{ color: HOME_MUTED }}>
               CSV from your bank
             </p>
           </div>
@@ -947,12 +954,10 @@ export default function MobileDashboard() {
 
       {/* ── Entry sheet ── */}
       <div
-        className="fixed bottom-0 left-0 right-0 z-50 border-t border-x"
+        className="fixed bottom-0 left-0 right-0 z-50"
         style={{
-          backgroundColor: surface,
-          borderColor: border,
+          backgroundColor: HOME_SURFACE,
           borderRadius: keyboardOpen ? "16px 16px 16px 16px" : "16px 16px 0 0",
-          borderBottom: keyboardOpen ? `1px solid ${border}` : "none",
           transition: "border-radius 150ms ease, border-bottom 150ms ease",
           paddingBottom: "env(safe-area-inset-bottom)",
           transform: `translateY(${entrySheetOpen ? dragY : 100}${entrySheetOpen && dragY > 0 ? "" : "%"})`,
@@ -967,7 +972,7 @@ export default function MobileDashboard() {
       >
         <div
           className="px-5 py-4 flex items-center justify-between border-b"
-          style={{ borderColor: border }}
+          style={{ borderColor: HOME_DIVIDER }}
           onTouchStart={onSheetTouchStart}
           onTouchMove={onSheetTouchMove}
           onTouchEnd={onSheetTouchEnd}
@@ -976,65 +981,23 @@ export default function MobileDashboard() {
             <button
               onClick={() => setEntrySheetOpen(false)}
               className="p-1 rounded-lg cursor-pointer active:scale-90 transition-transform duration-150"
-              style={{ color: muted }}
+              style={{ color: HOME_MUTED }}
             >
               <IconChevronLeft />
             </button>
-            <p className="text-sm font-semibold" style={{ color: text }}>
+            <p className="text-sm font-semibold" style={{ color: HOME_TEXT }}>
               New Transaction
             </p>
           </div>
         </div>
         <div className="p-5 space-y-3">
-          {/* Category pills — two rows, proportionally sized to label length */}
-          {[
-            Object.entries(CATEGORY_CONFIG).slice(0, 4),
-            Object.entries(CATEGORY_CONFIG).slice(4),
-          ].map((row, ri) => (
-            <div key={ri} className="flex gap-2">
-              {row.map(([key, cfg]) => {
-                const active = quickCat === key;
-                const color = `var(--category-${key.toLowerCase()})`;
-                return (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => {
-                      setQuickCat(key);
-                      setQuickForm((f) => ({
-                        ...f,
-                        name: key === "TIPS" ? "Cash" : f.name,
-                      }));
-                    }}
-                    className="py-1.5 rounded-xl text-xs font-semibold border cursor-pointer active:scale-95 transition-all duration-150 text-center"
-                    style={{
-                      flex: cfg.label.length + 4,
-                      color: active ? color : muted,
-                      borderColor: active ? color : border,
-                      backgroundColor: active
-                        ? `color-mix(in srgb, ${color} 15%, transparent)`
-                        : "transparent",
-                      boxShadow: active
-                        ? `0 0 0 2px color-mix(in srgb, ${color} 20%, transparent)`
-                        : "none",
-                    }}
-                  >
-                    {cfg.label}
-                  </button>
-                );
-              })}
-            </div>
-          ))}
-          {/* Fallback dropdown — uncomment to restore
-            <select
-              value={quickCat}
-              onChange={(e) => { setQuickCat(e.target.value); setQuickForm((f) => ({ ...f, name: e.target.value === "TIPS" ? "Cash" : "" })); }}
-              className="w-full rounded-xl px-4 py-2.5 text-sm font-semibold border cursor-pointer"
-              style={{ ...inputStyle, borderColor: quickColor }}
-            >
-              {Object.entries(CATEGORY_CONFIG).map(([key, cfg]) => <option key={key} value={key}>{cfg.label}</option>)}
-            </select>
-            */}
+          <CategoryPicker
+            value={quickCat}
+            onChange={(key) => {
+              setQuickCat(key);
+              setQuickForm((f) => ({ ...f, name: key === "TIPS" ? "Cash" : f.name }));
+            }}
+          />
           <form onSubmit={handleQuickSubmit} className="space-y-3">
             <input
               type="text"
@@ -1050,12 +1013,12 @@ export default function MobileDashboard() {
               style={
                 quickCat === "TIPS"
                   ? {
-                      ...inputStyle,
+                      ...quickFieldStyle,
                       cursor: "not-allowed",
                       opacity: 0.45,
-                      backgroundImage: `repeating-linear-gradient(-45deg, transparent, transparent 4px, color-mix(in srgb, ${dark ? "var(--dark-text)" : "var(--light-text)"} 6%, transparent) 4px, color-mix(in srgb, ${dark ? "var(--dark-text)" : "var(--light-text)"} 6%, transparent) 6px)`,
+                      backgroundImage: `repeating-linear-gradient(-45deg, transparent, transparent 4px, rgba(255,255,255,0.08) 4px, rgba(255,255,255,0.08) 6px)`,
                     }
-                  : inputStyle
+                  : quickFieldStyle
               }
             />
             <div className="grid grid-cols-2 gap-3">
@@ -1067,32 +1030,25 @@ export default function MobileDashboard() {
                 }
                 required
                 className="rounded-xl px-4 py-2.5 text-sm border"
-                style={inputStyle}
+                style={quickFieldStyle}
               />
-              <input
-                type="date"
+              <CompactDateField
                 value={quickForm.transaction_date}
-                onChange={(e) =>
-                  setQuickForm((f) => ({
-                    ...f,
-                    transaction_date: e.target.value,
-                  }))
-                }
+                onChange={(v) => setQuickForm((f) => ({ ...f, transaction_date: v }))}
                 required
                 className="rounded-xl px-3 py-2.5 text-sm border"
-                style={inputStyle}
+                style={quickFieldStyle}
               />
             </div>
             {quickError && <p className="text-xs text-red-500">{quickError}</p>}
             <button
               type="submit"
               disabled={quickLoading}
-              className="w-full py-2.5 rounded-xl text-sm font-bold tracking-wide disabled:opacity-50 cursor-pointer active:scale-95 border"
+              className="w-full py-2.5 rounded-xl text-sm font-bold tracking-wide disabled:opacity-50 cursor-pointer active:scale-95"
               style={{
-                color: quickColor,
-                borderColor: quickColor,
-                backgroundColor: `color-mix(in srgb, ${quickColor} 12%, transparent)`,
-                boxShadow: `0 0 0 2px color-mix(in srgb, ${quickColor} 20%, transparent)`,
+                border: "none",
+                color: "#fff",
+                backgroundColor: quickTileColor,
               }}
             >
               {quickLoading ? "Saving…" : "Add Transaction"}
@@ -1101,24 +1057,15 @@ export default function MobileDashboard() {
         </div>
       </div>
 
-      {/* ── Batch add overlay ── */}
-      <div
-        className="fixed inset-0 z-40"
-        style={{
-          backgroundColor: "rgba(0,0,0,0.5)",
-          opacity: batchSheetOpen ? 1 : 0,
-          pointerEvents: batchSheetOpen ? "auto" : "none",
-          transition: "opacity 250ms ease",
-        }}
-        onClick={() => setBatchSheetOpen(false)}
-      />
-
       {/* ── Batch add sheet ── */}
+      {/* Backdrop is the shared Add-sheet overlay above (like Entry) - addSheetOpen
+          stays true while this is open so the back button returns to the Add
+          picker instead of closing outright; a dedicated overlay here would
+          double-stack on top of that one. */}
       <div
-        className="fixed bottom-0 left-0 right-0 z-50 rounded-t-2xl border-t border-x flex flex-col"
+        className="fixed bottom-0 left-0 right-0 z-50 rounded-t-2xl flex flex-col"
         style={{
-          backgroundColor: surface,
-          borderColor: border,
+          backgroundColor: HOME_SURFACE,
           maxHeight: "85dvh",
           paddingBottom: "env(safe-area-inset-bottom)",
           transform: `translateY(${batchSheetOpen ? dragY : 100}${batchSheetOpen && dragY > 0 ? "" : "%"})`,
@@ -1136,24 +1083,24 @@ export default function MobileDashboard() {
         >
           <div
             className="w-10 h-1 rounded-full"
-            style={{ backgroundColor: border }}
+            style={{ backgroundColor: HOME_DIVIDER }}
           />
         </div>
         <div
           className="px-5 pb-3 flex items-center justify-between border-b shrink-0"
-          style={{ borderColor: border }}
+          style={{ borderColor: HOME_DIVIDER }}
         >
           <div className="flex items-center gap-2">
             <button
               onClick={() => setBatchSheetOpen(false)}
               className="p-1 rounded-lg cursor-pointer active:scale-90 transition-transform duration-150"
-              style={{ color: muted }}
+              style={{ color: HOME_MUTED }}
             >
               <IconChevronLeft />
             </button>
-            <p className="text-sm font-semibold" style={{ color: text }}>
+            <p className="text-sm font-semibold" style={{ color: HOME_TEXT }}>
               Batch Add{" "}
-              <span style={{ color: muted, fontWeight: 400 }}>
+              <span style={{ color: HOME_MUTED, fontWeight: 400 }}>
                 · {batchItems.length} rows
               </span>
             </p>
@@ -1161,12 +1108,11 @@ export default function MobileDashboard() {
           <button
             onClick={handleBatchSubmit}
             disabled={batchLoading}
-            className="px-4 py-1.5 rounded-xl text-xs font-bold border cursor-pointer disabled:opacity-50 active:scale-95 transition-transform duration-150"
+            className="px-4 py-1.5 rounded-lg text-xs font-bold cursor-pointer disabled:opacity-50 active:scale-95 transition-transform duration-150"
             style={{
-              color: "var(--category-income)",
-              borderColor: "var(--category-income)",
-              backgroundColor:
-                "color-mix(in srgb, var(--category-income) 12%, transparent)",
+              color: "#fff",
+              border: "none",
+              backgroundColor: HOME_INCOME,
             }}
           >
             {batchLoading
@@ -1185,7 +1131,11 @@ export default function MobileDashboard() {
         </div>
         <div ref={batchListRef} className="flex-1 overflow-y-auto px-4 py-3">
           {batchItems.map((item, idx) => {
-            const catColor = `var(--category-${item.category.toLowerCase()})`;
+            // TILE_COLOR (pinned), not the `--category-*` CSS var - that var
+            // resolves to the .dark block's pastel shades when the light/dark
+            // toggle is dark, which read as washed-out on a solid fill (those
+            // pastels are tuned for colored text on a dark bg, not tiles).
+            const catColor = TILE_COLOR[item.category];
             return (
               <div
                 key={item._key}
@@ -1209,8 +1159,8 @@ export default function MobileDashboard() {
                 <div
                   className="rounded-xl border p-3 flex flex-col gap-2"
                   style={{
-                    borderColor: border,
-                    backgroundColor: bg,
+                    borderColor: HOME_DIVIDER,
+                    backgroundColor: "rgba(255,255,255,0.04)",
                     transform: deletingKeys.includes(item._key)
                       ? "translateX(60px)"
                       : "translateX(0)",
@@ -1221,7 +1171,7 @@ export default function MobileDashboard() {
                   <div className="flex items-center gap-2">
                     <span
                       className="text-xs font-bold shrink-0 w-5 text-center"
-                      style={{ color: muted }}
+                      style={{ color: HOME_MUTED }}
                     >
                       {idx + 1}
                     </span>
@@ -1241,19 +1191,19 @@ export default function MobileDashboard() {
                           ),
                         )
                       }
-                      className="flex-1 rounded-lg px-2 py-1.5 text-xs font-semibold border cursor-pointer"
+                      className="flex-1 rounded-lg px-2 py-1.5 text-xs font-semibold cursor-pointer"
                       style={{
-                        color: catColor,
-                        borderColor: catColor,
-                        backgroundColor: `color-mix(in srgb, ${catColor} 10%, transparent)`,
-                        colorScheme: dark ? "dark" : "light",
+                        color: "#fff",
+                        border: "none",
+                        backgroundColor: catColor,
+                        colorScheme: "dark",
                       }}
                     >
                       {Object.entries(CATEGORY_CONFIG).map(([key, cfg]) => (
                         <option
                           key={key}
                           value={key}
-                          style={{ backgroundColor: bg, color: text }}
+                          style={{ backgroundColor: HOME_SURFACE, color: HOME_TEXT }}
                         >
                           {cfg.label}
                         </option>
@@ -1272,7 +1222,7 @@ export default function MobileDashboard() {
                         }, 350);
                       }}
                       className="p-1 rounded-lg cursor-pointer shrink-0"
-                      style={{ color: muted }}
+                      style={{ color: HOME_MUTED }}
                     >
                       <svg
                         width="14"
@@ -1304,15 +1254,15 @@ export default function MobileDashboard() {
                       disabled={item.category === "TIPS"}
                       className="flex-1 rounded-lg px-2 py-1.5 text-xs border min-w-0"
                       style={{
-                        backgroundColor: surface,
-                        borderColor: border,
-                        color: text,
+                        backgroundColor: HOME_SURFACE,
+                        borderColor: HOME_DIVIDER,
+                        color: HOME_TEXT,
                         opacity: item.category === "TIPS" ? 0.45 : 1,
                         cursor:
                           item.category === "TIPS" ? "not-allowed" : undefined,
                         backgroundImage:
                           item.category === "TIPS"
-                            ? `repeating-linear-gradient(-45deg, transparent, transparent 4px, color-mix(in srgb, ${text} 6%, transparent) 4px, color-mix(in srgb, ${text} 6%, transparent) 6px)`
+                            ? `repeating-linear-gradient(-45deg, transparent, transparent 4px, rgba(255,255,255,0.08) 4px, rgba(255,255,255,0.08) 6px)`
                             : undefined,
                       }}
                     />
@@ -1329,9 +1279,9 @@ export default function MobileDashboard() {
                       className="rounded-lg px-2 py-1.5 text-xs border"
                       style={{
                         width: 72,
-                        backgroundColor: surface,
-                        borderColor: border,
-                        color: text,
+                        backgroundColor: HOME_SURFACE,
+                        borderColor: HOME_DIVIDER,
+                        color: HOME_TEXT,
                       }}
                     />
                     <input
@@ -1349,10 +1299,10 @@ export default function MobileDashboard() {
                       className="rounded-lg px-2 py-1.5 text-xs border"
                       style={{
                         width: 112,
-                        backgroundColor: surface,
-                        borderColor: border,
-                        color: text,
-                        colorScheme: dark ? "dark" : "light",
+                        backgroundColor: HOME_SURFACE,
+                        borderColor: HOME_DIVIDER,
+                        color: HOME_TEXT,
+                        colorScheme: "dark",
                       }}
                     />
                   </div>
@@ -1363,7 +1313,7 @@ export default function MobileDashboard() {
         </div>
         <div
           className="px-4 py-3 border-t shrink-0"
-          style={{ borderColor: border }}
+          style={{ borderColor: HOME_DIVIDER }}
         >
           {batchError && (
             <p
@@ -1393,11 +1343,11 @@ export default function MobileDashboard() {
                 }),
               );
             }}
-            className="w-full py-2.5 rounded-xl text-sm font-semibold border cursor-pointer active:scale-95 transition-transform duration-150"
+            className="w-full py-2.5 rounded-xl text-sm font-semibold cursor-pointer active:scale-95 transition-transform duration-150"
             style={{
-              color: muted,
-              borderColor: border,
-              backgroundColor: `color-mix(in srgb, ${text} 5%, transparent)`,
+              color: HOME_MUTED,
+              border: "none",
+              backgroundColor: "rgba(255,255,255,0.06)",
             }}
           >
             + Add row
@@ -1405,24 +1355,13 @@ export default function MobileDashboard() {
         </div>
       </div>
 
-      {/* ── Import overlay ── */}
-      <div
-        className="fixed inset-0 z-40"
-        style={{
-          backgroundColor: "rgba(0,0,0,0.5)",
-          opacity: importSheetOpen ? 1 : 0,
-          pointerEvents: importSheetOpen ? "auto" : "none",
-          transition: "opacity 250ms ease",
-        }}
-        onClick={() => setImportSheetOpen(false)}
-      />
-
       {/* ── Import sheet ── */}
+      {/* Backdrop is the shared Add-sheet overlay above, same reasoning as
+          the Batch sheet. */}
       <div
-        className="fixed bottom-0 left-0 right-0 z-50 rounded-t-2xl border-t border-x flex flex-col"
+        className="fixed bottom-0 left-0 right-0 z-50 rounded-t-2xl flex flex-col"
         style={{
-          backgroundColor: surface,
-          borderColor: border,
+          backgroundColor: HOME_SURFACE,
           maxHeight: "85dvh",
           overflow: "hidden",
           paddingBottom: "env(safe-area-inset-bottom)",
@@ -1441,34 +1380,33 @@ export default function MobileDashboard() {
         >
           <div
             className="w-10 h-1 rounded-full"
-            style={{ backgroundColor: border }}
+            style={{ backgroundColor: HOME_DIVIDER }}
           />
         </div>
         <div
           className="px-5 pb-3 flex items-center justify-between border-b shrink-0"
-          style={{ borderColor: border }}
+          style={{ borderColor: HOME_DIVIDER }}
         >
           <div className="flex items-center gap-2">
             <button
               onClick={() => setImportSheetOpen(false)}
               className="p-1 rounded-lg cursor-pointer active:scale-90 transition-transform duration-150"
-              style={{ color: muted }}
+              style={{ color: HOME_MUTED }}
             >
               <IconChevronLeft />
             </button>
-            <p className="text-sm font-semibold" style={{ color: text }}>
+            <p className="text-sm font-semibold" style={{ color: HOME_TEXT }}>
               Import
             </p>
           </div>
           <button
             onClick={importSaveState.onSave}
             disabled={!importSaveState.isDirty || importSaveState.isSaving}
-            className="px-4 py-1.5 rounded-xl text-xs font-bold border cursor-pointer disabled:opacity-50 active:scale-95 transition-transform duration-150"
+            className="px-4 py-1.5 rounded-lg text-xs font-bold cursor-pointer disabled:opacity-50 active:scale-95 transition-transform duration-150"
             style={{
-              color: "var(--category-income)",
-              borderColor: "var(--category-income)",
-              backgroundColor:
-                "color-mix(in srgb, var(--category-income) 12%, transparent)",
+              color: "#fff",
+              border: "none",
+              backgroundColor: HOME_INCOME,
             }}
           >
             {importSaveState.isSaving
@@ -1481,22 +1419,12 @@ export default function MobileDashboard() {
         <ImportPanel
           active={importSheetOpen}
           onSaveStateChange={setImportSaveState}
-          onSaved={(newTxs) => { setTransactions(prev => [...(newTxs || []), ...prev]); setImportSheetOpen(false); }}
+          onSaved={(newTxs) => { setTransactions(prev => [...(newTxs || []), ...prev]); setImportSheetOpen(false); setAddSheetOpen(false); }}
           onCancel={() => setImportSheetOpen(false)}
+          mobile
         />
       </div>
 
-      {/* ── Drawer overlay ── */}
-      {(drawerOpen || accountOpen) && (
-        <div
-          className="fixed inset-0 z-40"
-          style={{ backgroundColor: "rgba(0,0,0,0.4)" }}
-          onClick={() => {
-            setDrawerOpen(false);
-            setAccountOpen(false);
-          }}
-        />
-      )}
 
       {/* ── Overview stat breakdown sheet (#42) ── */}
       <OverviewBreakdownSheet
@@ -1572,29 +1500,61 @@ export default function MobileDashboard() {
           <MobilePaychecks onSaved={refresh} />
       </MobileScreen>
 
+      {/* ── Drawer backdrop ── */}
+      {(drawerOpen || accountOpen) && (
+        <div
+          className="fixed inset-0 z-40"
+          style={{ backgroundColor: "rgba(0,0,0,0.5)" }}
+          onClick={() => { setDrawerOpen(false); setAccountOpen(false); }}
+        />
+      )}
+
       {/* ── Drawer (menu + account as sliding track) ── */}
+      {/* Bottom sheet, same shape as MobileTransactionModal's detail sheet
+          (rounded top, capped height, backdrop dim) rather than a full-screen
+          page push or the old right-side drawer. The Menu/Account/Dev-Tools
+          sub-navigation inside stays a horizontal (translateX) track,
+          independent of this outer vertical open/close transform - capped
+          height + internal scroll per sub-panel covers Account/Dev Tools'
+          longer content since all three share one fixed-height container. */}
       <div
-        className="fixed top-0 right-0 h-full w-72 z-50 border-l"
+        className="fixed bottom-0 left-0 right-0 z-50"
         style={{
-          backgroundColor: surface,
-          borderColor: border,
-          color: text,
+          backgroundColor: HOME_SURFACE,
+          color: HOME_TEXT,
+          borderRadius: "20px 20px 0 0",
           overflow: "hidden",
-          transform:
-            drawerOpen || accountOpen ? "translateX(0)" : "translateX(100%)",
-          transition: "transform 250ms ease",
+          height: "72dvh",
+          display: "flex",
+          flexDirection: "column",
+          paddingBottom: "env(safe-area-inset-bottom)",
+          transform: `translateY(${(drawerOpen || accountOpen) ? drawerDragY : 100}${(drawerOpen || accountOpen) && drawerDragY > 0 ? "" : "%"})`,
+          transition: drawerDragY > 0 ? "none" : "transform 250ms ease",
         }}
       >
+        <div
+          className="flex justify-center py-3 shrink-0"
+          onTouchStart={onDrawerTouchStart}
+          onTouchMove={onDrawerTouchMove}
+          onTouchEnd={onDrawerTouchEnd}
+        >
+          <div className="w-10 h-1 rounded-full" style={{ backgroundColor: HOME_DIVIDER }} />
+        </div>
         <div
           style={{
             display: "flex",
             width: "300%",
-            height: "100%",
+            flex: 1,
+            minHeight: 0,
             transform: devOpen ? "translateX(-66.667%)" : accountOpen ? "translateX(-33.333%)" : "translateX(0)",
             transition: "transform 250ms ease",
           }}
         >
-          {/* Menu panel */}
+          {/* Menu panel - account/profile and app settings only (#30) -
+              Recurring Payments/Paychecks shortcuts dropped, now redundant
+              with Home's Tools card; light/dark toggle dropped, mobile is
+              pinned dark everywhere else at this point so it barely changed
+              anything visible. */}
           <div
             style={{
               width: "33.333%",
@@ -1605,15 +1565,19 @@ export default function MobileDashboard() {
           >
             <div
               className="px-5 py-4 flex items-center justify-between border-b shrink-0"
-              style={{ borderColor: border, paddingTop: "calc(env(safe-area-inset-top, 0px) + 1rem)" }}
+              style={{ borderColor: HOME_DIVIDER }}
+              onTouchStart={onDrawerTouchStart}
+              onTouchMove={onDrawerTouchMove}
+              onTouchEnd={onDrawerTouchEnd}
             >
-              <span className="text-sm font-semibold" style={{ color: muted }}>
+              <span className="text-sm font-semibold" style={{ color: HOME_MUTED }}>
                 Menu
               </span>
               <button
                 onClick={() => setDrawerOpen(false)}
-                className="p-1 rounded-lg cursor-pointer"
+                className="p-1 rounded-lg cursor-pointer active:scale-90 transition-transform duration-150"
                 aria-label="Close menu"
+                style={{ color: HOME_MUTED }}
               >
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
@@ -1631,15 +1595,15 @@ export default function MobileDashboard() {
               </button>
             </div>
             <button
-              className="px-5 py-5 flex items-center gap-3 w-full text-left cursor-pointer"
+              className="px-5 py-5 flex items-center gap-3 w-full text-left cursor-pointer active:scale-[0.98] transition-transform duration-150"
               style={{ background: "transparent", border: "none" }}
               onClick={() => setAccountOpen(true)}
             >
               <div
                 className="w-10 h-10 rounded-full shrink-0 overflow-hidden flex items-center justify-center text-sm font-bold"
                 style={{
-                  backgroundColor: `color-mix(in srgb, ${text} 12%, transparent)`,
-                  color: text,
+                  backgroundColor: "rgba(255,255,255,0.1)",
+                  color: HOME_TEXT,
                 }}
               >
                 {user?.avatar ? (
@@ -1660,7 +1624,7 @@ export default function MobileDashboard() {
                 <p className="text-sm font-semibold">
                   {user ? `${user.first_name} ${user.last_name}` : "—"}
                 </p>
-                <p className="text-xs truncate" style={{ color: muted }}>
+                <p className="text-xs truncate" style={{ color: HOME_MUTED }}>
                   {user?.email_address ?? "—"}
                 </p>
               </div>
@@ -1674,126 +1638,23 @@ export default function MobileDashboard() {
                 strokeWidth="2"
                 strokeLinecap="round"
                 strokeLinejoin="round"
-                style={{ color: muted, flexShrink: 0 }}
+                style={{ color: HOME_MUTED, flexShrink: 0 }}
               >
                 <path d="M9 18l6-6-6-6" />
               </svg>
             </button>
-            <div className="mx-5 border-t" style={{ borderColor: border }} />
-            <div className="px-3 py-3 flex-1">
-              <button
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium cursor-pointer text-left border"
-                style={{
-                  color: text,
-                  borderColor: `color-mix(in srgb, ${text} 18%, transparent)`,
-                  backgroundColor: `color-mix(in srgb, ${text} 5%, transparent)`,
-                }}
-                onClick={() => {
-                  setDrawerOpen(false);
-                  setRecurringOpen(true);
-                }}
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                  <path d="M3 3v5h5" />
-                  <path d="M12 7v5l4 2" />
-                </svg>
-                Recurring Payments
-              </button>
-              <button
-                className="w-full flex items-center gap-3 px-3 py-2.5 mt-2 rounded-xl text-sm font-medium cursor-pointer text-left border"
-                style={{
-                  color: text,
-                  borderColor: `color-mix(in srgb, ${text} 18%, transparent)`,
-                  backgroundColor: `color-mix(in srgb, ${text} 5%, transparent)`,
-                }}
-                onClick={() => {
-                  setDrawerOpen(false);
-                  setPaychecksOpen(true);
-                }}
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <rect x="2" y="5" width="20" height="14" rx="2" />
-                  <line x1="2" y1="10" x2="22" y2="10" />
-                </svg>
-                Paychecks
-              </button>
-            </div>
-            <div className="mx-5 border-t" style={{ borderColor: border }} />
-            <div className="px-3 py-3 flex-shrink-0 flex flex-col gap-3">
-              <button
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium cursor-pointer text-left border"
-                style={{
-                  color: text,
-                  borderColor: `color-mix(in srgb, ${text} 18%, transparent)`,
-                  backgroundColor: `color-mix(in srgb, ${text} 5%, transparent)`,
-                }}
-                onClick={() =>
-                  document.documentElement.classList.toggle("dark")
-                }
-              >
-                {dark ? (
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <circle cx="12" cy="12" r="4" />
-                    <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
-                  </svg>
-                ) : (
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
-                  </svg>
-                )}
-                {dark ? "Light Mode" : "Dark Mode"}
-              </button>
+            <div className="mx-5 border-t" style={{ borderColor: HOME_DIVIDER }} />
+            <div className="px-3 py-3 flex-1 flex flex-col gap-3">
               <a
                 href="https://forms.gle/BC6ebwbZtgYmSYBeA"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-left border"
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-left cursor-pointer active:scale-[0.97] transition-transform duration-150"
                 style={{
-                  color: text,
+                  color: HOME_TEXT,
                   textDecoration: "none",
-                  borderColor: `color-mix(in srgb, ${text} 18%, transparent)`,
-                  backgroundColor: `color-mix(in srgb, ${text} 5%, transparent)`,
+                  border: "none",
+                  backgroundColor: "rgba(255,255,255,0.05)",
                 }}
               >
                 <svg
@@ -1812,11 +1673,11 @@ export default function MobileDashboard() {
                 Feedback
               </a>
             </div>
-            <div className="mx-5 border-t" style={{ borderColor: border }} />
+            <div className="mx-5 border-t" style={{ borderColor: HOME_DIVIDER }} />
             <div className="px-3 py-3">
               <button
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium cursor-pointer text-left"
-                style={{ color: "var(--category-expense)" }}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium cursor-pointer text-left active:scale-[0.97] transition-transform duration-150"
+                style={{ color: HOME_EXPENSE, backgroundColor: "color-mix(in srgb, var(--category-expense) 8%, transparent)", border: "none" }}
                 onClick={() => {
                   logout();
                   navigate("/login");
@@ -1853,19 +1714,22 @@ export default function MobileDashboard() {
           >
             <div
               className="px-5 py-4 flex items-center justify-between border-b shrink-0"
-              style={{ borderColor: border, paddingTop: "calc(env(safe-area-inset-top, 0px) + 1rem)" }}
+              style={{ borderColor: HOME_DIVIDER }}
+              onTouchStart={onDrawerTouchStart}
+              onTouchMove={onDrawerTouchMove}
+              onTouchEnd={onDrawerTouchEnd}
             >
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setAccountOpen(false)}
                   className="p-1 rounded-lg cursor-pointer"
-                  style={{ color: muted }}
+                  style={{ color: HOME_MUTED }}
                 >
                   <IconChevronLeft />
                 </button>
                 <span
                   className="text-sm font-semibold"
-                  style={{ color: muted }}
+                  style={{ color: HOME_MUTED }}
                 >
                   Account
                 </span>
@@ -1884,7 +1748,7 @@ export default function MobileDashboard() {
                   const statusColor =
                     acctSave.saveStatus === "saved" && !acctSave.isDirty
                       ? "var(--category-income)"
-                      : `color-mix(in srgb, ${text} 40%, transparent)`;
+                      : HOME_MUTED;
                   return status ? (
                     <span
                       style={{
@@ -1932,17 +1796,25 @@ export default function MobileDashboard() {
             <AccountPanel onSaveStateChange={setAcctSave} />
           </div>
 
-          {/* Dev tools panel */}
+          {/* Dev tools panel - lowest priority of the drawer surfaces (#30),
+              light pass: swap the theme-toggle colors for the pinned-dark
+              ones, no structural changes. */}
           <div style={{ width: "33.333%", height: "100%", display: "flex", flexDirection: "column" }}>
-            <div className="px-5 py-4 flex items-center gap-2 border-b shrink-0" style={{ borderColor: border, paddingTop: "calc(env(safe-area-inset-top, 0px) + 1rem)" }}>
-              <button onClick={() => setDevOpen(false)} className="p-1 rounded-lg cursor-pointer" style={{ color: muted }}>
+            <div
+              className="px-5 py-4 flex items-center gap-2 border-b shrink-0"
+              style={{ borderColor: HOME_DIVIDER }}
+              onTouchStart={onDrawerTouchStart}
+              onTouchMove={onDrawerTouchMove}
+              onTouchEnd={onDrawerTouchEnd}
+            >
+              <button onClick={() => setDevOpen(false)} className="p-1 rounded-lg cursor-pointer" style={{ color: HOME_MUTED }}>
                 <IconChevronLeft />
               </button>
               <span className="text-sm font-semibold" style={{ color: "var(--category-expense)" }}>Dev Tools</span>
             </div>
-            <div className="flex-1 overflow-y-auto py-2 flex flex-col">
+            <div className="flex-1 overflow-y-auto py-2 flex flex-col" style={{ color: HOME_TEXT }}>
 
-              <MDevSection label="LOADING & STATE" border={border} muted={muted} first />
+              <MDevSection label="LOADING & STATE" border={HOME_DIVIDER} muted={HOME_MUTED} first />
               <DevRow label="Skeleton" description="Toggle loading state">
                 <DevToggle active={loading} onToggle={() => setLoading(v => !v)} />
               </DevRow>
@@ -1953,34 +1825,34 @@ export default function MobileDashboard() {
                 <DevToggle active={devForceError} onToggle={() => { const n = !devForceError; setDevForceError(n); devForceErrorRef.current = n; }} />
               </DevRow>
               <DevRow label="Re-fetch" description="Reload transactions">
-                <button onClick={() => { setLoading(true); refresh(); }} className="px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer border" style={{ color: text, borderColor: border, backgroundColor: `color-mix(in srgb, ${text} 6%, transparent)` }}>Run</button>
+                <button onClick={() => { setLoading(true); refresh(); }} className="px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer border" style={{ color: HOME_TEXT, borderColor: HOME_DIVIDER, backgroundColor: "rgba(255,255,255,0.06)" }}>Run</button>
               </DevRow>
 
-              <MDevSection label="NETWORK" border={border} muted={muted} />
+              <MDevSection label="NETWORK" border={HOME_DIVIDER} muted={HOME_MUTED} />
               <div className="px-5 py-2 flex flex-col gap-1">
-                <span className="text-xs" style={{ color: muted }}>Slow network</span>
+                <span className="text-xs" style={{ color: HOME_MUTED }}>Slow network</span>
                 <div className="flex gap-1">
                   {[0, 500, 2000, 5000].map(ms => (
-                    <button key={ms} onClick={() => setDevDelay(ms)} style={{ flex: 1, padding: "4px 0", borderRadius: 6, border: `1px solid ${devDelay === ms ? "var(--category-expense)" : border}`, backgroundColor: devDelay === ms ? "color-mix(in srgb, var(--category-expense) 12%, transparent)" : "transparent", color: devDelay === ms ? "var(--category-expense)" : muted, fontSize: 10, fontWeight: 600, cursor: "pointer" }}>
+                    <button key={ms} onClick={() => setDevDelay(ms)} style={{ flex: 1, padding: "4px 0", borderRadius: 6, border: `1px solid ${devDelay === ms ? "var(--category-expense)" : HOME_DIVIDER}`, backgroundColor: devDelay === ms ? "color-mix(in srgb, var(--category-expense) 12%, transparent)" : "transparent", color: devDelay === ms ? "var(--category-expense)" : HOME_MUTED, fontSize: 10, fontWeight: 600, cursor: "pointer" }}>
                       {ms === 0 ? "Off" : ms < 1000 ? `${ms}ms` : `${ms/1000}s`}
                     </button>
                   ))}
                 </div>
               </div>
 
-              <MDevSection label="DATA" border={border} muted={muted} />
-              <MDevInfo label="Transactions" value={transactions.length} muted={muted} text={text} />
-              <MDevInfo label="Last fetch" value={devLastFetch ? devLastFetch.toLocaleTimeString() : "—"} muted={muted} text={text} />
-              <MDevInfo label="Nav tab" value={navTab} muted={muted} text={text} />
-              <MDevInfo label="Date range" value={dashDateRange.from ? `${dashDateRange.from.toLocaleDateString("en-US",{month:"short",day:"numeric"})} → ${dashDateRange.to?.toLocaleDateString("en-US",{month:"short",day:"numeric"}) ?? "…"}` : "All time"} muted={muted} text={text} />
+              <MDevSection label="DATA" border={HOME_DIVIDER} muted={HOME_MUTED} />
+              <MDevInfo label="Transactions" value={transactions.length} muted={HOME_MUTED} text={HOME_TEXT} />
+              <MDevInfo label="Last fetch" value={devLastFetch ? devLastFetch.toLocaleTimeString() : "—"} muted={HOME_MUTED} text={HOME_TEXT} />
+              <MDevInfo label="Nav tab" value={navTab} muted={HOME_MUTED} text={HOME_TEXT} />
+              <MDevInfo label="Date range" value={dashDateRange.from ? `${dashDateRange.from.toLocaleDateString("en-US",{month:"short",day:"numeric"})} → ${dashDateRange.to?.toLocaleDateString("en-US",{month:"short",day:"numeric"}) ?? "…"}` : "All time"} muted={HOME_MUTED} text={HOME_TEXT} />
 
-              <MDevSection label="UI" border={border} muted={muted} />
+              <MDevSection label="UI" border={HOME_DIVIDER} muted={HOME_MUTED} />
               <DevRow label="Toggle theme" description="Flip dark / light">
-                <button onClick={() => document.documentElement.classList.toggle("dark")} className="px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer border" style={{ color: text, borderColor: border, backgroundColor: `color-mix(in srgb, ${text} 6%, transparent)` }}>Flip</button>
+                <button onClick={() => document.documentElement.classList.toggle("dark")} className="px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer border" style={{ color: HOME_TEXT, borderColor: HOME_DIVIDER, backgroundColor: "rgba(255,255,255,0.06)" }}>Flip</button>
               </DevRow>
 
-              <MDevSection label="SESSION" border={border} muted={muted} />
-              <MDevInfo label="Token expiry" value={(() => { try { const t = localStorage.getItem("token"); if (!t) return "None"; const p = JSON.parse(atob(t.split(".")[1])); return p.exp ? new Date(p.exp * 1000).toLocaleTimeString() : "No exp"; } catch { return "Invalid"; } })()} muted={muted} text={text} />
+              <MDevSection label="SESSION" border={HOME_DIVIDER} muted={HOME_MUTED} />
+              <MDevInfo label="Token expiry" value={(() => { try { const t = localStorage.getItem("token"); if (!t) return "None"; const p = JSON.parse(atob(t.split(".")[1])); return p.exp ? new Date(p.exp * 1000).toLocaleTimeString() : "No exp"; } catch { return "Invalid"; } })()} muted={HOME_MUTED} text={HOME_TEXT} />
               <div className="px-5 py-2">
                 <button onClick={() => { localStorage.clear(); window.location.reload(); }} className="w-full py-2 rounded-xl text-xs font-bold cursor-pointer border" style={{ color: "var(--category-expense)", borderColor: "var(--category-expense)", backgroundColor: "color-mix(in srgb, var(--category-expense) 8%, transparent)" }}>
                   Clear localStorage + Reload

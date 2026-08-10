@@ -275,7 +275,7 @@ function OverviewCard({
     bills = {
       key: "bills",
       label: "Upcoming Bills",
-      value: `-${fmt(safeToSpend.bills_before_next_payday)}`,
+      value: parseFloat(safeToSpend.bills_before_next_payday) > 0 ? `-${fmt(safeToSpend.bills_before_next_payday)}` : fmt(safeToSpend.bills_before_next_payday),
       color: TILE_COLOR.BILL,
       caption: billCount > 0 ? `${billCount} bill${billCount !== 1 ? "s" : ""} due` : "No bills due",
     };
