@@ -1,6 +1,7 @@
 import { useState } from "react";
 import SwipeableRow from "./SwipeableRow";
 import AmountSortButton from "./AmountSortButton";
+import Skel from "./Skel";
 import { CATEGORY_CONFIG, INCOME_TYPES, fmt, nextAmountSort } from "../utils/finance";
 import { periodLabel, relativeDate } from "../utils/mobileFormat";
 import {
@@ -16,19 +17,6 @@ function IconBack() {
   );
 }
 
-function Skel({ w = "100%", h = 16, style: extra = {} }) {
-  return (
-    <div
-      style={{
-        width: w, height: h, borderRadius: 6, flexShrink: 0,
-        background: "linear-gradient(90deg, rgba(255,255,255,0.05) 25%, rgba(255,255,255,0.11) 50%, rgba(255,255,255,0.05) 75%)",
-        backgroundSize: "200% 100%",
-        animation: "skel-shimmer 1.4s ease-in-out infinite",
-        ...extra,
-      }}
-    />
-  );
-}
 
 export default function MobileCategory({
   category, transactions, loading, onBack, onEditTransaction, onDeleteTransaction,

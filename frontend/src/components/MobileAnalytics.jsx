@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import MobileActivity from "./MobileActivity";
+import Skel from "./Skel";
 import { CATEGORY_CONFIG, INCOME_TYPES, fmt } from "../utils/finance";
 import { getNow } from "../utils/time";
 import {
@@ -57,6 +58,47 @@ function fmtShort(amount) {
 
 function Empty() {
   return <p style={{ fontSize: 13, color: HOME_MUTED, textAlign: "center", padding: "18px 0" }}>Not enough data yet</p>;
+}
+
+// Loading placeholders shaped like each chart's real layout, rather than
+// reusing the "no data yet" text for both loading and empty states.
+function CategoryBreakdownSkel() {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {[70, 55, 62, 40].map((w, i) => (
+        <div key={i} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <Skel w={34} h={34} style={{ borderRadius: "50%", flexShrink: 0 }} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+              <Skel w={`${w}%`} h={13} />
+              <Skel w={40} h={13} />
+            </div>
+            <Skel w="100%" h={6} style={{ borderRadius: 999 }} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Mirrors the Income vs. Expense / Savings Rate bar-chart layout: N month
+// columns, each with 1 or 2 bars of varied height plus a label underneath.
+function TrendChartSkel({ bars = 1 }) {
+  const heights = [55, 80, 40, 95, 65, 70];
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 6, height: 130 }}>
+      {heights.map((h, i) => (
+        <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center" }}>
+          <div style={{ flex: 1, display: "flex", alignItems: "flex-end", gap: 3, width: "100%", justifyContent: "center" }}>
+            {Array.from({ length: bars }).map((_, b) => (
+              <Skel key={b} w={bars === 1 ? 14 : 8} h={`${h}%`} style={{ borderRadius: "3px 3px 0 0" }} />
+            ))}
+          </div>
+          <Skel w={20} h={11} style={{ marginTop: 4 }} />
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function IconChevron({ dir, size = 22 }) {
@@ -249,7 +291,7 @@ export default function MobileAnalytics({ transactions, loading, onEditTransacti
 
       <SectionCard title="Category Breakdown">
         {loading ? (
-          <Empty />
+          <CategoryBreakdownSkel />
         ) : categoryBreakdown.rows.length === 0 ? (
           <p style={{ fontSize: 13, color: HOME_MUTED, textAlign: "center", padding: "10px 0" }}>No transactions in {periodLabel}</p>
         ) : (
@@ -285,7 +327,7 @@ export default function MobileAnalytics({ transactions, loading, onEditTransacti
 
       <SectionCard title="Income vs. Expense">
         {loading ? (
-          <Empty />
+          <TrendChartSkel bars={2} />
         ) : !hasTrendData ? (
           <Empty />
         ) : (
@@ -325,7 +367,7 @@ export default function MobileAnalytics({ transactions, loading, onEditTransacti
 
       <SectionCard title="Savings Rate">
         {loading ? (
-          <Empty />
+          <TrendChartSkel bars={1} />
         ) : !hasSavingsData ? (
           <Empty />
         ) : (

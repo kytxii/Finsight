@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import SwipeableRow from "./SwipeableRow";
 import CurrencyInput from "./CurrencyInput";
+import Skel from "./Skel";
 import { fmt } from "../utils/finance";
 import { getToday } from "../utils/time";
 import { periodLabel } from "../utils/mobileFormat";
@@ -66,16 +67,6 @@ function IconBank({ color, size = 18 }) {
       <path d="M12 3 3 8h18z" />
       <path d="M5 8v10M9.5 8v10M14.5 8v10M19 8v10" />
     </svg>
-  );
-}
-
-function Skel({ w = "100%", h = 16, style: extra = {} }) {
-  return (
-    <div style={{
-      width: w, height: h, borderRadius: 6, flexShrink: 0,
-      background: "linear-gradient(90deg, rgba(255,255,255,0.05) 25%, rgba(255,255,255,0.11) 50%, rgba(255,255,255,0.05) 75%)",
-      backgroundSize: "200% 100%", animation: "skel-shimmer 1.4s ease-in-out infinite", ...extra,
-    }} />
   );
 }
 

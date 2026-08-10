@@ -15,6 +15,7 @@ import {
 } from "../api/paychecks";
 import { IconIncomeTile } from "./categoryIcons";
 import CurrencyInput from "./CurrencyInput";
+import Skel from "./Skel";
 import { HOME_TEXT, HOME_MUTED, HOME_SURFACE, HOME_DIVIDER, HOME_INCOME, HOME_EXPENSE, TILE_COLOR } from "./categoryVisuals";
 
 const GOLD = TILE_COLOR.SAVINGS; // "needs amount" / balance accent
@@ -36,20 +37,6 @@ function fmtDate(dateStr) {
 
 function monthLabel(dateStr) {
   return new Date(dateStr + "T00:00:00").toLocaleDateString("en-US", { month: "long", year: "numeric" });
-}
-
-// Relies on the @keyframes skel-shimmer rule injected by MobileDashboard,
-// which always mounts this panel as a descendant.
-function Skel({ w = "100%", h = 16, style: extra = {} }) {
-  return (
-    <div style={{
-      width: w, height: h, borderRadius: 6, flexShrink: 0,
-      background: "linear-gradient(90deg, rgba(255,255,255,0.05) 25%, rgba(255,255,255,0.11) 50%, rgba(255,255,255,0.05) 75%)",
-      backgroundSize: "200% 100%",
-      animation: "skel-shimmer 1.4s ease-in-out infinite",
-      ...extra,
-    }} />
-  );
 }
 
 function SectionLabel({ children }) {

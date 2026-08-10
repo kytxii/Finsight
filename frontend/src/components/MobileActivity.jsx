@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import SwipeableRow from "./SwipeableRow";
 import AmountSortButton from "./AmountSortButton";
+import Skel from "./Skel";
 import { CATEGORIES, CATEGORY_CONFIG, INCOME_TYPES, fmt } from "../utils/finance";
 import { relativeDate } from "../utils/mobileFormat";
 import {
@@ -93,16 +94,6 @@ function IconChevronDown({ size = 16 }) {
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
       <path d="M6 9l6 6 6-6" />
     </svg>
-  );
-}
-
-function Skel({ w = "100%", h = 16, style: extra = {} }) {
-  return (
-    <div style={{
-      width: w, height: h, borderRadius: 6, flexShrink: 0,
-      background: "linear-gradient(90deg, rgba(255,255,255,0.05) 25%, rgba(255,255,255,0.11) 50%, rgba(255,255,255,0.05) 75%)",
-      backgroundSize: "200% 100%", animation: "skel-shimmer 1.4s ease-in-out infinite", ...extra,
-    }} />
   );
 }
 
