@@ -44,6 +44,17 @@ function SectionCard({ title, children }) {
   );
 }
 
+// Compact dollar label for the narrow per-month columns in the Savings
+// Rate chart - fmt()'s full "$1,234.00" doesn't fit six across. Full value
+// is still available via the bar's title tooltip.
+function fmtShort(amount) {
+  const rounded = Math.round(amount);
+  if (Math.abs(rounded) >= 1000) {
+    return `$${(rounded / 1000).toFixed(rounded % 1000 === 0 ? 0 : 1)}k`;
+  }
+  return `$${rounded}`;
+}
+
 function Empty() {
   return <p style={{ fontSize: 13, color: HOME_MUTED, textAlign: "center", padding: "18px 0" }}>Not enough data yet</p>;
 }
@@ -143,7 +154,7 @@ export default function MobileAnalytics({ transactions, loading, onEditTransacti
   // applied here from the start rather than repeating the bug).
   const months = useMemo(() => lastMonths(TREND_MONTHS), []);
   // One extra month before the trend window, purely so the first displayed
-  // month has something to compare against for the savings % change below.
+  // month has a prior month to compare against for the savings % change below.
   const extendedMonths = useMemo(() => lastMonths(TREND_MONTHS + 1), []);
 
   const monthlyTotals = useMemo(() => {
@@ -168,25 +179,25 @@ export default function MobileAnalytics({ transactions, loading, onEditTransacti
 
   const hasTrendData = months.some((m) => monthlyTotals[m.key].income > 0 || monthlyTotals[m.key].expense > 0);
 
-  // ── Savings % change, month over month: how much more/less you saved this
-  // month vs. the one before, e.g. $100 -> $150 is +50%. Not "% of income" -
-  // that definition could read over 100% (saved more than that month's
-  // income, e.g. from a windfall) with no good way to display it. Month-over-
-  // month growth is unbounded either way, but at least "+301%" reads
-  // naturally as "way more than last month" instead of looking like a bug.
-  const savingsChange = useMemo(() => {
+  // ── Savings: dollar amount actually moved to SAVINGS that month, plus how
+  // it changed vs. the month before (e.g. $100 -> $150 is +50%). Retrospective
+  // across the same trend window as the chart above - deliberately not the
+  // same number as Home's "Estimated Savings" card, which is a forward-
+  // looking projection for the current month only (get_estimated_savings,
+  // #17/#73).
+  const savingsSummary = useMemo(() => {
     return months.map((m, i) => {
       const prevKey = extendedMonths[i].key; // one slot behind - extendedMonths has the extra lead-in month
-      const prevSavings = monthlyTotals[prevKey]?.savings ?? 0;
-      const thisSavings = monthlyTotals[m.key]?.savings ?? 0;
-      if (prevSavings > 0) return { ...m, change: ((thisSavings - prevSavings) / prevSavings) * 100, isNew: false, thisSavings };
-      if (thisSavings > 0) return { ...m, change: null, isNew: true, thisSavings }; // started from $0 - no meaningful %
-      return { ...m, change: null, isNew: false, thisSavings };
+      const prevAmount = monthlyTotals[prevKey]?.savings ?? 0;
+      const amount = monthlyTotals[m.key]?.savings ?? 0;
+      if (prevAmount > 0) return { ...m, amount, change: ((amount - prevAmount) / prevAmount) * 100, isNew: false };
+      if (amount > 0) return { ...m, amount, change: null, isNew: true }; // started from $0 - no meaningful %
+      return { ...m, amount, change: null, isNew: false };
     });
   }, [months, extendedMonths, monthlyTotals]);
 
-  const hasSavingsData = savingsChange.some((m) => m.change != null || m.isNew);
-  const changeMax = Math.max(1, ...savingsChange.map((m) => m.change != null ? Math.abs(m.change) : 0));
+  const hasSavingsData = savingsSummary.some((m) => m.amount > 0);
+  const savingsMax = Math.max(1, ...savingsSummary.map((m) => m.amount));
 
   return (
     <>
@@ -319,42 +330,33 @@ export default function MobileAnalytics({ transactions, loading, onEditTransacti
           <Empty />
         ) : (
           <>
-            {/* Diverging bar: positive change grows up from the middle
-                zero-line, negative grows down. No alignItems:flex-end at the
-                outer level - default stretch keeps each half a definite
-                height so the height:X% bars inside resolve correctly (#29). */}
-            <div style={{ display: "flex", height: 130 }}>
-              {savingsChange.map((m) => {
-                const barPct = m.change != null ? Math.min(100, (Math.abs(m.change) / changeMax) * 100) : 0;
-                const positive = m.change != null && m.change >= 0;
-                const color = m.isNew ? HOME_ACCENT : positive ? HOME_INCOME : HOME_EXPENSE;
+            {/* One bar per month, height proportional to $ saved that month
+                relative to the window's own max (mirrors the Income vs.
+                Expense bars above). Full amount is in the title tooltip -
+                the label below is the compact form (#29). */}
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 6, height: 110 }}>
+              {savingsSummary.map((m) => {
+                const h = Math.max(2, (m.amount / savingsMax) * 100);
                 return (
-                  <div key={m.key} style={{ flex: 1, display: "flex", flexDirection: "column" }}>
-                    <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "flex-end", alignItems: "center" }}>
-                      {(m.isNew || positive) && (
-                        <div style={{ width: 16, height: `${m.isNew ? 55 : barPct}%`, borderRadius: "4px 4px 0 0", backgroundColor: color, opacity: m.isNew ? 0.7 : 1 }} />
-                      )}
+                  <div key={m.key} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center" }}>
+                    <div style={{ flex: 1, display: "flex", alignItems: "flex-end", width: "100%", justifyContent: "center" }}>
+                      <div title={fmt(m.amount)} style={{ width: 14, height: `${h}%`, borderRadius: "3px 3px 0 0", backgroundColor: HOME_ACCENT }} />
                     </div>
-                    <div style={{ height: 1, backgroundColor: HOME_DIVIDER }} />
-                    <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "flex-start", alignItems: "center" }}>
-                      {!m.isNew && !positive && m.change != null && (
-                        <div style={{ width: 16, height: `${barPct}%`, borderRadius: "0 0 4px 4px", backgroundColor: color }} />
-                      )}
-                    </div>
+                    <span style={{ fontSize: 11, fontWeight: 600, color: HOME_MUTED, marginTop: 4 }}>{m.label}</span>
                   </div>
                 );
               })}
             </div>
-            <div style={{ display: "flex", marginTop: 8 }}>
-              {savingsChange.map((m) => (
+            <div style={{ display: "flex", marginTop: 10 }}>
+              {savingsSummary.map((m) => (
                 <div key={m.key} style={{ flex: 1, textAlign: "center" }}>
+                  <p style={{ margin: 0, fontSize: 11.5, fontWeight: 700, color: HOME_TEXT }}>{fmtShort(m.amount)}</p>
                   <p style={{
-                    margin: 0, fontSize: 11, fontWeight: 700,
+                    margin: "2px 0 0", fontSize: 10.5, fontWeight: 700,
                     color: m.isNew ? HOME_ACCENT : m.change == null ? HOME_MUTED : m.change >= 0 ? HOME_INCOME : HOME_EXPENSE,
                   }}>
                     {m.isNew ? "New" : m.change == null ? "—" : `${m.change >= 0 ? "+" : "-"}${Math.abs(m.change).toFixed(0)}%`}
                   </p>
-                  <p style={{ margin: "2px 0 0", fontSize: 11, fontWeight: 600, color: HOME_MUTED }}>{m.label}</p>
                 </div>
               ))}
             </div>

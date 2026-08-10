@@ -88,6 +88,14 @@ function IconCalendar() {
   );
 }
 
+function IconChevronDown({ size = 16 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M6 9l6 6 6-6" />
+    </svg>
+  );
+}
+
 function Skel({ w = "100%", h = 16, style: extra = {} }) {
   return (
     <div style={{
@@ -95,14 +103,6 @@ function Skel({ w = "100%", h = 16, style: extra = {} }) {
       background: "linear-gradient(90deg, rgba(255,255,255,0.05) 25%, rgba(255,255,255,0.11) 50%, rgba(255,255,255,0.05) 75%)",
       backgroundSize: "200% 100%", animation: "skel-shimmer 1.4s ease-in-out infinite", ...extra,
     }} />
-  );
-}
-
-function SectionLabel({ children }) {
-  return (
-    <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: HOME_MUTED, margin: "0 4px 8px" }}>
-      {children}
-    </p>
   );
 }
 
@@ -121,6 +121,10 @@ export default function MobileActivity({ transactions, loading, onEditTransactio
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [openId, setOpenId] = useState(null);
   const [highlightId, setHighlightId] = useState(null);
+  // Per-month collapse, keyed by the same label groups.map renders (e.g.
+  // "July 2026") - all expanded by default, local to this mount like the
+  // rest of Activity's state so it resets on tab switch (#29).
+  const [collapsedMonths, setCollapsedMonths] = useState(() => new Set());
 
   const rowRefs = useRef({});
   const sentinelRef = useRef(null);
@@ -130,6 +134,14 @@ export default function MobileActivity({ transactions, loading, onEditTransactio
   // would race the jump-to-transaction effect below on the same render and
   // clobber whatever pagination it just set (#29).
   function resetPagination() { setVisibleMonthCount(MONTHS_PER_PAGE); setVisibleCount(PAGE_SIZE); }
+  function toggleMonth(month) {
+    setCollapsedMonths((prev) => {
+      const next = new Set(prev);
+      if (next.has(month)) next.delete(month);
+      else next.add(month);
+      return next;
+    });
+  }
   function updateQuery(v) { setQuery(v); resetPagination(); }
   function updateCategory(c) { setCategory(c); resetPagination(); }
   function advanceCategory() {
@@ -232,6 +244,17 @@ export default function MobileActivity({ transactions, loading, onEditTransactio
     const targetTxn = transactions.find((t) => t.id === jump.id);
     const monthIdx = targetTxn ? jumpMonths.indexOf(monthKey(targetTxn.transaction_date)) : -1;
     if (monthIdx !== -1) setVisibleMonthCount((c) => Math.max(c, MONTHS_PER_PAGE, monthIdx + 1));
+    // Expand the target's month if it was collapsed, or the scroll below
+    // would land on a hidden section.
+    if (targetTxn) {
+      const jumpMonth = monthLabel(targetTxn.transaction_date);
+      setCollapsedMonths((prev) => {
+        if (!prev.has(jumpMonth)) return prev;
+        const next = new Set(prev);
+        next.delete(jumpMonth);
+        return next;
+      });
+    }
     setHighlightId(jump.id);
     const clearHighlight = setTimeout(() => setHighlightId(null), 2500);
     const scrollTimer = setTimeout(() => {
@@ -381,35 +404,77 @@ export default function MobileActivity({ transactions, loading, onEditTransactio
         <div style={{ position: "fixed", inset: 0, zIndex: 5 }} onTouchStart={() => setOpenId(null)} onClick={() => setOpenId(null)} />
       )}
 
-      {loading ? (
-        <div style={cardStyle}>
-          {[...Array(5)].map((_, i) => (
-            <div key={i} style={{ display: "flex", alignItems: "center", gap: 14, padding: "11px 14px", borderTop: i > 0 ? `1px solid ${HOME_DIVIDER}` : "none" }}>
-              <Skel h={40} w={40} style={{ borderRadius: "50%" }} />
-              <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
-                <Skel h={16} w="55%" />
-                <Skel h={13} w="30%" />
+      {/* Fixed floor so switching category/search down to a handful of
+          results (or zero) doesn't collapse this section's height and yank
+          the whole scrolling page up underneath the user's thumb (#29). */}
+      <div style={{ minHeight: 260 }}>
+        {loading ? (
+          <div style={cardStyle}>
+            {[...Array(5)].map((_, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 14, padding: "11px 14px", borderTop: i > 0 ? `1px solid ${HOME_DIVIDER}` : "none" }}>
+                <Skel h={40} w={40} style={{ borderRadius: "50%" }} />
+                <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
+                  <Skel h={16} w="55%" />
+                  <Skel h={13} w="30%" />
+                </div>
+                <Skel h={16} w={60} />
               </div>
-              <Skel h={16} w={60} />
-            </div>
-          ))}
-        </div>
-      ) : sorted.length === 0 ? (
-        <p style={{ fontSize: 13, color: HOME_MUTED, textAlign: "center", padding: "30px 0" }}>No transactions found</p>
-      ) : groups ? (
-        groups.map((g, gi) => (
-          <div key={g.month + gi} style={{ marginBottom: 18, animation: "activityFadeIn 0.3s ease" }}>
-            <SectionLabel>{g.month}</SectionLabel>
-            <div style={cardStyle}>
-              {g.items.map((t, i) => <Row key={t.id} t={t} first={i === 0} />)}
-            </div>
+            ))}
           </div>
-        ))
-      ) : (
-        <div style={cardStyle}>
-          {visible.map((t, i) => <Row key={t.id} t={t} first={i === 0} />)}
-        </div>
-      )}
+        ) : sorted.length === 0 ? (
+          <p style={{ fontSize: 13, color: HOME_MUTED, textAlign: "center", padding: "30px 0" }}>No transactions found</p>
+        ) : groups ? (
+          groups.map((g, gi) => {
+            const collapsed = collapsedMonths.has(g.month);
+            return (
+              <div key={g.month + gi} style={{ marginBottom: 18, animation: "activityFadeIn 0.3s ease" }}>
+                <button
+                  onClick={() => toggleMonth(g.month)}
+                  aria-expanded={!collapsed}
+                  style={{
+                    display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%",
+                    background: "none", border: "none", padding: "0 4px 8px", margin: 0, cursor: "pointer",
+                  }}
+                >
+                  <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: HOME_MUTED }}>
+                    {g.month}
+                  </span>
+                  <span style={{
+                    color: HOME_MUTED, display: "flex",
+                    transform: collapsed ? "rotate(-90deg)" : "rotate(0deg)", transition: "transform 0.2s ease",
+                  }}>
+                    <IconChevronDown />
+                  </span>
+                </button>
+                {/* Grid-rows collapse trick: animating 1fr -> 0fr on a grid
+                    track (rather than toggling display/mount, or animating
+                    max-height against an unknown content height) is what
+                    lets this transition smoothly regardless of how many rows
+                    are in the month (#29). It's still a layout property, so
+                    every frame reflows this box - `contain` scopes that
+                    reflow/repaint to just this subtree instead of the whole
+                    page recalculating around it, which is what was making it
+                    laggy with a month's worth of rows inside. */}
+                <div style={{
+                  display: "grid", gridTemplateRows: collapsed ? "0fr" : "1fr",
+                  transition: "grid-template-rows 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
+                  contain: "layout paint", willChange: "grid-template-rows",
+                }}>
+                  <div style={{ overflow: "hidden" }}>
+                    <div style={cardStyle}>
+                      {g.items.map((t, i) => <Row key={t.id} t={t} first={i === 0} />)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        ) : (
+          <div style={cardStyle}>
+            {visible.map((t, i) => <Row key={t.id} t={t} first={i === 0} />)}
+          </div>
+        )}
+      </div>
 
       {hasMore && <div ref={sentinelRef} style={{ height: 1 }} />}
     </>
