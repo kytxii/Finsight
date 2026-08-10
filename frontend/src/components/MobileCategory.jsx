@@ -1,6 +1,7 @@
 import { useState } from "react";
 import SwipeableRow from "./SwipeableRow";
-import { CATEGORY_CONFIG, INCOME_TYPES, fmt } from "../utils/finance";
+import AmountSortButton from "./AmountSortButton";
+import { CATEGORY_CONFIG, INCOME_TYPES, fmt, nextAmountSort } from "../utils/finance";
 import { periodLabel, relativeDate } from "../utils/mobileFormat";
 import {
   HOME_TEXT, HOME_MUTED, HOME_SURFACE, HOME_DIVIDER, HOME_INCOME, HOME_EXPENSE, HOME_ACCENT,
@@ -107,33 +108,7 @@ export default function MobileCategory({
       <div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "0 4px 12px" }}>
           <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, letterSpacing: "-0.4px", color: HOME_TEXT }}>Transactions</h2>
-          <button
-            onClick={() => setAmountSort((s) => (s === "desc" ? "asc" : s === "asc" ? null : "desc"))}
-            aria-label="Sort by amount"
-            style={{
-              display: "flex", alignItems: "center", gap: 6, justifyContent: "center",
-              height: 34, padding: "0 12px", borderRadius: 10,
-              border: `1px solid ${amountSort ? tileColor : HOME_DIVIDER}`,
-              color: amountSort ? tileColor : HOME_MUTED,
-              backgroundColor: amountSort ? `color-mix(in srgb, ${tileColor} 14%, transparent)` : "transparent",
-              fontSize: 13, fontWeight: 600,
-              cursor: "pointer",
-            }}
-          >
-            Amount
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              {amountSort === "asc" ? (
-                <path d="M12 19V5M5 12l7-7 7 7" />
-              ) : amountSort === "desc" ? (
-                <path d="M12 5v14M5 12l7 7 7-7" />
-              ) : (
-                <>
-                  <path d="M12 19V5M5 12l7-7 7 7" opacity="0.4" />
-                  <path d="M12 5v14M5 12l7 7 7-7" opacity="0.4" />
-                </>
-              )}
-            </svg>
-          </button>
+          <AmountSortButton sort={amountSort} onToggle={() => setAmountSort(nextAmountSort)} color={tileColor} />
         </div>
         <div style={{ backgroundColor: HOME_SURFACE, borderRadius: 18, overflow: "hidden" }}>
           {openId !== null && (

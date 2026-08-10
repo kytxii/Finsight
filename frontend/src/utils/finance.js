@@ -94,3 +94,8 @@ export function fmt(amount) {
     currency: "USD",
   }).format(amount);
 }
+
+// Cycle for the shared amount-sort toggle (AmountSortButton): null -> desc -> asc -> null.
+export function nextAmountSort(current) {
+  return current === "desc" ? "asc" : current === "asc" ? null : "desc";
+}

@@ -7,18 +7,6 @@ import {
 } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  Cell,
-  Tooltip,
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  AreaChart,
-  Area,
-} from "recharts";
-import {
   getTransactions,
   createTransaction,
   deleteTransaction,
@@ -28,14 +16,12 @@ import { getTipDeposits } from "../api/tipDeposits";
 import CurrencyInput from "../components/CurrencyInput";
 import EditTransactionModal from "../components/EditTransactionModal";
 import {
-  CATEGORIES,
   CATEGORY_CONFIG,
   INCOME_TYPES,
-  fmt,
 } from "../utils/finance";
 import { useTheme } from "../hooks/useTheme";
 import { useAuth } from "../context/AuthContext";
-import { PRESETS, getPresetRange } from "../components/DateRangeFilter";
+import { getPresetRange } from "../components/DateRangeFilter";
 import { getToday } from "../utils/time";
 import { errorMessage } from "../utils/errors";
 import MobilePageSlide from "../components/MobilePageSlide";
@@ -45,11 +31,12 @@ import Footer from "../components/Footer";
 import AccountPanel from "../components/AccountPanel";
 import OverviewBreakdownSheet from "../components/OverviewBreakdownSheet";
 import MobileHome from "../components/MobileHome";
+import MobileTopbar from "../components/MobileTopbar";
 import MobileCategory from "../components/MobileCategory";
 import MobileTips from "../components/MobileTips";
 import MobilePaychecks from "../components/MobilePaychecks";
 import MobileRecurring from "../components/MobileRecurring";
-import SwipeableRow from "../components/SwipeableRow";
+import MobileAnalytics from "../components/MobileAnalytics";
 import ImportPanel from "../components/ImportPanel";
 import { HOME_BG, HOME_TEXT, HOME_MUTED, HOME_DIVIDER, HOME_SURFACE, HOME_INCOME, ACCENT } from "../components/categoryVisuals";
 
@@ -75,7 +62,7 @@ function IconDashboard({ size = 20 }) {
   );
 }
 
-function IconAnalytics({ size = 20 }) {
+function IconActivity({ size = 20 }) {
   return (
     <svg
       width={size}
@@ -87,9 +74,7 @@ function IconAnalytics({ size = 20 }) {
       strokeLinecap="round"
       strokeLinejoin="round"
     >
-      <line x1="18" y1="20" x2="18" y2="10" />
-      <line x1="12" y1="20" x2="12" y2="4" />
-      <line x1="6" y1="20" x2="6" y2="14" />
+      <path d="M4 6h16M4 12h10M4 18h16" />
     </svg>
   );
 }
@@ -165,158 +150,6 @@ function IconChevronLeft({ size = 16 }) {
   );
 }
 
-// ── Transaction list shared component ────────────────────────────────────────
-
-function TransactionList({
-  items,
-  total,
-  page,
-  setPage,
-  perPage,
-  setPerPage,
-  accentColor,
-  highlightId,
-  text,
-  muted,
-  border,
-  surface,
-  onEdit,
-  onDelete,
-}) {
-  const [openId, setOpenId] = useState(null);
-
-  if (total === 0) {
-    return (
-      <p className="px-4 py-8 text-center text-sm" style={{ color: muted }}>
-        No transactions
-      </p>
-    );
-  }
-  return (
-    <>
-      {openId !== null && (
-        <div
-          style={{ position: "fixed", inset: 0, zIndex: 5 }}
-          onTouchStart={() => setOpenId(null)}
-          onClick={() => setOpenId(null)}
-        />
-      )}
-      {items.map((t) => {
-        const isIncome = INCOME_TYPES.has(t.category);
-        return (
-          <SwipeableRow
-            key={t.id}
-            id={t.id}
-            openId={openId}
-            setOpenId={setOpenId}
-            onEdit={() => onEdit(t)}
-            onDelete={() => onDelete(t.id)}
-            border={border}
-            surface={surface}
-            text={text}
-          >
-            <div
-              className="px-4 py-3 flex items-center gap-3"
-              style={{
-                backgroundColor:
-                  t.id === highlightId
-                    ? `color-mix(in srgb, var(--category-${t.category.toLowerCase()}) 12%, transparent)`
-                    : surface,
-                transition: "background-color 0.6s ease",
-              }}
-            >
-              <div className="flex-1 min-w-0">
-                <p
-                  className="text-sm font-medium truncate"
-                  style={{ color: text }}
-                >
-                  {t.name}
-                </p>
-                <p className="text-xs" style={{ color: muted }}>
-                  <span
-                    className="font-medium"
-                    style={{
-                      color: `var(--category-${t.category.toLowerCase()})`,
-                    }}
-                  >
-                    {CATEGORY_CONFIG[t.category]?.label}
-                  </span>
-                  {" · "}
-                  {new Date(
-                    t.transaction_date + "T00:00:00",
-                  ).toLocaleDateString("en-US", {
-                    month: "short",
-                    day: "numeric",
-                    year: "numeric",
-                  })}
-                </p>
-              </div>
-              <p
-                className="text-sm font-bold shrink-0"
-                style={{
-                  color: isIncome
-                    ? "var(--category-income)"
-                    : "var(--category-expense)",
-                }}
-              >
-                {isIncome ? "+" : "-"}
-                {fmt(t.amount)}
-              </p>
-            </div>
-          </SwipeableRow>
-        );
-      })}
-      <div
-        className="px-4 py-3 border-t flex items-center justify-between text-xs"
-        style={{ borderColor: border, color: muted }}
-      >
-        <div className="flex items-center gap-2">
-          <span>Rows:</span>
-          {[10, 20, 50].map((n) => (
-            <button
-              key={n}
-              onClick={() => setPerPage(n)}
-              className="px-3 py-2 rounded-lg border font-semibold cursor-pointer transition-all duration-150"
-              style={{
-                color: perPage === n ? accentColor : muted,
-                borderColor: perPage === n ? accentColor : border,
-                backgroundColor:
-                  perPage === n
-                    ? `color-mix(in srgb, ${accentColor} 12%, transparent)`
-                    : "transparent",
-              }}
-            >
-              {n}
-            </button>
-          ))}
-        </div>
-        <div className="flex items-center gap-2">
-          <span>
-            {`${(page - 1) * perPage + 1}–${Math.min(page * perPage, total)}`}{" "}
-            of {total}
-          </span>
-          <button
-            onClick={() => setPage(page - 1)}
-            disabled={page === 1}
-            className="px-3 py-2 rounded-lg border font-semibold cursor-pointer disabled:opacity-30"
-            style={{ color: muted, borderColor: border }}
-          >
-            ←
-          </button>
-          <button
-            onClick={() => setPage(page + 1)}
-            disabled={page * perPage >= total}
-            className="px-3 py-2 rounded-lg border font-semibold cursor-pointer disabled:opacity-30"
-            style={{ color: muted, borderColor: border }}
-          >
-            →
-          </button>
-        </div>
-      </div>
-    </>
-  );
-}
-
 // ── Main component ────────────────────────────────────────────────────────────
 
 const newBatchRow = () => ({
@@ -346,7 +179,7 @@ export default function MobileDashboard() {
   // Slide direction is derived from these. Tabs sit at whole numbers in bottom-nav
   // order; a category detail sits just past the dashboard it was pushed from, so
   // pushing reads as forward and going back reads as back. (#46)
-  const NAV_ORDER = { dashboard: 0, analytics: 1, ai: 2 };
+  const NAV_ORDER = { dashboard: 0, activity: 1, ai: 2 };
   const pageKey = categoryView ? `category:${categoryView}` : navTab;
   const pageOrder = categoryView ? NAV_ORDER.dashboard + 0.5 : NAV_ORDER[navTab] ?? 0;
 
@@ -546,28 +379,21 @@ export default function MobileDashboard() {
   // ── Dashboard state (fixed to current month - no picker on the Home tab)
   const dashDateRange = useMemo(() => getPresetRange("Current Month"), []);
 
-  // ── Analytics state
-  const [analyticsTab, setAnalyticsTab] = useState("ALL");
-  const [analyticsPreset, setAnalyticsPreset] = useState("Current Month");
-  const [analyticsFromVal, setAnalyticsFromVal] = useState("");
-  const [analyticsToVal, setAnalyticsToVal] = useState("");
-  const [analyticsDateRange, setAnalyticsDateRange] = useState(() =>
-    getPresetRange("Current Month"),
-  );
-  const [analyticsPage, setAnalyticsPage] = useState(1);
-  const [analyticsPerPage, setAnalyticsPerPage] = useState(10);
-  const [analyticsAmountSort, setAnalyticsAmountSort] = useState(null);
-  const [analyticsTypeFilter, setAnalyticsTypeFilter] = useState(null);
+  // ── Analytics tab: jump-to-transaction request from Home's search dropdown,
+  // passed through MobileAnalytics to the Activity section within it.
+  // { id, token } - token changes on every pick so the effect in
+  // MobileActivity always re-fires, even for the same transaction twice.
+  // Everything else about Activity (search/chip/sort/scroll) is local state
+  // owned by MobileActivity itself, not lifted here (#29).
+  const [activityJump, setActivityJump] = useState(null);
 
   // ── Search
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchVisible, setSearchVisible] = useState(false);
-  const [highlightId, setHighlightId] = useState(null);
   const debounceRef = useRef(null);
   const searchContainerRef = useRef(null);
-  const analyticsTableRef = useRef(null);
   const { dragY, handlers: sheetDragHandlers } = useSheetDrag(() => {
     setAddSheetOpen(false);
     setEntrySheetOpen(false);
@@ -645,35 +471,13 @@ export default function MobileDashboard() {
       .slice(0, 5);
   }, [debouncedQuery, transactions]);
 
-  const handleSelectTransaction = useCallback(
-    (t) => {
-      setQuery("");
-      setDebouncedQuery("");
-      setSearchOpen(false);
-      setNavTab("analytics");
-      setAnalyticsTab("ALL");
-      setAnalyticsPreset("All");
-      setAnalyticsFromVal("");
-      setAnalyticsToVal("");
-      setAnalyticsDateRange(getPresetRange("All"));
-      const allSorted = [...transactions].sort(
-        (a, b) => new Date(b.transaction_date) - new Date(a.transaction_date),
-      );
-      const idx = allSorted.findIndex((tx) => tx.id === t.id);
-      if (idx !== -1) setAnalyticsPage(Math.ceil((idx + 1) / analyticsPerPage));
-      setHighlightId(t.id);
-      setTimeout(() => setHighlightId(null), 2500);
-      setTimeout(
-        () =>
-          analyticsTableRef.current?.scrollIntoView({
-            behavior: "smooth",
-            block: "start",
-          }),
-        50,
-      );
-    },
-    [transactions, analyticsPerPage],
-  );
+  const handleSelectTransaction = useCallback((t) => {
+    setQuery("");
+    setDebouncedQuery("");
+    setSearchOpen(false);
+    setNavTab("activity");
+    setActivityJump({ id: t.id, token: Date.now() });
+  }, []);
 
   // ── Dashboard computed
   const dashFiltered = useMemo(() => {
@@ -755,48 +559,6 @@ export default function MobileDashboard() {
     return { totalIn, totalOut };
   }, [transactions, dashLastMonthRange, dashLastMonthDeposits]);
 
-  // ── Analytics computed
-  const analyticsColor = `var(--category-${analyticsTab.toLowerCase()})`;
-
-  const analyticsFiltered = useMemo(() => {
-    let result =
-      analyticsTab === "ALL"
-        ? transactions
-        : transactions.filter((t) => t.category === analyticsTab);
-    if (analyticsDateRange.from || analyticsDateRange.to) {
-      result = result.filter((t) => {
-        const d = new Date(t.transaction_date + "T00:00:00");
-        if (analyticsDateRange.from && d < analyticsDateRange.from)
-          return false;
-        if (analyticsDateRange.to && d > analyticsDateRange.to) return false;
-        return true;
-      });
-    }
-    return result;
-  }, [transactions, analyticsTab, analyticsDateRange]);
-
-  const analyticsSorted = useMemo(() => {
-    let arr = [...analyticsFiltered];
-    if (analyticsTypeFilter === "income")
-      arr = arr.filter((t) => INCOME_TYPES.has(t.category));
-    else if (analyticsTypeFilter === "expense")
-      arr = arr.filter((t) => !INCOME_TYPES.has(t.category));
-    if (analyticsAmountSort === "asc")
-      return arr.sort((a, b) => parseFloat(a.amount) - parseFloat(b.amount));
-    if (analyticsAmountSort === "desc")
-      return arr.sort((a, b) => parseFloat(b.amount) - parseFloat(a.amount));
-    return arr.sort(
-      (a, b) => new Date(b.transaction_date) - new Date(a.transaction_date),
-    );
-  }, [analyticsFiltered, analyticsAmountSort, analyticsTypeFilter]);
-  const analyticsPaginated = analyticsSorted.slice(
-    (analyticsPage - 1) * analyticsPerPage,
-    analyticsPage * analyticsPerPage,
-  );
-  useEffect(() => {
-    setAnalyticsPage(1);
-  }, [analyticsFiltered, analyticsPerPage]);
-
   useEffect(() => {
     document.body.style.overflow =
       addSheetOpen || entrySheetOpen || batchSheetOpen || importSheetOpen ? "hidden" : "";
@@ -815,140 +577,39 @@ export default function MobileDashboard() {
     return () => vv.removeEventListener("resize", handler);
   }, []);
 
-  const analyticsSummary = useMemo(() => {
-    const totalIn = analyticsFiltered
-      .filter((t) => INCOME_TYPES.has(t.category))
-      .reduce((s, t) => s + parseFloat(t.amount), 0);
-    const totalOut = analyticsFiltered
-      .filter((t) => !INCOME_TYPES.has(t.category))
-      .reduce((s, t) => s + parseFloat(t.amount), 0);
-    const categoryTotal = totalIn + totalOut;
-    const txCount = analyticsFiltered.length;
-    const avgTx = txCount > 0 ? categoryTotal / txCount : 0;
-    const savingsRate =
-      totalIn > 0 ? ((totalIn - totalOut) / totalIn) * 100 : null;
-
-    let pctOfTotal = null;
-    if (analyticsTab !== "ALL") {
-      const isIncome = INCOME_TYPES.has(analyticsTab);
-      const periodTotal = transactions
-        .filter((t) => {
-          if (!analyticsDateRange.from && !analyticsDateRange.to) return true;
-          const d = new Date(t.transaction_date + "T00:00:00");
-          if (analyticsDateRange.from && d < analyticsDateRange.from)
-            return false;
-          if (analyticsDateRange.to && d > analyticsDateRange.to) return false;
-          return true;
-        })
-        .filter((t) =>
-          isIncome
-            ? INCOME_TYPES.has(t.category)
-            : !INCOME_TYPES.has(t.category),
-        )
-        .reduce((s, t) => s + parseFloat(t.amount), 0);
-      if (periodTotal > 0) pctOfTotal = (categoryTotal / periodTotal) * 100;
-    }
-
-    return {
-      totalIn,
-      totalOut,
-      categoryTotal,
-      txCount,
-      avgTx,
-      savingsRate,
-      pctOfTotal,
-    };
-  }, [analyticsFiltered, transactions, analyticsTab, analyticsDateRange]);
-
-  const analyticsAreaData = useMemo(() => {
-    if (analyticsTab === "ALL") return [];
-    const grouped = {};
-    analyticsFiltered.forEach((t) => {
-      grouped[t.transaction_date] =
-        (grouped[t.transaction_date] ?? 0) + parseFloat(t.amount);
-    });
-    return Object.entries(grouped)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([date, total]) => ({
-        date: new Date(date + "T00:00:00").getTime(),
-        total: parseFloat(total.toFixed(2)),
-      }));
-  }, [analyticsFiltered, analyticsTab]);
-
-  const analyticsBarData = useMemo(() => {
-    if (analyticsTab !== "ALL") {
-      const grouped = {};
-      analyticsFiltered.forEach((t) => {
-        grouped[t.name] = (grouped[t.name] ?? 0) + parseFloat(t.amount);
-      });
-      const entries = Object.entries(grouped)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 10);
-      const START = 100,
-        END = 30;
-      const step =
-        entries.length > 1 ? (START - END) / (entries.length - 1) : 0;
-      return entries.map(([name, total], i) => ({
-        month: name,
-        total: parseFloat(total.toFixed(2)),
-        color: `color-mix(in srgb, ${analyticsColor} ${Math.round(START - i * step)}%, black)`,
-      }));
-    }
-    const grouped = {};
-    analyticsFiltered.forEach((t) => {
-      const month = new Date(
-        t.transaction_date + "T00:00:00",
-      ).toLocaleDateString("en-US", { month: "short", year: "2-digit" });
-      if (!grouped[month]) grouped[month] = { income: 0, expense: 0 };
-      if (INCOME_TYPES.has(t.category))
-        grouped[month].income += parseFloat(t.amount);
-      else grouped[month].expense += parseFloat(t.amount);
-    });
-    return Object.entries(grouped)
-      .sort((a, b) => new Date("1 " + a[0]) - new Date("1 " + b[0]))
-      .map(([month, { income, expense }]) => ({
-        month,
-        income: parseFloat(income.toFixed(2)),
-        expense: parseFloat(expense.toFixed(2)),
-      }));
-  }, [analyticsFiltered, analyticsTab, analyticsColor]);
-
-  const analyticsSmallMultiples = useMemo(() => {
-    if (analyticsTab !== "ALL") return [];
-    const byCategory = {};
-    analyticsFiltered.forEach((t) => {
-      byCategory[t.category] =
-        (byCategory[t.category] ?? 0) + parseFloat(t.amount);
-    });
-    return Object.entries(byCategory)
-      .map(([cat, total]) => ({ cat, total: parseFloat(total.toFixed(2)) }))
-      .sort((a, b) => b.total - a.total);
-  }, [analyticsFiltered, analyticsTab]);
-
-  const tooltipProps = {
-    contentStyle: {
-      backgroundColor: surface,
-      borderColor: border,
-      borderRadius: "12px",
-      color: text,
-    },
-    labelStyle: { color: text },
-    itemStyle: { color: text },
-  };
-
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div
       className="h-dvh flex flex-col overflow-hidden"
-      style={{ backgroundColor: navTab === "dashboard" ? HOME_BG : bg, color: text }}
+      style={{ backgroundColor: navTab === "dashboard" || navTab === "activity" ? HOME_BG : bg, color: text }}
     >
+
+      {/* ── Topbar - avatar/add/search - a true sibling of <main>, not nested
+          inside the sliding page content, so it stays fixed in place across
+          every tab and every page transition instead of unmounting/jumping
+          with them (#29). */}
+      <MobileTopbar
+        user={user}
+        onOpenAccount={() => { setDrawerOpen(true); setAccountOpen(true); }}
+        onOpenAdd={() => setAddSheetOpen(true)}
+        onToggleSearch={handleToggleSearch}
+        searchVisible={searchVisible}
+        searchContainerRef={searchContainerRef}
+        query={query}
+        debouncedQuery={debouncedQuery}
+        searchOpen={searchOpen}
+        suggestions={suggestions}
+        onQueryChange={handleQueryChange}
+        onSearchKeyDown={handleSearchKeyDown}
+        onSelectTransaction={handleSelectTransaction}
+      />
 
       {/* ── Main content ── */}
       <main
         ref={mainRef}
         className="flex-1 px-4 pb-28 space-y-4 overflow-y-auto"
-        style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 1rem)", WebkitOverflowScrolling: "touch" }}
+        style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 1rem + 54px)", WebkitOverflowScrolling: "touch" }}
       >
         <style>{`@keyframes skel-shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }`}</style>
         <MobilePageSlide pageKey={pageKey} order={pageOrder} layerClassName="space-y-4">
@@ -977,7 +638,6 @@ export default function MobileDashboard() {
               <>
                 <MobileHome
                     loading={loading}
-                    user={user}
                     dashSummary={dashSummary}
                     dashLastMonthSummary={dashLastMonthSummary}
                     safeToSpend={safeToSpend}
@@ -986,626 +646,27 @@ export default function MobileDashboard() {
                     savingsStatus={savingsStatus}
                     dashSorted={dashSorted}
                     dashCategoryTotals={dashCategoryTotals}
-                    searchVisible={searchVisible}
-                    onToggleSearch={handleToggleSearch}
-                    searchContainerRef={searchContainerRef}
-                    query={query}
-                    debouncedQuery={debouncedQuery}
-                    searchOpen={searchOpen}
-                    suggestions={suggestions}
-                    onQueryChange={handleQueryChange}
-                    onSearchKeyDown={handleSearchKeyDown}
-                    onSelectTransaction={handleSelectTransaction}
-                    onOpenAccount={() => { setDrawerOpen(true); setAccountOpen(true); }}
-                    onOpenAdd={() => setAddSheetOpen(true)}
                     onOpenRecurring={() => setRecurringOpen(true)}
                     onOpenPaychecks={() => setPaychecksOpen(true)}
                     onOpenBreakdown={(key) => setBreakdownCell(key)}
                     onViewCategory={(cat) => setCategoryView(cat)}
-                    onViewSpendingByCategory={() => { setNavTab("analytics"); setAnalyticsTab("ALL"); }}
-                    onSeeAllTransactions={() => {
-                      setNavTab("analytics");
-                      setAnalyticsTab("ALL");
-                      setAnalyticsPreset("All");
-                      setAnalyticsFromVal("");
-                      setAnalyticsToVal("");
-                      setAnalyticsDateRange(getPresetRange("All"));
-                    }}
+                    onSeeAllTransactions={() => setNavTab("activity")}
                     onEditTransaction={setEditingTransaction}
                   />
               </>
             )}
           </>
         )}
-        {/* Analytics tab */}
-        {navTab === "analytics" && (
-          <>
-            {/* Filters */}
-            <div className="flex flex-col gap-2">
-              <div className="grid grid-cols-2 gap-3">
-                <select
-                  value={analyticsTab}
-                  onChange={(e) => setAnalyticsTab(e.target.value)}
-                  className="rounded-xl px-3 py-2 text-xs font-semibold border cursor-pointer w-full"
-                  style={{
-                    color: text,
-                    borderColor: analyticsColor,
-                    backgroundColor: dark
-                      ? `color-mix(in srgb, ${analyticsColor} 12%, transparent)`
-                      : "var(--light-surface)",
-                    boxShadow: `0 0 0 2px color-mix(in srgb, ${analyticsColor} 20%, transparent)`,
-                    colorScheme: dark ? "dark" : "light",
-                  }}
-                >
-                  {CATEGORIES.map((cat) => (
-                    <option
-                      key={cat}
-                      value={cat}
-                      style={{ backgroundColor: bg, color: text }}
-                    >
-                      {cat === "ALL" ? "All" : CATEGORY_CONFIG[cat].label}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  value={analyticsPreset ?? "custom"}
-                  onChange={(e) => {
-                    setAnalyticsPreset(e.target.value);
-                    setAnalyticsFromVal("");
-                    setAnalyticsToVal("");
-                    setAnalyticsDateRange(getPresetRange(e.target.value));
-                  }}
-                  className="rounded-xl px-3 py-2 text-xs font-semibold border cursor-pointer w-full"
-                  style={{
-                    color: text,
-                    borderColor: analyticsColor,
-                    backgroundColor: dark
-                      ? `color-mix(in srgb, ${analyticsColor} 12%, transparent)`
-                      : "var(--light-surface)",
-                    boxShadow: `0 0 0 2px color-mix(in srgb, ${analyticsColor} 20%, transparent)`,
-                    colorScheme: dark ? "dark" : "light",
-                  }}
-                >
-                  {PRESETS.map((label) => (
-                    <option
-                      key={label}
-                      value={label}
-                      style={{ backgroundColor: bg, color: text }}
-                    >
-                      {label}
-                    </option>
-                  ))}
-                  {!analyticsPreset && (
-                    <option
-                      value="custom"
-                      disabled
-                      style={{ backgroundColor: bg, color: text }}
-                    >
-                      Custom
-                    </option>
-                  )}
-                </select>
-              </div>
-              <div className="flex items-center gap-2">
-                <input
-                  type="date"
-                  value={analyticsFromVal}
-                  onChange={(e) => {
-                    setAnalyticsFromVal(e.target.value);
-                    setAnalyticsPreset(null);
-                    setAnalyticsDateRange((r) => ({
-                      ...r,
-                      from: e.target.value
-                        ? new Date(e.target.value + "T00:00:00")
-                        : null,
-                    }));
-                  }}
-                  className="flex-1 rounded-xl px-2 py-2 text-[10px] font-semibold border min-w-0"
-                  style={{
-                    backgroundColor: dark
-                      ? "var(--dark-bg)"
-                      : "var(--light-surface)",
-                    borderColor: border,
-                    color: text,
-                    colorScheme: dark ? "dark" : "light",
-                  }}
-                />
-                <span
-                  className="text-[10px] uppercase font-bold shrink-0"
-                  style={{ color: muted }}
-                >
-                  to
-                </span>
-                <input
-                  type="date"
-                  value={analyticsToVal}
-                  onChange={(e) => {
-                    setAnalyticsToVal(e.target.value);
-                    setAnalyticsPreset(null);
-                    setAnalyticsDateRange((r) => ({
-                      ...r,
-                      to: e.target.value
-                        ? new Date(e.target.value + "T23:59:59")
-                        : null,
-                    }));
-                  }}
-                  className="flex-1 rounded-xl px-2 py-2 text-[10px] font-semibold border min-w-0"
-                  style={{
-                    backgroundColor: dark
-                      ? "var(--dark-bg)"
-                      : "var(--light-surface)",
-                    borderColor: border,
-                    color: text,
-                    colorScheme: dark ? "dark" : "light",
-                  }}
-                />
-              </div>
-            </div>
 
-            {/* Summary cards — single category only */}
-            {analyticsTab !== "ALL" && (
-              <div className="grid grid-cols-2 gap-3">
-                {[
-                  {
-                    label: `${CATEGORY_CONFIG[analyticsTab]?.label.toUpperCase()} TOTAL`,
-                    value: fmt(analyticsSummary.categoryTotal),
-                    color: analyticsColor,
-                  },
-                  {
-                    label: "TRANSACTIONS",
-                    value: String(analyticsSummary.txCount),
-                    color: analyticsColor,
-                  },
-                  {
-                    label: "AVG TRANSACTION",
-                    value: fmt(analyticsSummary.avgTx),
-                    color: analyticsColor,
-                  },
-                  {
-                    label: INCOME_TYPES.has(analyticsTab)
-                      ? "% OF TOTAL INCOME"
-                      : "% OF TOTAL EXPENSES",
-                    value:
-                      analyticsSummary.pctOfTotal != null
-                        ? `${analyticsSummary.pctOfTotal.toFixed(1)}%`
-                        : "—",
-                    color: analyticsColor,
-                  },
-                ].map(({ label, value, color }) => (
-                  <div
-                    key={label}
-                    className="rounded-2xl px-4 py-4 border"
-                    style={{
-                      backgroundColor: surface,
-                      borderColor: border,
-                      borderTopColor: color,
-                      borderTopWidth: "3px",
-                    }}
-                  >
-                    <p
-                      className="text-xs font-medium mb-1"
-                      style={{ color: muted }}
-                    >
-                      {label}
-                    </p>
-                    <p
-                      className="text-lg font-bold tracking-tight"
-                      style={{ color }}
-                    >
-                      {value}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Area chart (single category) */}
-            {analyticsTab !== "ALL" && analyticsAreaData.length > 0 && (
-              <div
-                className="rounded-2xl border p-4"
-                style={{
-                  backgroundColor: surface,
-                  borderColor: analyticsColor,
-                }}
-              >
-                <p
-                  className="text-base font-semibold mb-3"
-                  style={{ color: text }}
-                >
-                  {CATEGORY_CONFIG[analyticsTab]?.label} Over Time
-                </p>
-                <ResponsiveContainer
-                  width="100%"
-                  height={220}
-                  style={{ pointerEvents: "none" }}
-                >
-                  <AreaChart data={analyticsAreaData}>
-                    <defs>
-                      <linearGradient
-                        id="areaFillMobile"
-                        x1="0"
-                        y1="0"
-                        x2="0"
-                        y2="1"
-                      >
-                        <stop
-                          offset="5%"
-                          stopColor={analyticsColor}
-                          stopOpacity={0.3}
-                        />
-                        <stop
-                          offset="95%"
-                          stopColor={analyticsColor}
-                          stopOpacity={0.02}
-                        />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid
-                      strokeDasharray="3 3"
-                      vertical={false}
-                      stroke={
-                        dark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)"
-                      }
-                    />
-                    <XAxis
-                      dataKey="date"
-                      type="number"
-                      scale="time"
-                      domain={["dataMin", "dataMax"]}
-                      axisLine={false}
-                      tickLine={false}
-                      tick={{ fontSize: 11, fill: text }}
-                      tickFormatter={(v) =>
-                        new Date(v).toLocaleDateString("en-US", {
-                          month: "short",
-                          day: "numeric",
-                        })
-                      }
-                    />
-                    <YAxis
-                      axisLine={false}
-                      tickLine={false}
-                      tickFormatter={(v) => `$${v}`}
-                      tick={{ fontSize: 11, fill: text }}
-                    />
-                    <Tooltip
-                      {...tooltipProps}
-                      cursor={{
-                        stroke: analyticsColor,
-                        strokeWidth: 1,
-                        strokeDasharray: "4 4",
-                      }}
-                      content={({ payload }) => {
-                        if (!payload?.length) return null;
-                        const { date, total } = payload[0].payload;
-                        return (
-                          <div
-                            style={{
-                              ...tooltipProps.contentStyle,
-                              padding: "8px 12px",
-                            }}
-                          >
-                            <p
-                              style={{ margin: 0, opacity: 0.7, fontSize: 11 }}
-                            >
-                              {new Date(date).toLocaleDateString("en-US", {
-                                month: "short",
-                                day: "numeric",
-                                year: "numeric",
-                              })}
-                            </p>
-                            <p style={{ margin: 0, fontWeight: 600 }}>
-                              {fmt(total)}
-                            </p>
-                          </div>
-                        );
-                      }}
-                    />
-                    <Area
-                      key={analyticsTab}
-                      type="monotone"
-                      dataKey="total"
-                      stroke={analyticsColor}
-                      strokeWidth={2}
-                      fill="url(#areaFillMobile)"
-                      dot={{ fill: analyticsColor, r: 4, strokeWidth: 0 }}
-                      activeDot={{ r: 6, strokeWidth: 0 }}
-                      isAnimationActive
-                      animationBegin={0}
-                      animationDuration={1000}
-                      animationEasing="ease-out"
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-
-            {/* Category overview bar — ALL only */}
-            {analyticsTab === "ALL" && analyticsSmallMultiples.length > 0 && (
-              <div
-                className="rounded-2xl border p-4"
-                style={{ backgroundColor: surface, borderColor: border }}
-              >
-                <p
-                  className="text-base font-semibold mb-3"
-                  style={{ color: text }}
-                >
-                  Spending by Category
-                </p>
-                {(() => {
-                  const max = Math.max(
-                    ...analyticsSmallMultiples.map((d) => d.total),
-                  );
-                  return (
-                    <div className="space-y-2">
-                      {analyticsSmallMultiples.map(({ cat, total }) => {
-                        const catColor = `var(--category-${cat.toLowerCase()})`;
-                        const pct = max > 0 ? (total / max) * 100 : 0;
-                        return (
-                          <div key={cat} className="flex items-center gap-2">
-                            <span
-                              style={{
-                                width: 100,
-                                fontSize: 11,
-                                fontWeight: 600,
-                                color: catColor,
-                                flexShrink: 0,
-                                textAlign: "right",
-                              }}
-                            >
-                              {CATEGORY_CONFIG[cat]?.label ?? cat}
-                            </span>
-                            <div
-                              style={{
-                                flex: 1,
-                                height: 10,
-                                borderRadius: 5,
-                                backgroundColor: `color-mix(in srgb, ${catColor} 15%, transparent)`,
-                              }}
-                            >
-                              <div
-                                style={{
-                                  width: `${pct}%`,
-                                  height: "100%",
-                                  borderRadius: 5,
-                                  backgroundColor: catColor,
-                                  transition: "width 0.4s ease",
-                                }}
-                              />
-                            </div>
-                            <span
-                              style={{
-                                width: 68,
-                                fontSize: 11,
-                                fontWeight: 600,
-                                color: text,
-                                flexShrink: 0,
-                              }}
-                            >
-                              {fmt(total)}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  );
-                })()}
-              </div>
-            )}
-
-            {/* Top by name — single category */}
-            {analyticsTab !== "ALL" && analyticsBarData.length > 0 && (
-              <div
-                className="rounded-2xl border p-4"
-                style={{
-                  backgroundColor: surface,
-                  borderColor: analyticsColor,
-                }}
-              >
-                <p
-                  className="text-base font-semibold mb-3"
-                  style={{ color: text }}
-                >
-                  Top {CATEGORY_CONFIG[analyticsTab]?.label} by Name
-                </p>
-                <ResponsiveContainer
-                  width="100%"
-                  height={200}
-                  style={{ pointerEvents: "none" }}
-                >
-                  <BarChart data={analyticsBarData} barSize={20}>
-                    <CartesianGrid
-                      strokeDasharray="3 3"
-                      vertical={false}
-                      stroke={
-                        dark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)"
-                      }
-                    />
-                    <XAxis
-                      dataKey="month"
-                      axisLine={false}
-                      tickLine={false}
-                      interval={0}
-                      height={50}
-                      tick={(props) => {
-                        const val = props.payload?.value ?? "";
-                        const label =
-                          val.length > 10 ? val.slice(0, 10) + "…" : val;
-                        return (
-                          <text
-                            x={props.x}
-                            y={props.y}
-                            dy={6}
-                            textAnchor="end"
-                            fontSize={11}
-                            style={{ fill: text }}
-                            transform={`rotate(-35, ${props.x}, ${props.y})`}
-                          >
-                            {label}
-                          </text>
-                        );
-                      }}
-                    />
-                    <YAxis
-                      axisLine={false}
-                      tickLine={false}
-                      tickFormatter={(v) => `$${v}`}
-                      tick={{ fontSize: 10, fill: text }}
-                    />
-                    <Tooltip
-                      {...tooltipProps}
-                      formatter={(v) => fmt(v)}
-                      cursor={false}
-                    />
-                    <Bar dataKey="total" radius={[5, 5, 0, 0]} barSize={20}>
-                      {analyticsBarData.map((entry) => (
-                        <Cell key={entry.month} fill={entry.color} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-
-            {/* Transaction table */}
-            <div
-              ref={analyticsTableRef}
-              className="rounded-2xl border"
-              style={{ backgroundColor: surface, borderColor: analyticsColor }}
-            >
-              <div
-                className="px-4 py-3 border-b flex items-center justify-between"
-                style={{ borderColor: border }}
-              >
-                <p className="text-base font-semibold" style={{ color: text }}>
-                  Transactions
-                </p>
-                <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
-                  <button
-                    onClick={() =>
-                      setAnalyticsTypeFilter((f) =>
-                        f === null
-                          ? "income"
-                          : f === "income"
-                            ? "expense"
-                            : null,
-                      )
-                    }
-                    style={{
-                      color:
-                        analyticsTypeFilter === "income"
-                          ? "var(--category-income)"
-                          : analyticsTypeFilter === "expense"
-                            ? "var(--category-expense)"
-                            : muted,
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 3,
-                      fontSize: 12,
-                      fontWeight: 600,
-                      background: `color-mix(in srgb, ${text} 6%, transparent)`,
-                      border: "none",
-                      cursor: "pointer",
-                      borderRadius: 8,
-                      padding: "3px 8px",
-                    }}
-                  >
-                    {analyticsTypeFilter === "income"
-                      ? "Income"
-                      : analyticsTypeFilter === "expense"
-                        ? "Expense"
-                        : "All"}
-                    <svg
-                      width="14"
-                      height="14"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      {analyticsTypeFilter === "income" ? (
-                        <>
-                          <polyline points="23 6 13.5 15.5 8.5 10.5 1 18" />
-                          <polyline points="17 6 23 6 23 12" />
-                        </>
-                      ) : analyticsTypeFilter === "expense" ? (
-                        <>
-                          <polyline points="23 18 13.5 8.5 8.5 13.5 1 6" />
-                          <polyline points="17 18 23 18 23 12" />
-                        </>
-                      ) : (
-                        <>
-                          <path d="M12 19V5M5 12l7-7 7 7" opacity="0.4" />
-                          <path d="M12 5v14M5 12l7 7 7-7" opacity="0.4" />
-                        </>
-                      )}
-                    </svg>
-                  </button>
-                  <button
-                    onClick={() =>
-                      setAnalyticsAmountSort((s) =>
-                        s === "desc" ? "asc" : s === "asc" ? null : "desc",
-                      )
-                    }
-                    style={{
-                      color: analyticsAmountSort ? analyticsColor : muted,
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 3,
-                      fontSize: 12,
-                      fontWeight: 600,
-                      background: `color-mix(in srgb, ${text} 6%, transparent)`,
-                      border: "none",
-                      cursor: "pointer",
-                      borderRadius: 8,
-                      padding: "3px 8px",
-                    }}
-                  >
-                    Amount
-                    <svg
-                      width="14"
-                      height="14"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      {analyticsAmountSort === "asc" ? (
-                        <path d="M12 19V5M5 12l7-7 7 7" />
-                      ) : analyticsAmountSort === "desc" ? (
-                        <path d="M12 5v14M5 12l7 7 7-7" />
-                      ) : (
-                        <>
-                          <path d="M12 19V5M5 12l7-7 7 7" opacity="0.4" />
-                          <path d="M12 5v14M5 12l7 7 7-7" opacity="0.4" />
-                        </>
-                      )}
-                    </svg>
-                  </button>
-                </div>
-              </div>
-              <TransactionList
-                items={analyticsPaginated}
-                total={analyticsSorted.length}
-                page={analyticsPage}
-                setPage={setAnalyticsPage}
-                perPage={analyticsPerPage}
-                setPerPage={setAnalyticsPerPage}
-                accentColor={analyticsColor}
-                highlightId={highlightId}
-                text={text}
-                muted={muted}
-                border={border}
-                surface={surface}
-                onEdit={setEditingTransaction}
-                onDelete={handleDelete}
-              />
-            </div>
-          </>
+        {/* Analytics tab: charts + the Activity transaction browser (#29) */}
+        {navTab === "activity" && (
+          <MobileAnalytics
+            transactions={transactions}
+            loading={loading}
+            onEditTransaction={setEditingTransaction}
+            onDeleteTransaction={handleDelete}
+            jump={activityJump}
+          />
         )}
 
         {/* AI tab */}
@@ -1655,7 +716,7 @@ export default function MobileDashboard() {
           {(() => {
             const items = [
               { id: "dashboard", label: "Dashboard", Icon: IconDashboard },
-              { id: "analytics", label: "Analytics", Icon: IconAnalytics },
+              { id: "activity", label: "Analytics", Icon: IconActivity },
               { id: "ai", label: "AI", Icon: IconAI },
               { id: "more", label: "Menu", Icon: IconMore },
             ];
