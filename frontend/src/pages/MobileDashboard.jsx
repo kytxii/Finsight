@@ -14,7 +14,7 @@ import {
 import { getSpendableSurplus, getEstimatedSavings } from "../api/paychecks";
 import { getTipDeposits } from "../api/tipDeposits";
 import CurrencyInput from "../components/CurrencyInput";
-import EditTransactionModal from "../components/EditTransactionModal";
+import MobileTransactionModal from "../components/MobileTransactionModal";
 import {
   CATEGORY_CONFIG,
   INCOME_TYPES,
@@ -394,6 +394,7 @@ export default function MobileDashboard() {
   const [searchVisible, setSearchVisible] = useState(false);
   const debounceRef = useRef(null);
   const searchContainerRef = useRef(null);
+  const searchToggleRef = useRef(null);
   const { dragY, handlers: sheetDragHandlers } = useSheetDrag(() => {
     setAddSheetOpen(false);
     setEntrySheetOpen(false);
@@ -442,13 +443,24 @@ export default function MobileDashboard() {
     });
   };
 
+  // Click/tap off the search bar minimizes it entirely, not just the
+  // suggestions dropdown - matches handleToggleSearch's own "already open"
+  // branch. Excludes the toggle button itself (searchToggleRef) since that's
+  // outside searchContainerRef's subtree - without the exclusion, tapping the
+  // toggle to close would race this handler: mousedown fires first and closes
+  // via this effect, then the click's onToggleSearch reads the now-stale
+  // "was open" state and immediately reopens it.
   useEffect(() => {
     function onMouseDown(e) {
       if (
         searchContainerRef.current &&
-        !searchContainerRef.current.contains(e.target)
+        !searchContainerRef.current.contains(e.target) &&
+        !(searchToggleRef.current && searchToggleRef.current.contains(e.target))
       ) {
         setSearchOpen(false);
+        setSearchVisible(false);
+        setQuery("");
+        setDebouncedQuery("");
       }
     }
     document.addEventListener("mousedown", onMouseDown);
@@ -471,10 +483,24 @@ export default function MobileDashboard() {
       .slice(0, 5);
   }, [debouncedQuery, transactions]);
 
+  // Selecting a search result opens the detail modal directly (#27) instead
+  // of jumping to the Activity tab and scrolling/highlighting the row -
+  // that scroll+highlight flow still exists (MobileActivity's `jump` effect)
+  // but is now reached via the modal's own locate action, not automatically.
   const handleSelectTransaction = useCallback((t) => {
     setQuery("");
     setDebouncedQuery("");
     setSearchOpen(false);
+    setEditingTransaction(t);
+  }, []);
+
+  // Locate action from within MobileTransactionModal: close the modal, switch
+  // to Activity, and hand off to MobileActivity's existing jump-to-transaction
+  // effect (reset filters, expand pagination/collapse to the target's month,
+  // scroll it into view, highlight it) - unchanged from before #27, just no
+  // longer the only way to reach a transaction from search.
+  const handleLocateTransaction = useCallback((t) => {
+    setEditingTransaction(null);
     setNavTab("activity");
     setActivityJump({ id: t.id, token: Date.now() });
   }, []);
@@ -596,6 +622,7 @@ export default function MobileDashboard() {
         onToggleSearch={handleToggleSearch}
         searchVisible={searchVisible}
         searchContainerRef={searchContainerRef}
+        searchToggleRef={searchToggleRef}
         query={query}
         debouncedQuery={debouncedQuery}
         searchOpen={searchOpen}
@@ -1966,13 +1993,15 @@ export default function MobileDashboard() {
       </div>
 
       {editingTransaction && (
-        <EditTransactionModal
+        <MobileTransactionModal
           transaction={editingTransaction}
           onClose={() => setEditingTransaction(null)}
           onSaved={() => {
             setEditingTransaction(null);
             refresh();
           }}
+          onDelete={handleDelete}
+          onLocate={handleLocateTransaction}
         />
       )}
 

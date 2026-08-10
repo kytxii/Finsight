@@ -1,5 +1,8 @@
+import { useEffect, useRef, useState } from "react";
 import { CATEGORY_CONFIG, fmt } from "../utils/finance";
 import { HOME_TEXT, HOME_MUTED, HOME_SURFACE, HOME_DIVIDER, TILE_COLOR } from "./categoryVisuals";
+
+const SEARCH_ANIM_MS = 180;
 
 // Shared topbar - avatar, add, search - rendered once in MobileDashboard as a
 // true sibling to <MobilePageSlide> rather than nested inside any one tab's
@@ -41,6 +44,7 @@ export default function MobileTopbar({
   onToggleSearch,
   searchVisible,
   searchContainerRef,
+  searchToggleRef,
   query,
   debouncedQuery,
   searchOpen,
@@ -49,6 +53,34 @@ export default function MobileTopbar({
   onSearchKeyDown,
   onSelectTransaction,
 }) {
+  // Mount-on-open, kept mounted for one extra tick on close so the fade/slide
+  // below actually has something to animate out (a plain `searchVisible &&`
+  // conditional unmounts instantly, same problem MobileScreen.jsx solves for
+  // full-screen panels - same pattern, scaled down for this smaller bar).
+  const [prevVisible, setPrevVisible] = useState(searchVisible);
+  const [closing, setClosing] = useState(false);
+  const inputRef = useRef(null);
+
+  if (prevVisible !== searchVisible) {
+    setPrevVisible(searchVisible);
+    if (!searchVisible) setClosing(true);
+  }
+
+  useEffect(() => {
+    if (!closing) return;
+    const timer = setTimeout(() => setClosing(false), SEARCH_ANIM_MS);
+    return () => clearTimeout(timer);
+  }, [closing]);
+
+  // Replaces `autoFocus` - the input now stays mounted across toggles rather
+  // than remounting each time, so autoFocus (fires once, on mount) would only
+  // work the first time the bar opens. Refocus explicitly whenever it opens.
+  useEffect(() => {
+    if (searchVisible) inputRef.current?.focus();
+  }, [searchVisible]);
+
+  const showSearch = searchVisible || closing;
+
   return (
     <>
       <div
@@ -106,13 +138,13 @@ export default function MobileTopbar({
           <button onClick={onOpenAdd} aria-label="Add transaction" style={iconBtnStyle}>
             <IconPlusTopbar />
           </button>
-          <button onClick={onToggleSearch} aria-label="Search transactions" style={iconBtnStyle}>
+          <button ref={searchToggleRef} onClick={onToggleSearch} aria-label="Search transactions" style={iconBtnStyle}>
             <IconSearchTopbar />
           </button>
         </div>
       </div>
 
-      {searchVisible && (
+      {showSearch && (
         <div
           ref={searchContainerRef}
           style={{
@@ -121,10 +153,13 @@ export default function MobileTopbar({
             left: 16,
             right: 16,
             zIndex: 24,
+            opacity: searchVisible ? 1 : 0,
+            transform: `translateY(${searchVisible ? 0 : -6}px)`,
+            transition: `opacity ${SEARCH_ANIM_MS}ms ease, transform ${SEARCH_ANIM_MS}ms ease`,
           }}
         >
           <input
-            autoFocus
+            ref={inputRef}
             value={query}
             onChange={onQueryChange}
             onKeyDown={onSearchKeyDown}
