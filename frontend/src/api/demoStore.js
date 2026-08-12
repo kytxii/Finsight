@@ -1,4 +1,5 @@
 import { parseCsvText, detectColumnMapping, annotateImportRows } from "../utils/csvImport";
+import { computeMonthlyPayment, computeGaugeStatus } from "../utils/installmentMath";
 
 // ── Keys ──────────────────────────────────────────────────────────────────────
 const TX_KEY = "demo_transactions";
@@ -8,13 +9,28 @@ const PC_KEY = "demo_paychecks";
 const BA_KEY = "demo_balance_anchor";
 const RES_KEY = "demo_spending_reserve";
 const TD_KEY = "demo_tip_deposits";
+const IN_KEY = "demo_installments";
+const ID_KEY = "demo_next_id";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const getAll  = (key)       => JSON.parse(localStorage.getItem(key) || "[]");
 const saveAll = (key, data) => localStorage.setItem(key, JSON.stringify(data));
 const respond = (data)      => Promise.resolve({ data });
-let   _id     = 1000;
-const nextId  = ()          => `demo-${++_id}`;
+
+// Persisted rather than a plain in-memory counter: every "delete" in this file
+// is a soft-deactivate, not a removal, so a stale record can sit in
+// localStorage indefinitely. An in-memory counter resets to 1000 on every
+// page load (or dev-server hot-reload), so after any create -> delete ->
+// reload cycle the next created record could reuse an id a deactivated
+// record still holds - getAll(...).find(i => i.id === id) then silently
+// resolves to whichever one comes first in array order, which may not be the
+// live record. Persisting the counter itself makes ids monotonic across the
+// whole browser session regardless of reloads.
+function nextId() {
+  const next = parseInt(localStorage.getItem(ID_KEY) || "1000", 10) + 1;
+  localStorage.setItem(ID_KEY, String(next));
+  return `demo-${next}`;
+}
 
 // ── Seed data ─────────────────────────────────────────────────────────────────
 const SEED_TRANSACTIONS = [
@@ -367,6 +383,55 @@ const SEED_TIP_DEPOSITS = [
   { id: "demo-td-3", amount: "200.00", deposit_date: "2026-04-15" },
 ];
 
+// Fixed-term payment obligations, tracked separately from the transactions
+// feed. One with a term set (monthly_payment computed) and one still
+// undecided (period_months/monthly_payment both null), so both list-row
+// states show up out of the box. monthly_payment is precomputed via
+// installmentMath.js so seed data stays internally consistent with the math.
+const SEED_INSTALLMENTS = [
+  {
+    id: "demo-in-1",
+    name: "Car Exhaust",
+    total_amount: "600.00",
+    period_months: 6,
+    monthly_payment: computeMonthlyPayment("600.00", 6).toFixed(2),
+    day_of_month: 15,
+    category: "DEBT",
+    // Deliberately one month behind: the 15th has passed in DEMO_TODAY's month,
+    // so applyInstallments posts April's payment on first load. That both
+    // demonstrates auto-posting and leaves the ledger agreeing with
+    // payments_made, rather than claiming 2 payments with no transactions
+    // backing them.
+    payments_made: 1,
+    last_applied_month: "2026-03",
+    active: true,
+  },
+  {
+    id: "demo-in-2",
+    name: "Kitchen Remodel",
+    total_amount: "4200.00",
+    period_months: 24,
+    monthly_payment: computeMonthlyPayment("4200.00", 24).toFixed(2),
+    day_of_month: null,
+    category: "DEBT",
+    payments_made: 0,
+    last_applied_month: null,
+    active: true,
+  },
+  {
+    id: "demo-in-3",
+    name: "New Laptop",
+    total_amount: "1500.00",
+    period_months: null,
+    monthly_payment: null,
+    day_of_month: null,
+    category: "DEBT",
+    payments_made: 0,
+    last_applied_month: null,
+    active: true,
+  },
+];
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 export function initDemo() {
   if (!localStorage.getItem(TX_KEY)) {
@@ -387,6 +452,9 @@ export function initDemo() {
   if (!localStorage.getItem(TD_KEY)) {
     localStorage.setItem(TD_KEY, JSON.stringify(SEED_TIP_DEPOSITS));
   }
+  if (!localStorage.getItem(IN_KEY)) {
+    localStorage.setItem(IN_KEY, JSON.stringify(SEED_INSTALLMENTS));
+  }
 }
 
 export function clearDemo() {
@@ -397,6 +465,8 @@ export function clearDemo() {
   localStorage.removeItem(BA_KEY);
   localStorage.removeItem(RES_KEY);
   localStorage.removeItem(TD_KEY);
+  localStorage.removeItem(IN_KEY);
+  localStorage.removeItem(ID_KEY);
   localStorage.removeItem("demo");
 }
 
@@ -444,9 +514,59 @@ function applyRecurringPayments() {
   if (changed) saveAll(TX_KEY, transactions);
 }
 
+// "YYYY-MM" for DEMO_TODAY - the bookkeeping key installments use to know
+// whether this month's payment has already been posted.
+const demoCurrentMonth = () => DEMO_TODAY.slice(0, 7);
+
+// Mirrors transaction_service.apply_installments. Same opportunistic on-access
+// pattern as recurring payments, with one difference: an installment has a
+// finite term, so posting stops once payments_made reaches period_months rather
+// than repeating forever.
+function applyInstallments() {
+  const now = new Date(DEMO_TODAY + "T00:00:00");
+  const today = now.getDate();
+  const currentMonth = demoCurrentMonth();
+  const maxDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+
+  const installments = getAll(IN_KEY);
+  const transactions = getAll(TX_KEY);
+
+  let changed = false;
+
+  installments.forEach((inst) => {
+    if (inst.active === false) return;
+    if (inst.day_of_month == null || inst.period_months == null) return;
+    if ((inst.payments_made ?? 0) >= inst.period_months) return; // paid off
+    if (inst.last_applied_month === currentMonth) return;
+
+    // Clamped in JS rather than compared raw: a payment due the 31st still has
+    // to fire in a 30-day month.
+    const day = Math.min(inst.day_of_month, maxDay);
+    if (day > today) return;
+
+    transactions.push({
+      id: nextId(),
+      name: inst.name,
+      amount: inst.monthly_payment,
+      category: inst.category,
+      transaction_date: `${currentMonth}-${String(day).padStart(2, "0")}`,
+      installment_id: inst.id,
+    });
+    inst.last_applied_month = currentMonth;
+    inst.payments_made = (inst.payments_made ?? 0) + 1;
+    changed = true;
+  });
+
+  if (changed) {
+    saveAll(TX_KEY, transactions);
+    saveAll(IN_KEY, installments);
+  }
+}
+
 // ── Transactions ──────────────────────────────────────────────────────────────
 export const getTransactions = () => {
   applyRecurringPayments();
+  applyInstallments();
   return respond(getAll(TX_KEY));
 };
 
@@ -1079,4 +1199,149 @@ export const getCashOnHand = () => {
     tips_earned: tipsEarned.toFixed(2),
     tips_deposited: tipsDeposited.toFixed(2),
   });
+};
+
+// ── Installments ──────────────────────────────────────────────────────────────
+// Fixed-term payment obligations, tracked separately from the transactions feed
+// (never auto-posted). period_months is genuinely optional - monthly_payment is
+// a stored snapshot recomputed on create/update, staying null until a term is
+// set, mirroring the real backend rather than derived on every read.
+const NO_TERM_REASON = "Set a term for this installment to see insights";
+
+export const getInstallments = () =>
+  respond(getAll(IN_KEY).filter((i) => i.active !== false));
+
+export const createInstallment = (data) => {
+  const items = getAll(IN_KEY);
+  const hasTerm = data.period_months != null && data.period_months !== "";
+  const hasDay = data.day_of_month != null && data.day_of_month !== "";
+  const item = {
+    id: nextId(),
+    name: data.name,
+    total_amount: String(parseFloat(data.total_amount).toFixed(2)),
+    period_months: hasTerm ? parseInt(data.period_months, 10) : null,
+    monthly_payment: hasTerm ? computeMonthlyPayment(data.total_amount, data.period_months).toFixed(2) : null,
+    day_of_month: hasDay ? parseInt(data.day_of_month, 10) : null,
+    category: "DEBT", // always debt, not client-settable, mirrors the real backend
+    payments_made: 0,
+    last_applied_month: null,
+    active: true,
+  };
+  saveAll(IN_KEY, [...items, item]);
+  return respond(item);
+};
+
+export const updateInstallment = (id, data) => {
+  let updated;
+  const next = getAll(IN_KEY).map((i) => {
+    if (i.id !== id) return i;
+    updated = { ...i };
+    if (data.name !== undefined) updated.name = data.name;
+    if (data.total_amount != null) updated.total_amount = String(parseFloat(data.total_amount).toFixed(2));
+    // "period_months" in data distinguishes an explicit clear (null) from the
+    // field simply not being part of this update, matching the real backend's
+    // exclude_unset semantics.
+    if ("period_months" in data) {
+      updated.period_months = data.period_months != null && data.period_months !== ""
+        ? parseInt(data.period_months, 10)
+        : null;
+    }
+    if ("day_of_month" in data) {
+      updated.day_of_month = data.day_of_month != null && data.day_of_month !== ""
+        ? parseInt(data.day_of_month, 10)
+        : null;
+    }
+    // Recompute the stored snapshot whenever either input changed - null out
+    // again if the term was cleared, since there's nothing to divide by.
+    if (data.total_amount != null || "period_months" in data) {
+      updated.monthly_payment = updated.period_months
+        ? computeMonthlyPayment(updated.total_amount, updated.period_months).toFixed(2)
+        : null;
+    }
+    return updated;
+  });
+
+  // Mirrors the un-apply/mirror half of installment_service.update_installment.
+  // If this month's payment was already auto-posted but the edit means it is no
+  // longer actually due - term or day cleared, or the new day hasn't arrived -
+  // delete the linked transaction and roll the bookkeeping back so the apply
+  // pass picks it up again whenever it genuinely falls due. If it is still due,
+  // mirror the name/amount change onto that transaction instead.
+  if (updated && updated.last_applied_month === demoCurrentMonth()) {
+    const now = new Date(DEMO_TODAY + "T00:00:00");
+    const maxDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const stillDue =
+      updated.day_of_month != null &&
+      updated.period_months != null &&
+      Math.min(updated.day_of_month, maxDay) <= now.getDate();
+
+    const transactions = getAll(TX_KEY);
+    const idx = transactions.findIndex(
+      (t) => t.installment_id === id && t.transaction_date.startsWith(demoCurrentMonth())
+    );
+
+    if (!stillDue) {
+      if (idx !== -1) transactions.splice(idx, 1);
+      updated.last_applied_month = null;
+      updated.payments_made = Math.max(0, (updated.payments_made ?? 0) - 1);
+      saveAll(TX_KEY, transactions);
+    } else if (idx !== -1) {
+      transactions[idx] = { ...transactions[idx], name: updated.name, amount: updated.monthly_payment };
+      saveAll(TX_KEY, transactions);
+    }
+  }
+
+  saveAll(IN_KEY, next);
+  return respond(updated);
+};
+
+export const deleteInstallment = (id) => {
+  // Soft-deactivate rather than remove, consistent with recurring payments.
+  saveAll(IN_KEY, getAll(IN_KEY).map((i) => (i.id === id ? { ...i, active: false } : i)));
+  return Promise.resolve({ data: null, status: 204 });
+};
+
+export const getInstallmentInsights = (id) => {
+  const installment = getAll(IN_KEY).find((i) => i.id === id);
+  if (!installment) {
+    return Promise.reject({ response: { status: 404, data: { detail: "Installment not found" } } });
+  }
+
+  // No term set yet -> nothing to compare against the budget, gated before
+  // even touching getSpendableSurplus(), matching the real backend.
+  if (installment.monthly_payment == null) {
+    return respond({
+      available: false,
+      reason: NO_TERM_REASON,
+      monthly_payment: null,
+      available_cash: null,
+      ratio: null,
+      status: null,
+    });
+  }
+
+  // Never propagates getSpendableSurplus()'s rejection - "not enough budget
+  // data yet" is a legitimate widget state here, not an error, matching the
+  // real /installments/{id}/insights endpoint's always-200 contract.
+  return getSpendableSurplus().then(
+    (res) => {
+      const { status, ratio } = computeGaugeStatus(installment.monthly_payment, res.data.free_to_allocate);
+      return respond({
+        available: true,
+        reason: null,
+        monthly_payment: installment.monthly_payment,
+        available_cash: res.data.free_to_allocate,
+        ratio,
+        status,
+      });
+    },
+    (err) => respond({
+      available: false,
+      reason: err.response?.data?.detail ?? "Not enough budget data yet",
+      monthly_payment: installment.monthly_payment,
+      available_cash: null,
+      ratio: null,
+      status: null,
+    })
+  );
 };

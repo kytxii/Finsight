@@ -15,6 +15,11 @@ import {
 } from "./categoryVisuals";
 import { IconExpenseTile } from "./categoryIcons";
 
+// Alternating row tint for the Recent list. Kept as a bare rgba rather than a
+// categoryVisuals token because it is a hairline surface treatment, not a
+// semantic color - it should never be reused anywhere it would carry meaning.
+const ROW_STRIPE = "rgba(255,255,255,0.010)";
+
 // ── Icons ────────────────────────────────────────────────────────────────────
 // Tile icons always sit on a saturated tile-color circle, so they stay
 // literal white strokes rather than theming via currentColor.
@@ -320,6 +325,7 @@ export default function MobileHome({
   dashCategoryTotals,
   onOpenRecurring,
   onOpenPaychecks,
+  onOpenInstallments,
   onOpenBreakdown,
   onViewCategory,
   onSeeAllTransactions,
@@ -727,6 +733,18 @@ export default function MobileHome({
           <Row
             icon={
               <IconGray>
+                <line x1="19" y1="5" x2="5" y2="19" />
+                <circle cx="6.5" cy="6.5" r="2.5" />
+                <circle cx="17.5" cy="17.5" r="2.5" />
+              </IconGray>
+            }
+            iconBg="#2a2a2e"
+            label="Installments"
+            onClick={onOpenInstallments}
+          />
+          <Row
+            icon={
+              <IconGray>
                 <path d="M6.5 3h11v18l-2.75-1.6L12 21l-2.75-1.6L6.5 21z" />
               </IconGray>
             }
@@ -809,23 +827,20 @@ export default function MobileHome({
                     display: "flex",
                     alignItems: "center",
                     gap: 14,
-                    padding: "11px 4px",
+                    // 14px horizontal to match the Accounts/Tools cards above;
+                    // vertical stays looser than their 9px because these rows
+                    // stack three lines rather than one.
+                    padding: "11px 14px",
                     cursor: "pointer",
-                    borderRadius: 12,
+                    // Zebra striping carries the row separation on its own here -
+                    // no divider rule. Square corners, edge to edge: a tinted band
+                    // only reads as a band when its edges line up with the rows
+                    // above and below. Contrast is deliberately very low, enough
+                    // to group each row's three lines together without the
+                    // lighter rows looking selected or otherwise special.
+                    backgroundColor: i % 2 === 1 ? ROW_STRIPE : "transparent",
                   }}
                 >
-                  {i > 0 && (
-                    <div
-                      style={{
-                        position: "absolute",
-                        top: 0,
-                        left: 58,
-                        right: 4,
-                        height: 1,
-                        backgroundColor: HOME_DIVIDER,
-                      }}
-                    />
-                  )}
                   <div
                     style={{
                       flex: "0 0 auto",

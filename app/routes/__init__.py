@@ -1,1 +1,1 @@
-from . import transaction, users, auth, recurring_payment, import_
+from . import transaction, users, auth, recurring_payment, import_, installment
