@@ -3,7 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 import calendar
-from app.models import Transaction, RecurringPayment, Paycheck
+from app.models import Transaction, RecurringPayment, Paycheck, Installment
 from app.schemas import CreateTransaction, UpdateTransaction
 
 
@@ -105,5 +105,48 @@ async def apply_recurring_payments(user_id: UUID, db: AsyncSession, today: date 
             recurring_payment_id=rp.id,
         ))
         rp.last_applied_month = current_month
+
+    await db.commit()
+
+
+async def apply_installments(user_id: UUID, db: AsyncSession, today: date | None = None) -> None:
+    """Same opportunistic on-access pattern as apply_recurring_payments, with
+    one difference: an installment has a finite term, not an indefinite
+    repeat, so posting stops once payments_made reaches period_months (the
+    installment is paid off) rather than continuing forever."""
+    today = today or date.today()
+    last_day_of_month = calendar.monthrange(today.year, today.month)[1]
+
+    active = await db.scalars(
+        select(Installment)
+        .where(Installment.created_by == user_id)
+        .where(Installment.active.is_(True))
+        .where(Installment.day_of_month.is_not(None))
+        .where(Installment.period_months.is_not(None))
+    )
+
+    current_month = today.strftime("%Y-%m")
+
+    for inst in active.all():
+        if inst.payments_made >= inst.period_months:
+            continue  # paid off - stop auto-posting
+        if inst.last_applied_month == current_month:
+            continue
+
+        day = min(inst.day_of_month, last_day_of_month)
+        if day > today.day:
+            continue
+
+        db.add(Transaction(
+            created_by=user_id,
+            updated_by=user_id,
+            name=inst.name,
+            amount=inst.monthly_payment,
+            category=inst.category,
+            transaction_date=today.replace(day=day),
+            installment_id=inst.id,
+        ))
+        inst.last_applied_month = current_month
+        inst.payments_made += 1
 
     await db.commit()

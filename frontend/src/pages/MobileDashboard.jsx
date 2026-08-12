@@ -36,6 +36,7 @@ import MobileCategory from "../components/MobileCategory";
 import MobileTips from "../components/MobileTips";
 import MobilePaychecks from "../components/MobilePaychecks";
 import MobileRecurring from "../components/MobileRecurring";
+import MobileInstallments from "../components/MobileInstallments";
 import MobileAnalytics from "../components/MobileAnalytics";
 import ImportPanel from "../components/ImportPanel";
 import { HOME_BG, HOME_TEXT, HOME_MUTED, HOME_DIVIDER, HOME_SURFACE, HOME_INCOME, HOME_EXPENSE, ACCENT, TILE_COLOR } from "../components/categoryVisuals";
@@ -200,6 +201,8 @@ export default function MobileDashboard() {
   const [devLastFetch, setDevLastFetch] = useState(null);
   const devForceErrorRef = useRef(false);
   const [recurringOpen, setRecurringOpen] = useState(false);
+  const [installmentsOpen, setInstallmentsOpen] = useState(false);
+  const [installmentsAddSignal, setInstallmentsAddSignal] = useState(0);
   const [recurringAddSignal, setRecurringAddSignal] = useState(0);
   const [paychecksOpen, setPaychecksOpen] = useState(false);
   const [breakdownCell, setBreakdownCell] = useState(null); // null | balance | bills | cash | savings
@@ -698,6 +701,7 @@ export default function MobileDashboard() {
                     dashSorted={dashSorted}
                     dashCategoryTotals={dashCategoryTotals}
                     onOpenRecurring={() => setRecurringOpen(true)}
+                    onOpenInstallments={() => setInstallmentsOpen(true)}
                     onOpenPaychecks={() => setPaychecksOpen(true)}
                     onOpenBreakdown={(key) => setBreakdownCell(key)}
                     onViewCategory={(cat) => setCategoryView(cat)}
@@ -1486,6 +1490,43 @@ export default function MobileDashboard() {
           <MobileRecurring onSaved={refresh} openAddSignal={recurringAddSignal} />
       </MobileScreen>
 
+      {/* ── Installments overlay ── */}
+      <MobileScreen open={installmentsOpen} style={{ backgroundColor: HOME_BG, color: HOME_TEXT }}>
+          <div
+            className="px-4 pb-3 flex items-center justify-between shrink-0"
+            style={{ borderBottom: `1px solid ${HOME_DIVIDER}`, paddingTop: "calc(env(safe-area-inset-top, 0px) + 14px)" }}
+          >
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setInstallmentsOpen(false)}
+                aria-label="Back to home"
+                style={{
+                  width: 36, height: 36, borderRadius: "50%", flexShrink: 0, cursor: "pointer",
+                  background: HOME_SURFACE, border: "1px solid rgba(255,255,255,0.07)",
+                  display: "flex", alignItems: "center", justifyContent: "center", color: HOME_TEXT,
+                }}
+              >
+                <IconChevronLeft size={19} />
+              </button>
+              <span className="text-base font-semibold" style={{ color: HOME_TEXT }}>
+                Installments
+              </span>
+            </div>
+            <button
+              onClick={() => setInstallmentsAddSignal(n => n + 1)}
+              aria-label="Add installment"
+              style={{
+                width: 36, height: 36, borderRadius: "50%", flexShrink: 0, cursor: "pointer",
+                background: HOME_SURFACE, border: "1px solid rgba(255,255,255,0.07)",
+                display: "flex", alignItems: "center", justifyContent: "center", color: HOME_INCOME,
+              }}
+            >
+              <IconPlus size={19} />
+            </button>
+          </div>
+          <MobileInstallments onSaved={refresh} openAddSignal={installmentsAddSignal} />
+      </MobileScreen>
+
       {/* ── Paychecks overlay ── */}
       <MobileScreen open={paychecksOpen} style={{ backgroundColor: HOME_BG, color: HOME_TEXT }}>
           <div
@@ -1562,11 +1603,11 @@ export default function MobileDashboard() {
             transition: "transform 250ms ease",
           }}
         >
-          {/* Menu panel - account/profile and app settings only (#30) -
-              Recurring Payments/Paychecks shortcuts dropped, now redundant
-              with Home's Tools card; light/dark toggle dropped, mobile is
-              pinned dark everywhere else at this point so it barely changed
-              anything visible. */}
+          {/* Menu panel - account/profile, tool shortcuts, and app settings.
+              Paychecks/Recurring Payments/Installments duplicate Home's Tools
+              card entries by request - kept here too as a second access point.
+              Light/dark toggle dropped, mobile is pinned dark everywhere else
+              at this point so it barely changed anything visible. */}
           <div
             style={{
               width: "33.333%",
@@ -1655,6 +1696,44 @@ export default function MobileDashboard() {
                 <path d="M9 18l6-6-6-6" />
               </svg>
             </button>
+            <div className="mx-5 border-t" style={{ borderColor: HOME_DIVIDER }} />
+            <div className="px-3 py-3 flex flex-col gap-2">
+              <button
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium cursor-pointer text-left active:scale-[0.97] transition-transform duration-150"
+                style={{ color: HOME_TEXT, border: "none", backgroundColor: "rgba(255,255,255,0.05)" }}
+                onClick={() => { setDrawerOpen(false); setPaychecksOpen(true); }}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="2" y="5" width="20" height="14" rx="2" />
+                  <line x1="2" y1="10" x2="22" y2="10" />
+                </svg>
+                Paychecks
+              </button>
+              <button
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium cursor-pointer text-left active:scale-[0.97] transition-transform duration-150"
+                style={{ color: HOME_TEXT, border: "none", backgroundColor: "rgba(255,255,255,0.05)" }}
+                onClick={() => { setDrawerOpen(false); setRecurringOpen(true); }}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                  <path d="M3 3v5h5" />
+                  <path d="M12 7v5l4 2" />
+                </svg>
+                Recurring Payments
+              </button>
+              <button
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium cursor-pointer text-left active:scale-[0.97] transition-transform duration-150"
+                style={{ color: HOME_TEXT, border: "none", backgroundColor: "rgba(255,255,255,0.05)" }}
+                onClick={() => { setDrawerOpen(false); setInstallmentsOpen(true); }}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="19" y1="5" x2="5" y2="19" />
+                  <circle cx="6.5" cy="6.5" r="2.5" />
+                  <circle cx="17.5" cy="17.5" r="2.5" />
+                </svg>
+                Installments
+              </button>
+            </div>
             <div className="mx-5 border-t" style={{ borderColor: HOME_DIVIDER }} />
             <div className="px-3 py-3 flex-1 flex flex-col gap-3">
               <a

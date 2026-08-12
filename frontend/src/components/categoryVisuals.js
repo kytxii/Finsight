@@ -34,6 +34,19 @@ export const ACCENT_TEXT = "#04140f";  // near-black text on a jade fill
 export const ACCENT_DEEP = "#0f766e";  // deep teal for ambient glow
 export const FIELD = "#08131a";        // input background, a step below the surface
 
+// Installment cash-flow impact gauge - red-to-green bands, see
+// app/services/installment_service.py's compute_gauge_status for the
+// matching thresholds this palette visualizes. GAUGE_DARK_GREEN (very low
+// impact, <=10%) is a solid, fully-saturated green; GAUGE_GREEN (low impact,
+// 10-15%) is a lighter, more yellow-leaning green one step down toward
+// GAUGE_YELLOW - the two read as a light-to-dark progression rather than two
+// unrelated shades.
+export const GAUGE_DARK_GREEN = "#43a047";
+export const GAUGE_GREEN = "#8bc34a";
+export const GAUGE_YELLOW = "#e0b020";
+export const GAUGE_ORANGE = "#fb8c00";
+export const GAUGE_RED = "#ef5350";
+
 export const TILE_COLOR = {
   INCOME: "#52b757",
   EXPENSE: "#ef5350",
