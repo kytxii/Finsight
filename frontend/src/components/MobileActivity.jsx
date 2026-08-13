@@ -428,6 +428,17 @@ export default function MobileActivity({ transactions, loading, onEditTransactio
         ) : groups ? (
           groups.map((g, gi) => {
             const collapsed = collapsedMonths.has(g.month);
+            // `contain: layout paint` below creates its own stacking context (a
+            // spec side effect of layout/paint containment), which traps a
+            // swiped-open row's zIndex:10 inside it - the full-screen tap-catcher
+            // above (zIndex:5) then wins the click instead of the row's own
+            // Edit/Delete buttons, even though it's visually behind them (#88
+            // follow-up). Promoting only the group that actually contains the
+            // open row above the tap-catcher fixes that without giving up the
+            // containment (every other group stays unpromoted, so tapping
+            // elsewhere in the list still falls through to the tap-catcher and
+            // closes the open row as intended).
+            const groupHasOpenRow = openId != null && g.items.some((t) => t.id === openId);
             return (
               <div key={g.month + gi} style={{ marginBottom: 18, animation: "activityFadeIn 0.3s ease" }}>
                 <button
@@ -461,6 +472,7 @@ export default function MobileActivity({ transactions, loading, onEditTransactio
                   display: "grid", gridTemplateRows: collapsed ? "0fr" : "1fr",
                   transition: "grid-template-rows 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
                   contain: "layout paint", willChange: "grid-template-rows",
+                  position: "relative", zIndex: groupHasOpenRow ? 6 : "auto",
                 }}>
                   <div style={{ overflow: "hidden" }}>
                     <div style={cardStyle}>

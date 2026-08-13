@@ -9,9 +9,15 @@ import {
   updateRecurringPayment,
   deleteRecurringPayment,
 } from "../api/recurringPayments";
+import { useSheetDrag, SHEET_EASE } from "../hooks/useSheetDrag";
 import { HOME_TEXT, HOME_MUTED, HOME_SURFACE, HOME_DIVIDER, HOME_EXPENSE, HOME_INCOME, HOME_ACCENT, TILE_COLOR, CATEGORY_ICON } from "./categoryVisuals";
 
 const EMPTY_DRAFT = { name: "", amount: "", day_of_month: "", category: "SUBSCRIPTION", is_estimate: false };
+
+// Matches MobileInstallments' EditSheet - same slide-up-from-bottom entrance
+// and drag-to-dismiss, so the two "+"-opened sheets in this drawer feel
+// consistent instead of one of them just popping in with no transition.
+const EXIT_MS = 260;
 
 function ordinal(n) {
   const v = n % 100;
@@ -78,24 +84,42 @@ function EstimateToggle({ active, onToggle }) {
 
 function EditSheet({ draft, setDraft, mode, saving, error, onCancel, onSave, onDelete, deleteConfirm }) {
   const valid = isDraftValid(draft);
+
+  const [closing, setClosing] = useState(false);
+  const requestClose = () => setClosing(true);
+  useEffect(() => {
+    if (!closing) return;
+    const timer = setTimeout(onCancel, EXIT_MS);
+    return () => clearTimeout(timer);
+  }, [closing, onCancel]);
+  const { dragY, dragging, handlers } = useSheetDrag(requestClose);
+
   return (
     <>
       <div
         style={{ position: "fixed", inset: 0, zIndex: 60, backgroundColor: "rgba(0,0,0,0.5)" }}
-        onClick={onCancel}
+        onClick={requestClose}
       />
+      <style>{`@keyframes recurring-sheet-up { from { transform: translateY(100%); } to { transform: translateY(0); } }`}</style>
       <div
         style={{
           position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 61,
           backgroundColor: HOME_SURFACE, borderRadius: "20px 20px 0 0",
           padding: "10px 20px calc(env(safe-area-inset-bottom, 0px) + 20px)",
           display: "flex", flexDirection: "column", gap: 12,
+          transform: closing ? "translateY(100%)" : dragging ? `translateY(${dragY}px)` : undefined,
+          animation: dragging || closing ? undefined : "recurring-sheet-up 0.26s cubic-bezier(0.32, 0.72, 0, 1)",
+          transition: dragging ? "none" : `transform ${EXIT_MS}ms ${SHEET_EASE}`,
         }}
       >
-        <div style={{ width: 40, height: 5, borderRadius: 3, backgroundColor: HOME_DIVIDER, alignSelf: "center", margin: "2px 0 4px" }} />
-        <p style={{ margin: 0, fontSize: 16, fontWeight: 700, color: HOME_TEXT }}>
-          {mode === "add" ? "New Recurring Payment" : "Edit Recurring Payment"}
-        </p>
+        {/* Drag region covers the notch and title row only - the fields below
+            need normal touch handling for typing/tapping. */}
+        <div {...handlers} style={{ touchAction: "none" }}>
+          <div style={{ width: 40, height: 5, borderRadius: 3, backgroundColor: HOME_DIVIDER, margin: "2px auto 4px", cursor: "grab" }} />
+          <p style={{ margin: 0, fontSize: 16, fontWeight: 700, color: HOME_TEXT }}>
+            {mode === "add" ? "New Recurring Payment" : "Edit Recurring Payment"}
+          </p>
+        </div>
 
         <div>
           <p style={labelStyle}>Name</p>
@@ -146,7 +170,7 @@ function EditSheet({ draft, setDraft, mode, saving, error, onCancel, onSave, onD
         {error && <p style={{ fontSize: 12, color: HOME_EXPENSE, margin: 0 }}>{error}</p>}
 
         <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
-          <button type="button" onClick={onCancel}
+          <button type="button" onClick={requestClose}
             style={{ flex: 1, padding: "10px 0", borderRadius: 12, border: `1px solid ${HOME_DIVIDER}`, background: "transparent", color: HOME_MUTED, fontSize: 14, fontWeight: 600, cursor: "pointer" }}
           >Cancel</button>
           <button type="button" onClick={onSave} disabled={!valid || saving}

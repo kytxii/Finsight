@@ -12,6 +12,7 @@ import {
   deleteTransaction,
 } from "../api/transactions";
 import { getSpendableSurplus, getEstimatedSavings } from "../api/paychecks";
+import { getUpcomingRecurringPayments } from "../api/recurringPayments";
 import { getTipDeposits } from "../api/tipDeposits";
 import CurrencyInput from "../components/CurrencyInput";
 import MobileTransactionModal from "../components/MobileTransactionModal";
@@ -222,6 +223,10 @@ export default function MobileDashboard() {
   const [safeToSpendStatus, setSafeToSpendStatus] = useState("loading"); // loading | ok | no-balance | no-schedule | error
   const [savings, setSavings] = useState(null);
   const [savingsStatus, setSavingsStatus] = useState("loading"); // loading | ok | no-schedule | no-amounts | no-history | error
+  // Rest-of-month recurring-payment occurrences (#60), unfiltered by category -
+  // MobileHome derives its pending count from this, MobileCategory filters it
+  // per category page.
+  const [upcomingItems, setUpcomingItems] = useState([]);
 
   async function devFetch() {
     if (devForceErrorRef.current) {
@@ -264,6 +269,10 @@ export default function MobileDashboard() {
     getTipDeposits().then((res) => setTipDeposits(res.data)).catch(() => {});
   }
 
+  function loadUpcoming() {
+    getUpcomingRecurringPayments().then((res) => setUpcomingItems(res.data)).catch(() => {});
+  }
+
   useEffect(() => {
     devFetch().then((res) => {
       setTransactions(res.data);
@@ -279,6 +288,7 @@ export default function MobileDashboard() {
     loadSafeToSpend();
     loadSavings();
     loadTipDeposits();
+    loadUpcoming();
   }, []);
 
   function refresh() {
@@ -295,6 +305,7 @@ export default function MobileDashboard() {
     loadSafeToSpend();
     loadSavings();
     loadTipDeposits();
+    loadUpcoming();
   }
 
   const [editingTransaction, setEditingTransaction] = useState(null);
@@ -595,6 +606,13 @@ export default function MobileDashboard() {
     return totals;
   }, [dashFiltered, dashMonthDeposits]);
 
+  // Count of this-month recurring items awaiting a confirm/skip (#58), surfaced
+  // as a small addition to the Home overview's "Upcoming Bills" caption.
+  const pendingBillsCount = useMemo(
+    () => upcomingItems.filter((i) => i.status === "pending").length,
+    [upcomingItems],
+  );
+
   // ── Last month (for the small +/-% badges on Home's Income/Expense cards)
   const dashLastMonthRange = useMemo(() => getPresetRange("Last Month"), []);
   const dashLastMonthDeposits = useMemo(
@@ -689,9 +707,12 @@ export default function MobileDashboard() {
                 category={categoryView}
                 transactions={dashFiltered}
                 loading={loading}
+                upcomingItems={upcomingItems}
                 onBack={() => setCategoryView(null)}
                 onEditTransaction={setEditingTransaction}
                 onDeleteTransaction={handleDelete}
+                onOpenPaychecks={() => setPaychecksOpen(true)}
+                onRefresh={refresh}
               />
             ) : (
               <>
@@ -703,6 +724,7 @@ export default function MobileDashboard() {
                     safeToSpendStatus={safeToSpendStatus}
                     savings={savings}
                     savingsStatus={savingsStatus}
+                    pendingBillsCount={pendingBillsCount}
                     dashSorted={dashSorted}
                     dashCategoryTotals={dashCategoryTotals}
                     onOpenRecurring={() => setRecurringOpen(true)}
@@ -1485,7 +1507,7 @@ export default function MobileDashboard() {
               style={{
                 width: 36, height: 36, borderRadius: "50%", flexShrink: 0, cursor: "pointer",
                 background: HOME_SURFACE, border: "1px solid rgba(255,255,255,0.07)",
-                display: "flex", alignItems: "center", justifyContent: "center", color: HOME_INCOME,
+                display: "flex", alignItems: "center", justifyContent: "center", color: "#fff",
               }}
             >
               <IconPlus size={19} />
@@ -1522,7 +1544,7 @@ export default function MobileDashboard() {
               style={{
                 width: 36, height: 36, borderRadius: "50%", flexShrink: 0, cursor: "pointer",
                 background: HOME_SURFACE, border: "1px solid rgba(255,255,255,0.07)",
-                display: "flex", alignItems: "center", justifyContent: "center", color: HOME_INCOME,
+                display: "flex", alignItems: "center", justifyContent: "center", color: "#fff",
               }}
             >
               <IconPlus size={19} />
@@ -1705,7 +1727,7 @@ export default function MobileDashboard() {
               <button
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium cursor-pointer text-left active:scale-[0.97] transition-transform duration-150"
                 style={{ color: HOME_TEXT, border: "none", backgroundColor: "rgba(255,255,255,0.05)" }}
-                onClick={() => { setDrawerOpen(false); setPaychecksOpen(true); }}
+                onClick={() => setPaychecksOpen(true)}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <rect x="2" y="5" width="20" height="14" rx="2" />
@@ -1716,7 +1738,7 @@ export default function MobileDashboard() {
               <button
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium cursor-pointer text-left active:scale-[0.97] transition-transform duration-150"
                 style={{ color: HOME_TEXT, border: "none", backgroundColor: "rgba(255,255,255,0.05)" }}
-                onClick={() => { setDrawerOpen(false); setRecurringOpen(true); }}
+                onClick={() => setRecurringOpen(true)}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
@@ -1728,7 +1750,7 @@ export default function MobileDashboard() {
               <button
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium cursor-pointer text-left active:scale-[0.97] transition-transform duration-150"
                 style={{ color: HOME_TEXT, border: "none", backgroundColor: "rgba(255,255,255,0.05)" }}
-                onClick={() => { setDrawerOpen(false); setInstallmentsOpen(true); }}
+                onClick={() => setInstallmentsOpen(true)}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <line x1="19" y1="5" x2="5" y2="19" />

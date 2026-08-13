@@ -625,18 +625,25 @@ async def get_estimated_savings(current_user: UUID, db: AsyncSession) -> Estimat
 
     # Fixed obligations for the whole month, regardless of whether they're
     # already paid - a paid bill isn't "back in play" just because its due
-    # date passed. is_estimate recurring (e.g. a grocery forecast) are
-    # excluded: they never hit the ledger, so the spend they model is already
-    # captured in the discretionary figures below.
+    # date passed. Dated is_estimate rows (utility-style bills with a due date,
+    # see #58) count here too via their baseline amount - once confirmed they
+    # post a transaction with recurring_payment_id set, which the
+    # discretionary-spend query below excludes, so leaving them out here would
+    # make the confirmed spend vanish from the estimate instead of counting it
+    # once. Only pure budget-line estimates (is_estimate, no day_of_month, e.g.
+    # a grocery forecast) are excluded: they never hit the ledger, so the
+    # spend they model is already captured in the discretionary figures below.
     recurring = (await db.scalars(
         select(RecurringPayment).where(
             RecurringPayment.created_by == current_user,
             RecurringPayment.active.is_(True),
-            RecurringPayment.is_estimate.is_(False),
             RecurringPayment.category.in_(NON_SAVINGS_EXPENSE_CATEGORIES),
         )
     )).all()
-    committed_recurring = sum((rp.amount for rp in recurring), start=Decimal("0"))
+    committed_recurring = sum(
+        (rp.amount for rp in recurring if not (rp.is_estimate and rp.day_of_month is None)),
+        start=Decimal("0"),
+    )
 
     # Discretionary spend, blended: what's actually posted so far this month
     # (real data, only gets more complete as the month goes on) plus the

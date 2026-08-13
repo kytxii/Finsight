@@ -11,6 +11,12 @@ import { SLIDE_DURATION, SLIDE_EASE } from "./MobilePageSlide";
 // Uses a CSS animation rather than a transition: an animation plays from its own
 // `from` state on mount, where a transition would need the element committed at
 // the start position for a frame first. (#46)
+//
+// z-[55]: above the Menu drawer (z-50) but below the in-panel edit sheets and
+// modals (z-60/61). Opening one of these from the Menu (Paychecks/Recurring/
+// Installments) deliberately leaves the drawer's own open state untouched -
+// this panel just covers it while open, so the back button reveals the menu
+// still open underneath instead of dropping all the way back to Home.
 
 export default function MobileScreen({ open, style, children }) {
   const [prevOpen, setPrevOpen] = useState(open);
@@ -31,7 +37,7 @@ export default function MobileScreen({ open, style, children }) {
 
   return (
     <div
-      className="mscreen fixed inset-0 z-50 flex flex-col"
+      className="mscreen fixed inset-0 z-[55] flex flex-col"
       style={{
         ...style,
         animation: `${open ? "mscreen-in" : "mscreen-out"} ${SLIDE_DURATION}ms ${SLIDE_EASE} forwards`,

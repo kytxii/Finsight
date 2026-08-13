@@ -54,9 +54,6 @@ async def update_recurring_payment(recurring_payment_id: UUID, data: UpdateRecur
           setattr(recurring_payment, key, value)
       recurring_payment.updated_by = current_user
 
-      if not recurring_payment.is_estimate and recurring_payment.day_of_month is None:
-          raise InvalidRecurringPaymentError("day_of_month is required unless is_estimate is True")
-
       today = date.today()
       month_start = today.replace(day=1)
       month_end = today.replace(day=calendar.monthrange(today.year, today.month)[1])
@@ -66,7 +63,7 @@ async def update_recurring_payment(recurring_payment_id: UUID, data: UpdateRecur
               Transaction.transaction_date >= month_start,
               Transaction.transaction_date <= month_end,
               ))
-      linked = result.scalar_one_or_none()
+      linked = result.scalars().first()
       if linked:
           for key, value in changes.items():
               if key in _TRANSACTION_MIRROR_FIELDS:

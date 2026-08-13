@@ -485,33 +485,41 @@ function applyRecurringPayments() {
 
   let changed = false;
 
+  let recurringChanged = false;
+
   recurring.forEach((rp) => {
-    if (rp.is_estimate) return; // estimates inform surplus math only - never generate ledger transactions
+    if (rp.is_estimate) return; // held for confirmation (#58) - never auto-posts, see getUpcomingRecurringPayments
     if (rp.active === false) return;
     if (rp.day_of_month == null || rp.day_of_month > today) return;
+    if (rp.last_applied_month === prefix) return;
 
     const alreadyExists = transactions.some(
       (t) =>
         t.transaction_date.startsWith(prefix) &&
-        (t._recurring_id === rp.id || (t.name === rp.name && t.amount === rp.amount))
+        (t._recurring_id === rp.id || t.recurring_payment_id === rp.id || (t.name === rp.name && t.amount === rp.amount))
     );
-    if (alreadyExists) return;
+    if (!alreadyExists) {
+      const maxDay = new Date(year, now.getMonth() + 1, 0).getDate();
+      const day    = String(Math.min(rp.day_of_month, maxDay)).padStart(2, "0");
 
-    const maxDay = new Date(year, now.getMonth() + 1, 0).getDate();
-    const day    = String(Math.min(rp.day_of_month, maxDay)).padStart(2, "0");
+      transactions.push({
+        id:                  nextId(),
+        name:                rp.name,
+        amount:              rp.amount,
+        category:            rp.category,
+        transaction_date:    `${prefix}-${day}`,
+        _recurring_id:       rp.id,
+        recurring_payment_id: rp.id,
+      });
+      changed = true;
+    }
 
-    transactions.push({
-      id:               nextId(),
-      name:             rp.name,
-      amount:           rp.amount,
-      category:         rp.category,
-      transaction_date: `${prefix}-${day}`,
-      _recurring_id:    rp.id,
-    });
-    changed = true;
+    rp.last_applied_month = prefix;
+    recurringChanged = true;
   });
 
   if (changed) saveAll(TX_KEY, transactions);
+  if (recurringChanged) saveAll(RP_KEY, recurring);
 }
 
 // "YYYY-MM" for DEMO_TODAY - the bookkeeping key installments use to know
@@ -640,10 +648,25 @@ export const aiCleanupNames = () =>
   Promise.reject({ response: { status: 503, data: { detail: "AI cleanup needs a real account — not available in demo mode." } } });
 
 // ── Recurring payments ────────────────────────────────────────────────────────
+// INCOME collides with PaycheckSchedule-generated income transactions; TIPS has
+// cash-on-hand semantics a scheduled recurring payment doesn't model. Mirrors
+// the backend's category validator (app/schemas/recurring_payment.py).
+const RECURRING_BLOCKED_CATEGORIES = new Set(["INCOME", "TIPS"]);
+
+function rejectBlockedCategory(category) {
+  if (RECURRING_BLOCKED_CATEGORIES.has(category)) {
+    return Promise.reject({ response: { status: 422, data: { detail: `${category} is not a valid category for a recurring payment` } } });
+  }
+  return null;
+}
+
 export const getRecurringPayments = () =>
   respond(getAll(RP_KEY).filter((r) => r.active !== false));
 
 export const createRecurringPayment = (data) => {
+  const rejected = rejectBlockedCategory(data.category);
+  if (rejected) return rejected;
+
   const items = getAll(RP_KEY);
   const item = {
     id: nextId(),
@@ -651,12 +674,18 @@ export const createRecurringPayment = (data) => {
     amount: String(parseFloat(data.amount).toFixed(2)),
     is_estimate: data.is_estimate ?? false,
     active: true,
+    last_applied_month: null,
   };
   saveAll(RP_KEY, [...items, item]);
   return respond(item);
 };
 
 export const updateRecurringPayment = (id, data) => {
+  if (data.category != null) {
+    const rejected = rejectBlockedCategory(data.category);
+    if (rejected) return rejected;
+  }
+
   const items = getAll(RP_KEY);
   let updated;
   const next = items.map(r => {
@@ -666,6 +695,115 @@ export const updateRecurringPayment = (id, data) => {
   });
   saveAll(RP_KEY, next);
   return respond(updated);
+};
+
+// Rolling average of a recurring payment's most recent linked-transaction
+// amounts - same shape as averageRecentAmounts (paychecks), used to populate
+// estimated_amount on a pending item.
+function averageRecentRecurringAmounts(recurringPaymentId, allTransactions, limit = 3) {
+  const amounts = allTransactions
+    .filter((t) => t.recurring_payment_id === recurringPaymentId)
+    .sort((a, b) => b.transaction_date.localeCompare(a.transaction_date))
+    .slice(0, limit)
+    .map((t) => parseFloat(t.amount));
+  if (amounts.length === 0) return null;
+  return amounts.reduce((a, b) => a + b, 0) / amounts.length;
+}
+
+// Mirrors transaction_service.get_upcoming_recurring_payments - every active,
+// dated recurring payment's occurrence for the current month, status derived
+// the same way: paid (linked transaction exists) / skipped (last_applied_month
+// set, no transaction) / pending (due day reached, unresolved) / upcoming.
+export const getUpcomingRecurringPayments = () => {
+  applyRecurringPayments();
+
+  const today       = new Date(DEMO_TODAY + "T00:00:00");
+  const prefix      = demoCurrentMonth();
+  const maxDay      = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+  const transactions = getAll(TX_KEY);
+
+  const items = getAll(RP_KEY)
+    .filter((rp) => rp.active !== false && rp.day_of_month != null && !RECURRING_BLOCKED_CATEGORIES.has(rp.category))
+    .map((rp) => {
+      const day = Math.min(rp.day_of_month, maxDay);
+      const dueDate = `${prefix}-${String(day).padStart(2, "0")}`;
+      const linked = transactions.find(
+        (t) => t.recurring_payment_id === rp.id && t.transaction_date.startsWith(prefix)
+      );
+
+      let status;
+      if (linked) status = "paid";
+      else if (rp.last_applied_month === prefix) status = "skipped";
+      else if (dueDate <= toDateStr(today)) status = "pending";
+      else status = "upcoming";
+
+      return {
+        id: rp.id,
+        name: rp.name,
+        category: rp.category,
+        due_date: dueDate,
+        status,
+        is_estimate: !!rp.is_estimate,
+        amount: rp.amount,
+        actual_amount: linked ? linked.amount : null,
+        estimated_amount: status === "pending" ? averageRecentRecurringAmounts(rp.id, transactions)?.toFixed(2) ?? null : null,
+      };
+    })
+    .sort((a, b) => a.due_date.localeCompare(b.due_date));
+
+  return respond(items);
+};
+
+function findPendingRecurringPayment(id) {
+  const rp = getAll(RP_KEY).find((r) => r.id === id);
+  if (!rp) {
+    return { error: { response: { status: 404, data: { detail: "Recurring payment not found" } } } };
+  }
+  if (!rp.active || !rp.is_estimate || rp.day_of_month == null) {
+    return { error: { response: { status: 400, data: { detail: "Recurring payment is not a pending bill" } } } };
+  }
+
+  const today  = new Date(DEMO_TODAY + "T00:00:00");
+  const prefix = demoCurrentMonth();
+  const maxDay = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+  const dueDate = `${prefix}-${String(Math.min(rp.day_of_month, maxDay)).padStart(2, "0")}`;
+
+  if (rp.last_applied_month === prefix) {
+    return { error: { response: { status: 400, data: { detail: "Already resolved for this month" } } } };
+  }
+  if (dueDate > toDateStr(today)) {
+    return { error: { response: { status: 400, data: { detail: "Not due yet" } } } };
+  }
+
+  return { rp, dueDate, prefix };
+}
+
+export const confirmRecurringPayment = (id, data) => {
+  const result = findPendingRecurringPayment(id);
+  if (result.error) return Promise.reject(result.error);
+  const { rp, dueDate, prefix } = result;
+
+  const transaction = {
+    id: nextId(),
+    name: rp.name,
+    amount: String(parseFloat(data.amount).toFixed(2)),
+    category: rp.category,
+    transaction_date: dueDate,
+    recurring_payment_id: rp.id,
+  };
+  saveAll(TX_KEY, [...getAll(TX_KEY), transaction]);
+  saveAll(RP_KEY, getAll(RP_KEY).map((r) => r.id === id ? { ...r, last_applied_month: prefix } : r));
+
+  return respond(transaction);
+};
+
+export const skipRecurringPayment = (id) => {
+  const result = findPendingRecurringPayment(id);
+  if (result.error) return Promise.reject(result.error);
+  const { prefix } = result;
+
+  saveAll(RP_KEY, getAll(RP_KEY).map((r) => r.id === id ? { ...r, last_applied_month: prefix } : r));
+  return Promise.resolve({ data: null, status: 204 });
 };
 
 export const deleteRecurringPayment = (id) => {
@@ -1127,9 +1265,13 @@ export const getEstimatedSavings = () => {
     .filter((t) => t.category === "SAVINGS" && t.transaction_date >= monthStartStr && t.transaction_date < monthEndStr)
     .reduce((sum, t) => sum + parseFloat(t.amount), 0);
 
-  // Fixed obligations for the whole month, regardless of already paid.
+  // Fixed obligations for the whole month, regardless of already paid. Dated
+  // is_estimate rows (utility-style bills, #58) count too via their baseline
+  // amount - only pure budget-line estimates (no day_of_month) are excluded,
+  // since those never hit the ledger and are captured via discretionary spend
+  // instead. Mirrors get_estimated_savings in the Python service.
   const committedRecurring = getAll(RP_KEY)
-    .filter((rp) => rp.active !== false && !rp.is_estimate && NON_SAVINGS_EXPENSE_CATEGORIES.has(rp.category))
+    .filter((rp) => rp.active !== false && !(rp.is_estimate && rp.day_of_month == null) && NON_SAVINGS_EXPENSE_CATEGORIES.has(rp.category))
     .reduce((sum, rp) => sum + parseFloat(rp.amount), 0);
 
   // Discretionary spend, blended: what's actually posted so far this month
