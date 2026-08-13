@@ -97,6 +97,67 @@ function IconChevronDown({ size = 16 }) {
   );
 }
 
+// Hoisted to module scope (#88) - declaring this inside MobileActivity's body
+// gave it a new function identity on every parent render, which made React
+// unmount/remount the whole subtree on any state change instead of updating
+// it. SwipeableRow keeps its open state in refs and an imperative DOM
+// transform, neither of which survives a remount, so a swipe-to-reveal would
+// immediately snap shut - opening a row triggers the very re-render that
+// destroyed it. Takes everything it needs as props instead of closing over
+// MobileActivity's state.
+function ActivityRow({ t, first, openId, setOpenId, onEditTransaction, onDeleteTransaction, highlightId, setRowRef }) {
+  const Icon = CATEGORY_ICON[t.category];
+  const tileColor = TILE_COLOR[t.category] ?? HOME_MUTED;
+  const isIncome = INCOME_TYPES.has(t.category);
+  // SwipeableRow doesn't forward a ref, so the scroll-into-view target for
+  // jump-to-transaction wraps it in a plain div instead (#29). Takes a
+  // setRowRef callback rather than the rowRefs object itself so the mutation
+  // stays in MobileActivity, where rowRefs is an actual ref, not a prop.
+  return (
+    <div ref={(el) => setRowRef(t.id, el)}>
+      <SwipeableRow
+        id={t.id}
+        openId={openId}
+        setOpenId={setOpenId}
+        onEdit={() => onEditTransaction(t)}
+        onDelete={() => onDeleteTransaction(t.id)}
+        border={first ? "transparent" : HOME_DIVIDER}
+        surface={HOME_SURFACE}
+        text={HOME_TEXT}
+        editBg={HOME_ACCENT}
+        editColor="#fff"
+        deleteBg={TILE_COLOR.EXPENSE}
+        deleteColor="#fff"
+      >
+        <div style={{
+          display: "flex", alignItems: "center", gap: 14, padding: "11px 14px",
+          backgroundColor: highlightId === t.id ? `color-mix(in srgb, ${HOME_ACCENT} 18%, ${HOME_SURFACE})` : HOME_SURFACE,
+          transition: "background-color 0.4s ease",
+        }}>
+          <div style={{
+            flex: "0 0 auto", width: 40, height: 40, borderRadius: "50%", background: tileColor,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.16)",
+          }}>
+            <Icon />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ margin: 0, fontSize: 17, fontWeight: 600, letterSpacing: "-0.2px", color: HOME_TEXT, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {t.name}
+            </p>
+            <p style={{ margin: "2px 0 0", fontSize: 13, fontWeight: 500, color: HOME_MUTED }}>
+              {relativeDate(t.transaction_date)}
+            </p>
+          </div>
+          <span style={{ flex: "0 0 auto", marginLeft: 10, fontSize: 16, fontWeight: 600, letterSpacing: "-0.2px", fontVariantNumeric: "tabular-nums", color: isIncome ? HOME_INCOME : HOME_TEXT }}>
+            {isIncome ? "+" : "−"}{fmt(t.amount)}
+          </span>
+        </div>
+      </SwipeableRow>
+    </div>
+  );
+}
+
 // `jump`: { id, token } set by MobileDashboard when a transaction is picked
 // from Home's search dropdown - `token` changes on every pick (even the same
 // transaction twice) so the effect below always re-fires.
@@ -119,6 +180,7 @@ export default function MobileActivity({ transactions, loading, onEditTransactio
 
   const rowRefs = useRef({});
   const sentinelRef = useRef(null);
+  function setRowRef(id, el) { rowRefs.current[id] = el; }
 
   // Reset pagination inline inside the filter/sort change handlers, not via a
   // watching effect - an effect watching [category, query, sortField, sortDir]
@@ -273,57 +335,6 @@ export default function MobileActivity({ transactions, loading, onEditTransactio
 
   const cardStyle = { backgroundColor: HOME_SURFACE, borderRadius: 18, overflow: "hidden" };
 
-  function Row({ t, first }) {
-    const Icon = CATEGORY_ICON[t.category];
-    const tileColor = TILE_COLOR[t.category] ?? HOME_MUTED;
-    const isIncome = INCOME_TYPES.has(t.category);
-    // SwipeableRow doesn't forward a ref, so the scroll-into-view target for
-    // jump-to-transaction wraps it in a plain div instead (#29).
-    return (
-      <div ref={(el) => { rowRefs.current[t.id] = el; }}>
-        <SwipeableRow
-          id={t.id}
-          openId={openId}
-          setOpenId={setOpenId}
-          onEdit={() => onEditTransaction(t)}
-          onDelete={() => onDeleteTransaction(t.id)}
-          border={first ? "transparent" : HOME_DIVIDER}
-          surface={HOME_SURFACE}
-          text={HOME_TEXT}
-          editBg={HOME_ACCENT}
-          editColor="#fff"
-          deleteBg={TILE_COLOR.EXPENSE}
-          deleteColor="#fff"
-        >
-          <div style={{
-            display: "flex", alignItems: "center", gap: 14, padding: "11px 14px",
-            backgroundColor: highlightId === t.id ? `color-mix(in srgb, ${HOME_ACCENT} 18%, ${HOME_SURFACE})` : HOME_SURFACE,
-            transition: "background-color 0.4s ease",
-          }}>
-            <div style={{
-              flex: "0 0 auto", width: 40, height: 40, borderRadius: "50%", background: tileColor,
-              display: "flex", alignItems: "center", justifyContent: "center",
-              boxShadow: "inset 0 1px 0 rgba(255,255,255,0.16)",
-            }}>
-              <Icon />
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <p style={{ margin: 0, fontSize: 17, fontWeight: 600, letterSpacing: "-0.2px", color: HOME_TEXT, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                {t.name}
-              </p>
-              <p style={{ margin: "2px 0 0", fontSize: 13, fontWeight: 500, color: HOME_MUTED }}>
-                {relativeDate(t.transaction_date)}
-              </p>
-            </div>
-            <span style={{ flex: "0 0 auto", marginLeft: 10, fontSize: 16, fontWeight: 600, letterSpacing: "-0.2px", fontVariantNumeric: "tabular-nums", color: isIncome ? HOME_INCOME : HOME_TEXT }}>
-              {isIncome ? "+" : "−"}{fmt(t.amount)}
-            </span>
-          </div>
-        </SwipeableRow>
-      </div>
-    );
-  }
-
   return (
     <>
       <style>{`@keyframes activityFadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }`}</style>
@@ -453,7 +464,14 @@ export default function MobileActivity({ transactions, loading, onEditTransactio
                 }}>
                   <div style={{ overflow: "hidden" }}>
                     <div style={cardStyle}>
-                      {g.items.map((t, i) => <Row key={t.id} t={t} first={i === 0} />)}
+                      {g.items.map((t, i) => (
+                        <ActivityRow
+                          key={t.id} t={t} first={i === 0}
+                          openId={openId} setOpenId={setOpenId}
+                          onEditTransaction={onEditTransaction} onDeleteTransaction={onDeleteTransaction}
+                          highlightId={highlightId} setRowRef={setRowRef}
+                        />
+                      ))}
                     </div>
                   </div>
                 </div>
@@ -462,7 +480,14 @@ export default function MobileActivity({ transactions, loading, onEditTransactio
           })
         ) : (
           <div style={cardStyle}>
-            {visible.map((t, i) => <Row key={t.id} t={t} first={i === 0} />)}
+            {visible.map((t, i) => (
+              <ActivityRow
+                key={t.id} t={t} first={i === 0}
+                openId={openId} setOpenId={setOpenId}
+                onEditTransaction={onEditTransaction} onDeleteTransaction={onDeleteTransaction}
+                highlightId={highlightId} setRowRef={setRowRef}
+              />
+            ))}
           </div>
         )}
       </div>
