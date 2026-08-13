@@ -192,3 +192,61 @@ async def test_savings_counts_manual_income_transactions(test_user: dict, client
     # $3000 paycheck (already counted via its linked transaction) + $500
     # freelance, not double-counted.
     assert float(data["whole_month_income"]) == 3500.0
+
+
+async def test_savings_counts_dated_variable_bill_in_committed_recurring(test_user: dict, client: AsyncClient, clean_finance):
+    """#58: a variable bill with a due date (e.g. a utility) counts toward
+    committed_recurring via its baseline amount, same as a fixed bill - once
+    confirmed it posts a linked transaction excluded from discretionary spend,
+    so leaving it uncounted here would make it vanish from the estimate."""
+    token = test_user["token"]
+    today = date.today()
+    month_start = today.replace(day=1)
+
+    await _create_monthly_schedule(client, token, _add_months(month_start, -6))
+    await _set_current_month_amount(client, token, month_start, "5000.00")
+    await _seed_discretionary_history(client, token, month_start)
+
+    res = await client.post("/recurring-payments/", json={
+        "name": "APS",
+        "amount": "120.00",
+        "day_of_month": 10,
+        "category": "BILL",
+        "is_estimate": True,
+    }, headers=auth_headers(token))
+    assert res.status_code == 201
+    rp_id = res.json()["id"]
+
+    res = await client.get("/paychecks/savings", headers=auth_headers(token))
+    assert res.status_code == 200
+    assert float(res.json()["committed_recurring"]) == 120.0
+
+    await client.delete(f"/recurring-payments/{rp_id}", headers=auth_headers(token))
+
+
+async def test_savings_excludes_budget_line_estimate_without_due_date(test_user: dict, client: AsyncClient, clean_finance):
+    """A pure budget-line estimate (no day_of_month, e.g. a grocery forecast)
+    never hits the ledger, so it stays out of committed_recurring - the spend
+    it models is already captured via discretionary_spent_so_far instead."""
+    token = test_user["token"]
+    today = date.today()
+    month_start = today.replace(day=1)
+
+    await _create_monthly_schedule(client, token, _add_months(month_start, -6))
+    await _set_current_month_amount(client, token, month_start, "5000.00")
+    await _seed_discretionary_history(client, token, month_start)
+
+    res = await client.post("/recurring-payments/", json={
+        "name": "Groceries",
+        "amount": "400.00",
+        "category": "EXPENSE",
+        "is_estimate": True,
+    }, headers=auth_headers(token))
+    assert res.status_code == 201
+    rp_id = res.json()["id"]
+
+    res = await client.get("/paychecks/savings", headers=auth_headers(token))
+    assert res.status_code == 200
+    assert float(res.json()["committed_recurring"]) == 0.0
+
+    await client.delete(f"/recurring-payments/{rp_id}", headers=auth_headers(token))

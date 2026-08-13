@@ -244,6 +244,7 @@ function OverviewCard({
   status,
   savings,
   savingsStatus,
+  pendingBillsCount,
   cardStyle,
   onOpenBreakdown,
 }) {
@@ -257,6 +258,11 @@ function OverviewCard({
     // net out the user's spending reserve, not just the raw leftover before it.
     const freeToAllocate = parseFloat(safeToSpend.free_to_allocate);
     const billCount = safeToSpend.bills_breakdown?.length ?? 0;
+    // The dollar figure stays scoped to the next-payday horizon
+    // (bills_before_next_payday) - pendingBillsCount comes from a different,
+    // rest-of-month horizon (#60's upcoming panel), so it's only surfaced as
+    // an additional caption note, never folded into the total (#58).
+    const dueCaption = billCount > 0 ? `${billCount} bill${billCount !== 1 ? "s" : ""} due` : "No bills due";
     discretionary = {
       key: "cash",
       label: "Available Cash",
@@ -268,7 +274,7 @@ function OverviewCard({
       label: "Upcoming Bills",
       value: parseFloat(safeToSpend.bills_before_next_payday) > 0 ? `-${fmt(safeToSpend.bills_before_next_payday)}` : fmt(safeToSpend.bills_before_next_payday),
       color: TILE_COLOR.BILL,
-      caption: billCount > 0 ? `${billCount} bill${billCount !== 1 ? "s" : ""} due` : "No bills due",
+      caption: pendingBillsCount > 0 ? `${dueCaption} · ${pendingBillsCount} need${pendingBillsCount !== 1 ? "s" : ""} confirming` : dueCaption,
     };
   } else if (status === "loading") {
     currentBalance = { key: "balance", label: "Current Balance", color: HOME_MUTED, loading: true };
@@ -325,6 +331,7 @@ export default function MobileHome({
   safeToSpendStatus,
   savings,
   savingsStatus,
+  pendingBillsCount,
   dashSorted,
   dashCategoryTotals,
   onOpenRecurring,
@@ -489,6 +496,7 @@ export default function MobileHome({
         status={safeToSpendStatus}
         savings={savings}
         savingsStatus={savingsStatus}
+        pendingBillsCount={pendingBillsCount}
         cardStyle={cardStyle}
         onOpenBreakdown={onOpenBreakdown}
       />
@@ -745,15 +753,6 @@ export default function MobileHome({
             iconBg="#2a2a2e"
             label="Installments"
             onClick={onOpenInstallments}
-          />
-          <Row
-            icon={
-              <IconGray>
-                <path d="M6.5 3h11v18l-2.75-1.6L12 21l-2.75-1.6L6.5 21z" />
-              </IconGray>
-            }
-            iconBg="#2a2a2e"
-            label="Upcoming bills"
           />
         </div>
       </div>

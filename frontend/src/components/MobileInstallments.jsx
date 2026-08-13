@@ -76,14 +76,6 @@ const fieldStyle = {
 };
 const labelStyle = { fontSize: 11, color: HOME_MUTED, marginBottom: 4, paddingLeft: 2 };
 
-function SectionLabel({ children }) {
-  return (
-    <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: HOME_MUTED, margin: "0 4px 8px" }}>
-      {children}
-    </p>
-  );
-}
-
 function IconInstallment() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -640,7 +632,6 @@ export default function MobileInstallments({ onSaved, openAddSignal }) {
         </div>
       ) : (
         <div>
-          <SectionLabel>Installments</SectionLabel>
           <div style={{ backgroundColor: HOME_SURFACE, borderRadius: 18, overflow: "hidden" }}>
             {rows.map((row, i) => {
               const isDeleting = deletingIds.has(row.id);
