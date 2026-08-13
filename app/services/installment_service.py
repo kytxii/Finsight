@@ -191,8 +191,8 @@ async def get_installment_insights(installment_id: UUID, current_user: User, db:
         )
 
     # "Available cash" = what's actually free to spend right now, net of the
-    # user's own floor/reserve - running balance + income before bills reset,
-    # minus committed bills, minus the reserve. Deliberately not the abstract
+    # user's own floor/reserve - running balance + the next paycheck, minus
+    # bills due before it, minus the reserve. Deliberately not the abstract
     # "average monthly savings" figure: this is about whether the cash to cover
     # the payment is actually sitting there today, not a longer-run projection.
     reserve = current_user.spending_reserve or Decimal("0")

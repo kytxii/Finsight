@@ -534,7 +534,7 @@ export default function MobilePaychecks({ onSaved }) {
                   <EmptyCTA message="No starting balance set" cta="Set Starting Balance" onClick={() => setEditingBalance(true)} />
                 )}
                 <p style={{ fontSize: 11, color: HOME_MUTED, marginTop: 8, padding: "0 2px" }}>
-                  Safe to Spend on the dashboard builds forward from this using your actual transactions.
+                  Available Cash on the dashboard builds forward from this using your actual transactions.
                 </p>
               </div>
 
@@ -580,7 +580,7 @@ export default function MobilePaychecks({ onSaved }) {
                   </div>
                 )}
                 <p style={{ fontSize: 11, color: HOME_MUTED, marginTop: 8, padding: "0 2px" }}>
-                  Subtracted from Safe to Spend to get what's actually free to allocate.
+                  Subtracted from Available Cash to get what's actually free to allocate.
                 </p>
               </div>
             </>

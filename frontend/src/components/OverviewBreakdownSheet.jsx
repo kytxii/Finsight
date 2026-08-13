@@ -12,7 +12,7 @@ const EXIT_MS = 260; // matches the breakdown-up entry duration
 const TITLES = {
   balance: "Current Balance",
   bills: "Upcoming Bills",
-  cash: "Estimated Cash",
+  cash: "Available Cash",
   savings: "Estimated Savings",
 };
 
@@ -32,19 +32,45 @@ function Row({ label, value, color = HOME_TEXT, strong = false, muted = false, d
   );
 }
 
+// The exact row markup Upcoming Bills uses for each line item - dot, bold
+// name, muted meta subtitle underneath - reused here so Available Cash and
+// Estimated Savings share its spacing, padding, and two-line rhythm instead
+// of a flatter single-line label/value pair.
+function DotRow({ label, meta, value, color = HOME_TEXT, dotColor = HOME_MUTED, divider = false }) {
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+      padding: "11px 0", borderTop: divider ? `1px solid ${HOME_DIVIDER}` : "none",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+        <span style={{ width: 8, height: 8, borderRadius: "50%", background: dotColor, flexShrink: 0 }} />
+        <div style={{ minWidth: 0 }}>
+          <p style={{ margin: 0, fontSize: 14.5, fontWeight: 600, color: HOME_TEXT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</p>
+          {meta && <p style={{ margin: "1px 0 0", fontSize: 12, color: HOME_MUTED }}>{meta}</p>}
+        </div>
+      </div>
+      <span style={{ fontSize: 14.5, fontWeight: 700, fontVariantNumeric: "tabular-nums", color, flexShrink: 0 }}>{value}</span>
+    </div>
+  );
+}
+
 function Note({ children }) {
   return <p style={{ margin: "12px 2px 0", fontSize: 12.5, lineHeight: 1.5, color: HOME_MUTED }}>{children}</p>;
 }
 
 // ── Per-cell content ─────────────────────────────────────────────────────────
 
-function BalanceBody() {
+function BalanceBody({ safeToSpend, status }) {
+  if (status !== "ok" || !safeToSpend) {
+    return <Note>Set a starting balance in Paychecks to track your running balance here.</Note>;
+  }
   return (
     <>
-      <Row label="Checking" value="$3,284.19" color={HOME_TEXT} strong />
+      <Row label="Checking" value={fmt(safeToSpend.running_balance)} color={HOME_TEXT} strong />
       <Note>
-        This is placeholder data. A live balance will appear here once bank account
-        integration is connected, and Estimated Cash will build forward from it.
+        Builds forward from the starting balance you set in Paychecks, using your
+        actual transactions since then. A live bank-synced balance will replace
+        this once account integration ships.
       </Note>
     </>
   );
@@ -99,22 +125,38 @@ function CashBody({ safeToSpend, status }) {
     return <Note>Set a starting balance and paycheck schedule to project your leftover cash.</Note>;
   }
   const surplus = parseFloat(safeToSpend.spendable_surplus);
-  const reserved = surplus - parseFloat(safeToSpend.free_to_allocate);
+  const freeToAllocate = parseFloat(safeToSpend.free_to_allocate);
+  const reserved = surplus - freeToAllocate;
+  const nextPaydayLabel = shortDate(safeToSpend.next_payday);
+  const billCount = safeToSpend.bills_breakdown?.length ?? 0;
   return (
     <>
-      <Row label="Current balance" value={fmt(safeToSpend.running_balance)} />
-      <Row label="Projected income" value={`+${fmt(safeToSpend.projected_income)}`} color={HOME_INCOME} divider />
-      <Row label="Bills this month" value={`−${fmt(safeToSpend.bills_before_month_end)}`} color={HOME_EXPENSE} divider />
-      <Row label="Estimated cash" value={fmt(safeToSpend.spendable_surplus)} color={surplus >= 0 ? HOME_INCOME : HOME_EXPENSE} strong divider />
+      <DotRow label="Current balance" meta="As of today" value={fmt(safeToSpend.running_balance)} />
+      <DotRow
+        label="Next paycheck"
+        meta={safeToSpend.next_payday_estimate != null ? `Estimated · ${nextPaydayLabel}` : `No estimate yet · ${nextPaydayLabel}`}
+        value={safeToSpend.next_payday_estimate != null ? `+${fmt(safeToSpend.next_payday_estimate)}` : "—"}
+        color={HOME_INCOME}
+        dotColor={HOME_INCOME}
+        divider
+      />
+      <DotRow
+        label="Bills before then"
+        meta={billCount > 0 ? `${billCount} bill${billCount !== 1 ? "s" : ""} due` : "None due"}
+        value={`−${fmt(safeToSpend.bills_before_next_payday)}`}
+        color={HOME_EXPENSE}
+        dotColor={HOME_EXPENSE}
+        divider
+      />
       {reserved > 0.005 && (
-        <Note>{fmt(reserved)} of this is set aside as your spending reserve, leaving {fmt(safeToSpend.free_to_allocate)} free to allocate.</Note>
+        <DotRow label="Spending reserve" meta="Set aside, not spendable" value={`−${fmt(reserved)}`} color={HOME_EXPENSE} dotColor={HOME_EXPENSE} divider />
       )}
-      <Note>Projected leftover once every bill this month has been paid.</Note>
+      <Row label="Available cash" value={fmt(safeToSpend.free_to_allocate)} color={freeToAllocate >= 0 ? HOME_INCOME : HOME_EXPENSE} strong divider />
     </>
   );
 }
 
-function SavingsBody({ savings, status, savingsTxns }) {
+function SavingsBody({ savings, status }) {
   if (status === "no-history") {
     return <Note>Your savings estimate needs at least 3 months of spending history to project from.</Note>;
   }
@@ -123,37 +165,27 @@ function SavingsBody({ savings, status, savingsTxns }) {
   }
   return (
     <>
-      <Row label="Projected income" value={fmt(savings.projected_income)} color={HOME_INCOME} />
-      <Row label="Avg. monthly spending" value={`−${fmt(savings.projected_spending)}`} color={HOME_EXPENSE} divider />
-      <Row label="Fixed bills" value={`−${fmt(savings.committed_recurring)}`} color={HOME_EXPENSE} divider />
-      <Row label="Could save this month" value={fmt(savings.estimated_savings)} color={TILE_COLOR.SAVINGS} strong divider />
-
-      <p style={{ margin: "18px 2px 6px", fontSize: 12, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: HOME_MUTED }}>
-        Saved so far · {fmt(savings.saved_so_far)}
-      </p>
-      {savingsTxns.length === 0 ? (
-        <Note>You haven't recorded any savings this month yet.</Note>
-      ) : (
-        savingsTxns.map((t, i) => (
-          <div key={t.id ?? i} style={{
-            display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
-            padding: "10px 0", borderTop: i > 0 ? `1px solid ${HOME_DIVIDER}` : "none",
-          }}>
-            <div style={{ minWidth: 0 }}>
-              <p style={{ margin: 0, fontSize: 14.5, fontWeight: 600, color: HOME_TEXT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</p>
-              <p style={{ margin: "1px 0 0", fontSize: 12, color: HOME_MUTED }}>{shortDate(t.transaction_date)}</p>
-            </div>
-            <span style={{ fontSize: 14.5, fontWeight: 700, fontVariantNumeric: "tabular-nums", color: TILE_COLOR.SAVINGS, flexShrink: 0 }}>
-              {fmt(t.amount)}
-            </span>
-          </div>
-        ))
-      )}
+      {/* whole_month_income covers the full month regardless of whether it's
+          already landed - a raise or amount correction shows up immediately
+          instead of vanishing once payday passes. The spending side blends
+          what's actually posted so far with a historical rate for the days
+          left, so the total gets more accurate as the month goes on (#85). */}
+      <DotRow label="Income this month" meta="Paychecks + other income" value={`+${fmt(savings.whole_month_income)}`} color={HOME_INCOME} dotColor={HOME_INCOME} />
+      <DotRow label="Fixed bills" meta="Recurring, non-savings" value={`−${fmt(savings.committed_recurring)}`} color={HOME_EXPENSE} dotColor={HOME_EXPENSE} divider />
+      <DotRow label="Spent so far" meta="Discretionary, this month" value={`−${fmt(savings.discretionary_spent_so_far)}`} color={HOME_EXPENSE} dotColor={HOME_EXPENSE} divider />
+      <DotRow label="Typical spending" meta="Historical avg, rest of month" value={`−${fmt(savings.discretionary_projected_remaining)}`} color={HOME_EXPENSE} dotColor={HOME_EXPENSE} divider />
+      <Row
+        label="Saved / projected"
+        value={`${fmt(savings.saved_so_far)} / ${fmt(savings.estimated_savings)}`}
+        color={TILE_COLOR.SAVINGS}
+        strong
+        divider
+      />
     </>
   );
 }
 
-export default function OverviewBreakdownSheet({ cell, onClose, safeToSpend, safeToSpendStatus, savings, savingsStatus, transactions = [] }) {
+export default function OverviewBreakdownSheet({ cell, onClose, safeToSpend, safeToSpendStatus, savings, savingsStatus }) {
   // Closing is staged rather than immediate: the parent unmounts this component
   // the moment onClose fires, which would cut the exit animation off. Hold it for
   // one animation, then hand control back. (#46)
@@ -179,12 +211,6 @@ export default function OverviewBreakdownSheet({ cell, onClose, safeToSpend, saf
 
   const { dragY, dragging, handlers } = useSheetDrag(requestClose);
   if (!cell) return null;
-
-  const savingsTxns = savings
-    ? transactions
-        .filter((t) => t.category === "SAVINGS" && t.transaction_date >= savings.month_start && t.transaction_date < savings.month_end)
-        .sort((a, b) => b.transaction_date.localeCompare(a.transaction_date))
-    : [];
 
   return (
     <div
@@ -228,10 +254,10 @@ export default function OverviewBreakdownSheet({ cell, onClose, safeToSpend, saf
           </div>
         </div>
 
-        {cell === "balance" && <BalanceBody />}
+        {cell === "balance" && <BalanceBody safeToSpend={safeToSpend} status={safeToSpendStatus} />}
         {cell === "bills" && <BillsBody safeToSpend={safeToSpend} status={safeToSpendStatus} />}
         {cell === "cash" && <CashBody safeToSpend={safeToSpend} status={safeToSpendStatus} />}
-        {cell === "savings" && <SavingsBody savings={savings} status={savingsStatus} savingsTxns={savingsTxns} />}
+        {cell === "savings" && <SavingsBody savings={savings} status={savingsStatus} />}
       </div>
     </div>
   );
