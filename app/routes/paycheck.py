@@ -63,14 +63,11 @@ async def get_spendable_surplus(current_user: User = Depends(get_current_user), 
         raise HTTPException(status_code=404, detail=str(e))
     return SpendableSurplusResponse(
         next_payday=result.next_payday,
-        month_end=result.month_end,
         spendable_surplus=result.spendable_surplus,
         free_to_allocate=result.free_to_allocate,
         bills_before_next_payday=result.bills_before_next_payday,
         next_payday_estimate=result.next_payday_estimate,
         running_balance=result.running_balance,
-        projected_income=result.projected_income,
-        bills_before_month_end=result.bills_before_month_end,
         bills_breakdown=[
             BillBreakdownItem(
                 name=b.name,
@@ -94,9 +91,10 @@ async def get_estimated_savings(current_user: User = Depends(get_current_user), 
         month_end=result.month_end,
         estimated_savings=result.estimated_savings,
         saved_so_far=result.saved_so_far,
-        projected_income=result.projected_income,
-        projected_spending=result.projected_spending,
+        whole_month_income=result.whole_month_income,
         committed_recurring=result.committed_recurring,
+        discretionary_spent_so_far=result.discretionary_spent_so_far,
+        discretionary_projected_remaining=result.discretionary_projected_remaining,
     )
 
 @router.get("/balance", response_model=BalanceAnchorResponse | None)

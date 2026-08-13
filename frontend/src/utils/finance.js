@@ -95,6 +95,16 @@ export function fmt(amount) {
   }).format(amount);
 }
 
+// Whole-dollar variant - no cents. UI-only rounding for surfaces where exact
+// change is noise (e.g. savings projections: "saved $100" not "$100.23").
+export function fmtWhole(amount) {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  }).format(amount);
+}
+
 // Cycle for the shared amount-sort toggle (AmountSortButton): null -> desc -> asc -> null.
 export function nextAmountSort(current) {
   return current === "desc" ? "asc" : current === "asc" ? null : "desc";

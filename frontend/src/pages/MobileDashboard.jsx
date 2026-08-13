@@ -576,8 +576,11 @@ export default function MobileDashboard() {
     const totalIn = dashFiltered
       .filter((t) => INCOME_TYPES.has(t.category))
       .reduce((s, t) => s + parseFloat(t.amount), 0) + dashMonthDeposits;
+    // SAVINGS excluded: money moved to savings isn't spent, it's still yours -
+    // counting it here would inflate Expenses and drag down Net for the same
+    // reason. (#69)
     const totalOut = dashFiltered
-      .filter((t) => !INCOME_TYPES.has(t.category))
+      .filter((t) => !INCOME_TYPES.has(t.category) && t.category !== "SAVINGS")
       .reduce((s, t) => s + parseFloat(t.amount), 0);
     const net = totalIn - totalOut;
     return { totalIn, totalOut, net };
@@ -606,8 +609,10 @@ export default function MobileDashboard() {
     const totalIn = inRange
       .filter((t) => INCOME_TYPES.has(t.category))
       .reduce((s, t) => s + parseFloat(t.amount), 0) + dashLastMonthDeposits;
+    // Same SAVINGS exclusion as dashSummary.totalOut, so the Expenses
+    // change-badge compares like-for-like across months (#69).
     const totalOut = inRange
-      .filter((t) => !INCOME_TYPES.has(t.category))
+      .filter((t) => !INCOME_TYPES.has(t.category) && t.category !== "SAVINGS")
       .reduce((s, t) => s + parseFloat(t.amount), 0);
     return { totalIn, totalOut };
   }, [transactions, dashLastMonthRange, dashLastMonthDeposits]);
@@ -1450,7 +1455,6 @@ export default function MobileDashboard() {
         safeToSpendStatus={safeToSpendStatus}
         savings={savings}
         savingsStatus={savingsStatus}
-        transactions={transactions}
       />
 
       {/* ── Recurring payments overlay ── */}

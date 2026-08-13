@@ -58,14 +58,11 @@ class BillBreakdownItem(BaseModel):
 
 class SpendableSurplusResponse(BaseModel):
     next_payday: date
-    month_end: date
     spendable_surplus: Decimal
     free_to_allocate: Decimal
     bills_before_next_payday: Decimal
     next_payday_estimate: Decimal | None = None
     running_balance: Decimal
-    projected_income: Decimal
-    bills_before_month_end: Decimal
     bills_breakdown: list[BillBreakdownItem] = []
 
 class SetBalanceAnchor(BaseModel):
@@ -98,6 +95,7 @@ class EstimatedSavingsResponse(BaseModel):
     month_end: date
     estimated_savings: Decimal
     saved_so_far: Decimal
-    projected_income: Decimal
-    projected_spending: Decimal
+    whole_month_income: Decimal
     committed_recurring: Decimal
+    discretionary_spent_so_far: Decimal
+    discretionary_projected_remaining: Decimal

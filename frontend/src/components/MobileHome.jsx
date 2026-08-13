@@ -1,4 +1,4 @@
-import { CATEGORY_CONFIG, INCOME_TYPES, fmt } from "../utils/finance";
+import { CATEGORY_CONFIG, INCOME_TYPES, fmt, fmtWhole } from "../utils/finance";
 import { periodLabel, relativeDate } from "../utils/mobileFormat";
 import Skel from "./Skel";
 import {
@@ -201,9 +201,10 @@ function ChangeBadge({ current, previous, goodWhenUp }) {
 
 // The month overview card: a 2x2 grid of stats.
 //   Current Balance   |   Upcoming Bills
-//   Estimated Cash    |   Estimated Savings
-// Balance is a placeholder until bank integration (#15). The rest come from the
-// spendable-surplus and estimated-savings endpoints.
+//   Available Cash    |   Estimated Savings
+// All four come from the spendable-surplus and estimated-savings endpoints -
+// Current Balance is running_balance (starting balance + transactions since),
+// not yet a live bank-synced figure until account integration ships (#15).
 function StatField({ label, value, color, caption, onClick, loading }) {
   const interactive = typeof onClick === "function" && !loading;
   return (
@@ -246,23 +247,21 @@ function OverviewCard({
   cardStyle,
   onOpenBreakdown,
 }) {
-  // Placeholder until bank integration (#15) provides a live figure.
-  const currentBalance = {
-    key: "balance",
-    label: "Current Balance",
-    value: "$3,284.19",
-    color: HOME_TEXT,
-  };
-
-  let bills, discretionary;
+  let currentBalance, bills, discretionary;
   if (status === "ok" && safeToSpend) {
-    const surplus = parseFloat(safeToSpend.spendable_surplus);
+    // Built forward from the starting balance set in Paychecks plus actual
+    // transactions since - real, not a placeholder, even without bank sync.
+    currentBalance = { key: "balance", label: "Current Balance", value: fmt(safeToSpend.running_balance), color: HOME_TEXT };
+
+    // free_to_allocate, not spendable_surplus - "Available Cash" should already
+    // net out the user's spending reserve, not just the raw leftover before it.
+    const freeToAllocate = parseFloat(safeToSpend.free_to_allocate);
     const billCount = safeToSpend.bills_breakdown?.length ?? 0;
     discretionary = {
       key: "cash",
-      label: "Estimated Cash",
-      value: fmt(safeToSpend.spendable_surplus),
-      color: surplus >= 0 ? HOME_INCOME : HOME_EXPENSE,
+      label: "Available Cash",
+      value: fmt(safeToSpend.free_to_allocate),
+      color: freeToAllocate >= 0 ? HOME_INCOME : HOME_EXPENSE,
     };
     bills = {
       key: "bills",
@@ -272,21 +271,26 @@ function OverviewCard({
       caption: billCount > 0 ? `${billCount} bill${billCount !== 1 ? "s" : ""} due` : "No bills due",
     };
   } else if (status === "loading") {
-    discretionary = { key: "cash", label: "Estimated Cash", color: HOME_MUTED, loading: true };
+    currentBalance = { key: "balance", label: "Current Balance", color: HOME_MUTED, loading: true };
+    discretionary = { key: "cash", label: "Available Cash", color: HOME_MUTED, loading: true };
     bills = { key: "bills", label: "Upcoming Bills", color: HOME_MUTED, loading: true };
   } else {
-    discretionary = { key: "cash", label: "Estimated Cash", value: "Not set up", color: HOME_MUTED };
+    currentBalance = { key: "balance", label: "Current Balance", value: "Not set up", color: HOME_MUTED };
+    discretionary = { key: "cash", label: "Available Cash", value: "Not set up", color: HOME_MUTED };
     bills = { key: "bills", label: "Upcoming Bills", value: "—", color: HOME_MUTED };
   }
 
   let save;
   if (savingsStatus === "ok" && savings) {
-    const target = parseFloat(savings.estimated_savings);
-    const value =
-      target > 0
-        ? `${fmt(savings.saved_so_far)}/${fmt(savings.estimated_savings)}`
-        : fmt(savings.saved_so_far);
-    save = { key: "savings", label: "Estimated Savings", value, color: TILE_COLOR.SAVINGS };
+    // estimated_savings is floored at saved_so_far server-side, so the
+    // numerator can never exceed the denominator here - safe to show as a
+    // plain fraction again (#85).
+    save = {
+      key: "savings",
+      label: "Estimated Savings",
+      value: `${fmtWhole(savings.saved_so_far)} / ${fmtWhole(savings.estimated_savings)}`,
+      color: TILE_COLOR.SAVINGS,
+    };
   } else if (savingsStatus === "loading") {
     save = { key: "savings", label: "Estimated Savings", color: HOME_MUTED, loading: true };
   } else {

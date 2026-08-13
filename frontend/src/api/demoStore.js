@@ -372,7 +372,7 @@ const SEED_PAYCHECKS = [
   { id: "demo-pc-9", schedule_id: "demo-ps-1", pay_date: "2026-04-24", amount: "1875.00" },
 ];
 
-// Starting balance so Estimated Cash / Upcoming Bills have a base to build from.
+// Starting balance so Available Cash / Upcoming Bills have a base to build from.
 const SEED_BALANCE_ANCHOR = { id: "demo-ba-1", current_balance: "2850.00", as_of_date: "2026-04-01" };
 
 // Cash deposits (lump sums banked), independent of individual tips. Seed tips
@@ -964,36 +964,6 @@ function committedItems(recurring, today, horizon) {
   return { total, items };
 }
 
-function committedBefore(recurring, today, horizon) {
-  return committedItems(recurring, today, horizon).total;
-}
-
-// Sum every future paycheck landing before monthEnd, across all active
-// schedules - actual amount if entered, else that schedule's average
-// estimate. Paychecks with pay_date <= today are excluded - they're either
-// already reflected in the running balance or still pending entry.
-function projectedIncomeBefore(schedules, today, monthEnd) {
-  if (schedules.length === 0) return 0;
-
-  // Backfilling through monthEnd (rather than just today) guarantees a row
-  // exists for every payday in the window we're about to sum, including ones
-  // further out than the immediate next check.
-  const allPaychecks = backfillPaychecks(monthEnd);
-  const todayStr = toDateStr(today);
-  const monthEndStr = toDateStr(monthEnd);
-  const scheduleIds = new Set(schedules.map((s) => s.id));
-
-  const future = allPaychecks.filter(
-    (p) => scheduleIds.has(p.schedule_id) && p.pay_date > todayStr && p.pay_date < monthEndStr
-  );
-
-  return future.reduce((sum, p) => {
-    if (p.amount != null) return sum + parseFloat(p.amount);
-    const estimate = averageRecentAmounts(p.schedule_id, allPaychecks);
-    return sum + (estimate ?? 0);
-  }, 0);
-}
-
 export const getSpendingReserve = () => {
   const raw = localStorage.getItem(RES_KEY);
   return respond({ spending_reserve: raw ? JSON.parse(raw).spending_reserve : "0.00" });
@@ -1035,52 +1005,66 @@ export const getSpendableSurplus = () => {
       }
     }
   });
-  const monthEnd = nextMonthStart(today);
-  const nextPaydayEstimate = nextSchedule ? averageRecentAmounts(nextSchedule.id, getAll(PC_KEY)) : null;
+  // Prefer the actual amount already entered for this specific pay date over
+  // the rolling average - backfill through nextPayday first so that row
+  // exists to check. Mirrors _next_payday_amount in the Python service (#79).
+  const nextPaydayStr = toDateStr(nextPayday);
+  const backfilled = backfillPaychecks(nextPayday);
+  const enteredNextPaycheck = backfilled.find(
+    (p) => p.schedule_id === nextSchedule?.id && p.pay_date === nextPaydayStr && p.amount != null
+  );
+  const nextPaydayEstimate = enteredNextPaycheck
+    ? parseFloat(enteredNextPaycheck.amount)
+    : nextSchedule
+      ? averageRecentAmounts(nextSchedule.id, backfilled)
+      : null;
 
   const recurring = getAll(RP_KEY).filter((rp) => rp.active !== false && PAYCHECK_EXPENSE_CATEGORIES.has(rp.category));
 
-  // Primary number: what's actually free to spend/save before bills reset at
-  // the start of next month. Secondary: how much of that is already spoken
-  // for before the next paycheck lands, shown separately for context.
-  const billsBeforeMonthEnd = committedBefore(recurring, today, monthEnd);
+  // What's actually free to spend/save before the next paycheck lands - not
+  // the whole month, so this stays "live" instead of counting paychecks that
+  // haven't arrived yet.
   const { total: billsBeforeNextPayday, items: billsBreakdown } = committedItems(recurring, today, nextPayday);
 
-  const projectedIncome = projectedIncomeBefore(schedules, today, monthEnd);
-  const spendableSurplus = runningBalance + projectedIncome - billsBeforeMonthEnd;
+  const spendableSurplus = runningBalance + (nextPaydayEstimate ?? 0) - billsBeforeNextPayday;
   const freeToAllocate = spendableSurplus - getSpendingReserveValue();
 
   return respond({
-    next_payday: toDateStr(nextPayday),
-    month_end: toDateStr(monthEnd),
+    next_payday: nextPaydayStr,
     spendable_surplus: spendableSurplus.toFixed(2),
     free_to_allocate: freeToAllocate.toFixed(2),
     bills_before_next_payday: billsBeforeNextPayday.toFixed(2),
     next_payday_estimate: nextPaydayEstimate != null ? nextPaydayEstimate.toFixed(2) : null,
     running_balance: runningBalance.toFixed(2),
-    projected_income: projectedIncome.toFixed(2),
-    bills_before_month_end: billsBeforeMonthEnd.toFixed(2),
     bills_breakdown: billsBreakdown,
   });
 };
 
-// Sum every paycheck landing in [monthStart, monthEnd), across active schedules -
-// whole calendar month (received + upcoming), actual amount if entered else the
-// schedule's average estimate. Mirrors _full_month_income in the Python service.
-function fullMonthIncome(schedules, monthStartStr, monthEndStr) {
-  if (schedules.length === 0) return 0;
+// Every dollar of income for [monthStart, monthEnd): real INCOME transactions
+// already logged (paycheck-linked or not - a manual entry like a freelance gig
+// counts the same as a formal paycheck) plus a projected amount for each
+// schedule's still-unfilled paycheck this month. Not a double count: a filled
+// paycheck's amount already exists as a linked INCOME transaction, so it's
+// covered by the actual-transactions sum. Mirrors _whole_month_income (#85).
+function computeWholeMonthIncome(schedules, monthStartStr, monthEndStr) {
+  const actualIncome = getAll(TX_KEY)
+    .filter((t) => t.category === "INCOME" && t.transaction_date >= monthStartStr && t.transaction_date < monthEndStr)
+    .reduce((sum, t) => sum + parseFloat(t.amount), 0);
+
+  if (schedules.length === 0) return actualIncome;
 
   const allPaychecks = backfillPaychecks(new Date(monthEndStr + "T00:00:00"));
   const scheduleIds = new Set(schedules.map((s) => s.id));
-  const inMonth = allPaychecks.filter(
-    (p) => scheduleIds.has(p.schedule_id) && p.pay_date >= monthStartStr && p.pay_date < monthEndStr
+  const unfilled = allPaychecks.filter(
+    (p) => scheduleIds.has(p.schedule_id) && p.pay_date >= monthStartStr && p.pay_date < monthEndStr && p.amount == null
   );
 
-  return inMonth.reduce((sum, p) => {
-    if (p.amount != null) return sum + parseFloat(p.amount);
+  const projectedUnfilled = unfilled.reduce((sum, p) => {
     const estimate = averageRecentAmounts(p.schedule_id, allPaychecks);
     return sum + (estimate ?? 0);
   }, 0);
+
+  return actualIncome + projectedUnfilled;
 }
 
 export const getEstimatedSavings = () => {
@@ -1096,9 +1080,10 @@ export const getEstimatedSavings = () => {
   const monthEndStr = toDateStr(monthEnd);
 
   // Without a known income figure the estimate is meaningless - a schedule whose
-  // checks have no amounts entered projects $0 and is treated as not-ready.
-  const projectedIncome = fullMonthIncome(schedules, monthStartStr, monthEndStr);
-  if (projectedIncome <= 0) {
+  // checks have no amounts entered projects $0 and is treated as not-ready. This
+  // gate looks at the whole month (received + upcoming), not just what's left.
+  const wholeMonthIncome = computeWholeMonthIncome(schedules, monthStartStr, monthEndStr);
+  if (wholeMonthIncome <= 0) {
     return Promise.reject({ response: { status: 404, data: { detail: "No paycheck amounts yet" } } });
   }
 
@@ -1107,7 +1092,7 @@ export const getEstimatedSavings = () => {
   // The real backend excludes recurring-linked transactions from the discretionary
   // average via recurring_payment_id. Seed history predates that link, so mirror
   // the intent by also excluding transactions whose name matches an active
-  // non-estimate recurring - those fixed bills are added back as committed_recurring.
+  // non-estimate recurring - those fixed bills are added back separately below.
   const recurringNames = new Set(
     getAll(RP_KEY)
       .filter((rp) => rp.active !== false && !rp.is_estimate && NON_SAVINGS_EXPENSE_CATEGORIES.has(rp.category))
@@ -1136,27 +1121,46 @@ export const getEstimatedSavings = () => {
   }
 
   const totalSpend = Object.values(totalsByMonth).reduce((a, b) => a + b, 0);
-  const projectedSpending = totalSpend / SAVINGS_HISTORY_MONTHS;
-
-  const committedRecurring = getAll(RP_KEY)
-    .filter((rp) => rp.active !== false && !rp.is_estimate && NON_SAVINGS_EXPENSE_CATEGORIES.has(rp.category))
-    .reduce((sum, rp) => sum + parseFloat(rp.amount), 0);
+  const monthlyDiscretionaryAvg = totalSpend / SAVINGS_HISTORY_MONTHS;
 
   const savedSoFar = getAll(TX_KEY)
     .filter((t) => t.category === "SAVINGS" && t.transaction_date >= monthStartStr && t.transaction_date < monthEndStr)
     .reduce((sum, t) => sum + parseFloat(t.amount), 0);
 
-  const raw = projectedIncome - projectedSpending - committedRecurring;
-  const estimatedSavings = raw > 0 ? raw : 0;
+  // Fixed obligations for the whole month, regardless of already paid.
+  const committedRecurring = getAll(RP_KEY)
+    .filter((rp) => rp.active !== false && !rp.is_estimate && NON_SAVINGS_EXPENSE_CATEGORIES.has(rp.category))
+    .reduce((sum, rp) => sum + parseFloat(rp.amount), 0);
+
+  // Discretionary spend, blended: what's actually posted so far this month
+  // (real data) plus the historical daily rate for the days strictly after
+  // today. Mirrors get_estimated_savings in the Python service (#85).
+  const todayStr = toDateStr(today);
+  const discretionarySpentSoFar = getAll(TX_KEY)
+    .filter(
+      (t) =>
+        NON_SAVINGS_EXPENSE_CATEGORIES.has(t.category) &&
+        !t._recurring_id && !t.recurring_payment_id &&
+        t.transaction_date >= monthStartStr && t.transaction_date <= todayStr
+    )
+    .reduce((sum, t) => sum + parseFloat(t.amount), 0);
+
+  const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+  const daysAfterToday = daysInMonth - today.getDate();
+  const discretionaryProjectedRemaining = (monthlyDiscretionaryAvg / daysInMonth) * daysAfterToday;
+
+  const rawCeiling = wholeMonthIncome - committedRecurring - discretionarySpentSoFar - discretionaryProjectedRemaining;
+  const estimatedSavings = Math.max(rawCeiling, savedSoFar);
 
   return respond({
     month_start: monthStartStr,
     month_end: monthEndStr,
     estimated_savings: estimatedSavings.toFixed(2),
     saved_so_far: savedSoFar.toFixed(2),
-    projected_income: projectedIncome.toFixed(2),
-    projected_spending: projectedSpending.toFixed(2),
+    whole_month_income: wholeMonthIncome.toFixed(2),
     committed_recurring: committedRecurring.toFixed(2),
+    discretionary_spent_so_far: discretionarySpentSoFar.toFixed(2),
+    discretionary_projected_remaining: discretionaryProjectedRemaining.toFixed(2),
   });
 };
 

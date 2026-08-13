@@ -592,7 +592,7 @@ export default function PaychecksPanel({ mobile = false, onSaved }) {
                   </div>
                 )}
                 <p style={{ fontSize: 10, color: muted, marginTop: 6 }}>
-                  Safe to Spend on the dashboard builds forward from this using your actual transactions.
+                  Available Cash on the dashboard builds forward from this using your actual transactions.
                 </p>
               </div>
 
@@ -643,7 +643,7 @@ export default function PaychecksPanel({ mobile = false, onSaved }) {
                   </div>
                 )}
                 <p style={{ fontSize: 10, color: muted, marginTop: 6 }}>
-                  Subtracted from Safe to Spend to get what's actually free to allocate.
+                  Subtracted from Available Cash to get what's actually free to allocate.
                 </p>
               </div>
             </>
