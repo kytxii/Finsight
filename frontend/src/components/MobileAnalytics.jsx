@@ -141,7 +141,7 @@ function PickerList({ options, onSelect, onClose }) {
   );
 }
 
-export default function MobileAnalytics({ transactions, loading, onEditTransaction, onDeleteTransaction, jump }) {
+export default function MobileAnalytics({ transactions, deposits = [], loading, onEditTransaction, onDeleteTransaction, onEditDeposit, onDeleteDeposit, jump }) {
   const now = getNow();
 
   // ── Category Breakdown period - navigable via arrows or tapping month/year
@@ -184,12 +184,20 @@ export default function MobileAnalytics({ transactions, loading, onEditTransacti
       if (monthKey(t.transaction_date) !== periodKey) return;
       totals[t.category] = (totals[t.category] ?? 0) + parseFloat(t.amount);
     });
+    // Tip deposits add to Tips on top of the logged tip transactions - same
+    // definition as Home's dashCategoryTotals (#56/#99): deposits aren't a
+    // subset of tips earned, they're additive.
+    const periodDeposits = deposits.reduce(
+      (s, d) => (monthKey(d.deposit_date) === periodKey ? s + parseFloat(d.amount) : s),
+      0,
+    );
+    if (periodDeposits) totals.TIPS = (totals.TIPS ?? 0) + periodDeposits;
     const rows = Object.entries(totals)
       .map(([category, total]) => ({ category, total }))
       .sort((a, b) => b.total - a.total);
     const max = rows[0]?.total ?? 0;
     return { rows, max };
-  }, [transactions, periodKey]);
+  }, [transactions, deposits, periodKey]);
 
   // ── Income vs. expense, last 6 months. SAVINGS excluded from "expense" -
   // money moved to savings isn't spent (same definition as #69's Home fix,
@@ -408,9 +416,12 @@ export default function MobileAnalytics({ transactions, loading, onEditTransacti
 
       <MobileActivity
         transactions={transactions}
+        deposits={deposits}
         loading={loading}
         onEditTransaction={onEditTransaction}
         onDeleteTransaction={onDeleteTransaction}
+        onEditDeposit={onEditDeposit}
+        onDeleteDeposit={onDeleteDeposit}
         jump={jump}
       />
     </>

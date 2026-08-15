@@ -58,6 +58,11 @@ export const TILE_COLOR = {
   TIPS: "#26a69a",
 };
 
+// Tip deposits aren't a category (TipDeposit is its own model, not a
+// Transaction) - this is the lighter teal MobileTips uses to distinguish a
+// deposit row from a TIPS-category tip in the same list.
+export const TIPS_DEPOSITED = "#5ccfc0";
+
 export const CATEGORY_ICON = {
   INCOME: IconIncomeTile,
   EXPENSE: IconExpenseTile,

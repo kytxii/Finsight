@@ -13,9 +13,10 @@ import {
 } from "../api/transactions";
 import { getSpendableSurplus, getEstimatedSavings } from "../api/paychecks";
 import { getUpcomingRecurringPayments } from "../api/recurringPayments";
-import { getTipDeposits } from "../api/tipDeposits";
+import { getTipDeposits, deleteTipDeposit } from "../api/tipDeposits";
 import CurrencyInput from "../components/CurrencyInput";
 import MobileTransactionModal from "../components/MobileTransactionModal";
+import MobileDepositModal from "../components/MobileDepositModal";
 import {
   CATEGORY_CONFIG,
   INCOME_TYPES,
@@ -309,9 +310,15 @@ export default function MobileDashboard() {
   }
 
   const [editingTransaction, setEditingTransaction] = useState(null);
+  const [editingDeposit, setEditingDeposit] = useState(null);
 
   const handleDelete = async (id) => {
     await deleteTransaction(id);
+    refresh();
+  };
+
+  const handleDeleteDeposit = async (id) => {
+    await deleteTipDeposit(id);
     refresh();
   };
 
@@ -744,9 +751,12 @@ export default function MobileDashboard() {
         {navTab === "activity" && (
           <MobileAnalytics
             transactions={transactions}
+            deposits={tipDeposits}
             loading={loading}
             onEditTransaction={setEditingTransaction}
             onDeleteTransaction={handleDelete}
+            onEditDeposit={setEditingDeposit}
+            onDeleteDeposit={handleDeleteDeposit}
             jump={activityJump}
           />
         )}
@@ -1991,6 +2001,18 @@ export default function MobileDashboard() {
           }}
           onDelete={handleDelete}
           onLocate={handleLocateTransaction}
+        />
+      )}
+
+      {editingDeposit && (
+        <MobileDepositModal
+          deposit={editingDeposit}
+          onClose={() => setEditingDeposit(null)}
+          onSaved={() => {
+            setEditingDeposit(null);
+            refresh();
+          }}
+          onDelete={handleDeleteDeposit}
         />
       )}
 

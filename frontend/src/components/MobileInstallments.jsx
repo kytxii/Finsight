@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import SwipeableRow from "./SwipeableRow";
 import CurrencyInput from "./CurrencyInput";
 import InstallmentGauge from "./InstallmentGauge";
+import Skel from "./Skel";
 import { fmt } from "../utils/finance";
 import { computeTermOptions, computeMonthlyPayment, computeGaugeStatus } from "../utils/installmentMath";
 import {
@@ -55,18 +56,6 @@ function ordinal(n) {
 // mid-word casing (acronyms, "iPhone"-style names) is left alone.
 function capitalizeWords(str) {
   return str.replace(/(^|\s)([a-z])/g, (_, prefix, letter) => prefix + letter.toUpperCase());
-}
-
-function Skel({ w = "100%", h = 16, style: extra = {} }) {
-  return (
-    <div style={{
-      width: w, height: h, borderRadius: 6, flexShrink: 0,
-      background: "linear-gradient(90deg, rgba(255,255,255,0.05) 25%, rgba(255,255,255,0.11) 50%, rgba(255,255,255,0.05) 75%)",
-      backgroundSize: "200% 100%",
-      animation: "skel-shimmer 1.4s ease-in-out infinite",
-      ...extra,
-    }} />
-  );
 }
 
 const fieldStyle = {

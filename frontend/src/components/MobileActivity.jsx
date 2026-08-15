@@ -6,7 +6,7 @@ import { CATEGORIES, CATEGORY_CONFIG, INCOME_TYPES, fmt } from "../utils/finance
 import { relativeDate } from "../utils/mobileFormat";
 import {
   HOME_TEXT, HOME_MUTED, HOME_SURFACE, HOME_DIVIDER, HOME_INCOME, HOME_ACCENT,
-  TILE_COLOR, CATEGORY_ICON,
+  TILE_COLOR, CATEGORY_ICON, TIPS_DEPOSITED,
 } from "./categoryVisuals";
 
 // Pure transaction browser replacing the old desktop-derived Analytics tab
@@ -97,6 +97,18 @@ function IconChevronDown({ size = 16 }) {
   );
 }
 
+// Tip-deposit row icon - matches MobileTips' bank glyph, since a deposit is a
+// TipDeposit, not a Transaction, and has no CATEGORY_ICON entry of its own.
+function IconBank({ color, size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 21h18" />
+      <path d="M12 3 3 8h18z" />
+      <path d="M5 8v10M9.5 8v10M14.5 8v10M19 8v10" />
+    </svg>
+  );
+}
+
 // Hoisted to module scope (#88) - declaring this inside MobileActivity's body
 // gave it a new function identity on every parent render, which made React
 // unmount/remount the whole subtree on any state change instead of updating
@@ -105,10 +117,14 @@ function IconChevronDown({ size = 16 }) {
 // immediately snap shut - opening a row triggers the very re-render that
 // destroyed it. Takes everything it needs as props instead of closing over
 // MobileActivity's state.
-function ActivityRow({ t, first, openId, setOpenId, onEditTransaction, onDeleteTransaction, highlightId, setRowRef }) {
+function ActivityRow({ t, first, openId, setOpenId, onEditTransaction, onDeleteTransaction, onEditDeposit, onDeleteDeposit, highlightId, setRowRef }) {
+  // A deposit row wraps a TipDeposit, not a Transaction (#99) - no category,
+  // edit/delete route to the tip-deposits API instead of /transactions.
+  const isDeposit = t.kind === "deposit";
   const Icon = CATEGORY_ICON[t.category];
   const tileColor = TILE_COLOR[t.category] ?? HOME_MUTED;
-  const isIncome = INCOME_TYPES.has(t.category);
+  const isIncome = isDeposit || INCOME_TYPES.has(t.category);
+  const amountColor = isDeposit ? TIPS_DEPOSITED : (isIncome ? HOME_INCOME : HOME_TEXT);
   // SwipeableRow doesn't forward a ref, so the scroll-into-view target for
   // jump-to-transaction wraps it in a plain div instead (#29). Takes a
   // setRowRef callback rather than the rowRefs object itself so the mutation
@@ -119,8 +135,8 @@ function ActivityRow({ t, first, openId, setOpenId, onEditTransaction, onDeleteT
         id={t.id}
         openId={openId}
         setOpenId={setOpenId}
-        onEdit={() => onEditTransaction(t)}
-        onDelete={() => onDeleteTransaction(t.id)}
+        onEdit={() => isDeposit ? onEditDeposit(t.__raw) : onEditTransaction(t)}
+        onDelete={() => isDeposit ? onDeleteDeposit(t.id) : onDeleteTransaction(t.id)}
         border={first ? "transparent" : HOME_DIVIDER}
         surface={HOME_SURFACE}
         text={HOME_TEXT}
@@ -135,11 +151,13 @@ function ActivityRow({ t, first, openId, setOpenId, onEditTransaction, onDeleteT
           transition: "background-color 0.4s ease",
         }}>
           <div style={{
-            flex: "0 0 auto", width: 40, height: 40, borderRadius: "50%", background: tileColor,
+            flex: "0 0 auto", width: 40, height: 40, borderRadius: "50%",
+            background: isDeposit ? "transparent" : tileColor,
+            border: isDeposit ? `1.5px solid ${TIPS_DEPOSITED}` : "none",
             display: "flex", alignItems: "center", justifyContent: "center",
-            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.16)",
+            boxShadow: isDeposit ? "none" : "inset 0 1px 0 rgba(255,255,255,0.16)",
           }}>
-            <Icon />
+            {isDeposit ? <IconBank color={TIPS_DEPOSITED} /> : <Icon />}
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <p style={{ margin: 0, fontSize: 17, fontWeight: 600, letterSpacing: "-0.2px", color: HOME_TEXT, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
@@ -149,7 +167,7 @@ function ActivityRow({ t, first, openId, setOpenId, onEditTransaction, onDeleteT
               {relativeDate(t.transaction_date)}
             </p>
           </div>
-          <span style={{ flex: "0 0 auto", marginLeft: 10, fontSize: 16, fontWeight: 600, letterSpacing: "-0.2px", fontVariantNumeric: "tabular-nums", color: isIncome ? HOME_INCOME : HOME_TEXT }}>
+          <span style={{ flex: "0 0 auto", marginLeft: 10, fontSize: 16, fontWeight: 600, letterSpacing: "-0.2px", fontVariantNumeric: "tabular-nums", color: amountColor }}>
             {isIncome ? "+" : "−"}{fmt(t.amount)}
           </span>
         </div>
@@ -161,7 +179,7 @@ function ActivityRow({ t, first, openId, setOpenId, onEditTransaction, onDeleteT
 // `jump`: { id, token } set by MobileDashboard when a transaction is picked
 // from Home's search dropdown - `token` changes on every pick (even the same
 // transaction twice) so the effect below always re-fires.
-export default function MobileActivity({ transactions, loading, onEditTransaction, onDeleteTransaction, jump }) {
+export default function MobileActivity({ transactions, deposits = [], loading, onEditTransaction, onDeleteTransaction, onEditDeposit, onDeleteDeposit, jump }) {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("ALL");
   const [sortField, setSortField] = useState(null); // null | "amount" | "name" | "date"
@@ -215,9 +233,30 @@ export default function MobileActivity({ transactions, loading, onEditTransactio
     resetPagination();
   }
 
+  // Deposits are TipDeposits, not Transactions (#99) - normalized to the same
+  // shape the rest of this list already sorts/groups/filters by
+  // (transaction_date/name/amount), tagged `kind: "deposit"` so ActivityRow
+  // can render/route them differently, with the original record kept on
+  // `__raw` for the edit modal (which needs `deposit_date`, not
+  // `transaction_date`). No `category`, so the existing `category !== "ALL"`
+  // filter below already excludes them from every specific category with no
+  // extra branching - they only ever show up under "ALL".
+  const merged = useMemo(() => {
+    const depositItems = deposits.map((d) => ({
+      id: d.id,
+      kind: "deposit",
+      amount: d.amount,
+      transaction_date: d.deposit_date,
+      name: "Deposit",
+      category: null,
+      __raw: d,
+    }));
+    return [...transactions, ...depositItems];
+  }, [transactions, deposits]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return transactions.filter((t) => {
+    return merged.filter((t) => {
       if (category !== "ALL" && t.category !== category) return false;
       if (!q) return true;
       return (
@@ -227,7 +266,7 @@ export default function MobileActivity({ transactions, loading, onEditTransactio
         String(t.amount).includes(q)
       );
     });
-  }, [transactions, query, category]);
+  }, [merged, query, category]);
 
   const sorted = useMemo(() => {
     const arr = [...filtered];
@@ -481,6 +520,7 @@ export default function MobileActivity({ transactions, loading, onEditTransactio
                           key={t.id} t={t} first={i === 0}
                           openId={openId} setOpenId={setOpenId}
                           onEditTransaction={onEditTransaction} onDeleteTransaction={onDeleteTransaction}
+                          onEditDeposit={onEditDeposit} onDeleteDeposit={onDeleteDeposit}
                           highlightId={highlightId} setRowRef={setRowRef}
                         />
                       ))}
@@ -497,6 +537,7 @@ export default function MobileActivity({ transactions, loading, onEditTransactio
                 key={t.id} t={t} first={i === 0}
                 openId={openId} setOpenId={setOpenId}
                 onEditTransaction={onEditTransaction} onDeleteTransaction={onDeleteTransaction}
+                onEditDeposit={onEditDeposit} onDeleteDeposit={onDeleteDeposit}
                 highlightId={highlightId} setRowRef={setRowRef}
               />
             ))}
