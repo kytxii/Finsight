@@ -13,6 +13,9 @@ export default function SwipeableRow({
   editColor,
   deleteBg,
   deleteColor,
+  roundTop = false,
+  roundBottom = false,
+  radius = 18,
   children,
 }) {
   // Solid per-action background is the default (matches the dark mobile UI's
@@ -78,6 +81,11 @@ export default function SwipeableRow({
         if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
         if (Math.abs(dy) > Math.abs(dx)) return; // vertical scroll — let browser handle it
         movedRef.current = true;
+        // Only mount the colored actions once a horizontal drag is confirmed
+        // (#104) - flipping this in handleTouchStart instead made it show on
+        // every touch, taps and vertical scrolls included, before direction
+        // was ever decided.
+        setDragging(true);
       }
       e.preventDefault();
       setTransform(
@@ -93,7 +101,6 @@ export default function SwipeableRow({
     startYRef.current = e.touches[0].clientY;
     startOffsetRef.current = currentOffsetRef.current;
     movedRef.current = false;
-    setDragging(true);
     if (contentRef.current) contentRef.current.style.transition = "none";
   };
 
@@ -108,6 +115,15 @@ export default function SwipeableRow({
       style={{
         position: "relative",
         overflow: "hidden",
+        // First/last row in a rounded card gets its own matching corner
+        // radius (#104 follow-up) instead of relying solely on the ancestor
+        // card's overflow:hidden to round it - nesting two overflow:hidden
+        // boxes (this row's own, inside the card's) let a hairline of the
+        // actions layer bleed through right at the curve on whichever row
+        // touched it, even with the timing/compositing fixes above in place.
+        // Clipping locally at the exact row that needs rounding removes the
+        // ancestor from the equation entirely for that edge.
+        borderRadius: `${roundTop ? radius : 0}px ${roundTop ? radius : 0}px ${roundBottom ? radius : 0}px ${roundBottom ? radius : 0}px`,
         borderTop: `1px solid ${border}`,
         zIndex: isOpen ? 10 : "auto",
       }}
@@ -199,7 +215,15 @@ export default function SwipeableRow({
           transform: "translateX(0)",
           position: "relative",
           zIndex: 1,
-          willChange: "transform",
+          // Only promote to a GPU compositing layer while actually
+          // interacting (#104 follow-up) - left on permanently, a promoted
+          // layer doesn't always perfectly respect an ancestor card's
+          // rounded-corner clip (cardStyle's border-radius + overflow:hidden
+          // in MobileActivity.jsx) at the curve itself, letting a hairline
+          // of the actions layer bleed through specifically on the first/
+          // last row where that curve exists - rows in the middle have no
+          // curvature to clip against, so they never showed it.
+          willChange: showActions ? "transform" : "auto",
         }}
       >
         {children}

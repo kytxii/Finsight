@@ -209,6 +209,25 @@ export default function MobileDashboard() {
   const [paychecksOpen, setPaychecksOpen] = useState(false);
   const [breakdownCell, setBreakdownCell] = useState(null); // null | balance | bills | cash | savings
   const [accountOpen, setAccountOpen] = useState(false);
+  // Opening Account straight from the avatar icon (skipping Menu) shouldn't
+  // play the drawer's internal Menu->Account horizontal slide - the inner
+  // track sits at rest on Menu the whole time the sheet is closed, so
+  // flipping accountOpen still animates it across even though the user never
+  // saw Menu (#107). Only set true by that one entry point; navigating to
+  // Account from within an already-open Menu leaves this false, so that
+  // slide-over still plays as real in-drawer navigation.
+  const [skipAccountSlide, setSkipAccountSlide] = useState(false);
+  useEffect(() => {
+    if (!skipAccountSlide) return;
+    // Double rAF: let the browser paint one frame with the track already in
+    // position and no transition, then re-enable the transition for any
+    // subsequent in-drawer navigation - re-adding `transition` doesn't itself
+    // animate anything since the transform value isn't changing here.
+    const id = requestAnimationFrame(() => {
+      requestAnimationFrame(() => setSkipAccountSlide(false));
+    });
+    return () => cancelAnimationFrame(id);
+  }, [skipAccountSlide]);
   const [acctSave, setAcctSave] = useState({
     isDirty: false,
     isSaving: false,
@@ -674,7 +693,7 @@ export default function MobileDashboard() {
           with them (#29). */}
       <MobileTopbar
         user={user}
-        onOpenAccount={() => { setDrawerOpen(true); setAccountOpen(true); }}
+        onOpenAccount={() => { setSkipAccountSlide(true); setDrawerOpen(true); setAccountOpen(true); }}
         onOpenAdd={() => setAddSheetOpen(true)}
         onToggleSearch={handleToggleSearch}
         searchVisible={searchVisible}
@@ -1636,7 +1655,7 @@ export default function MobileDashboard() {
             flex: 1,
             minHeight: 0,
             transform: devOpen ? "translateX(-66.667%)" : accountOpen ? "translateX(-33.333%)" : "translateX(0)",
-            transition: "transform 250ms ease",
+            transition: skipAccountSlide ? "none" : "transform 250ms ease",
           }}
         >
           {/* Menu panel - account/profile, tool shortcuts, and app settings.

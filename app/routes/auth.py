@@ -13,11 +13,20 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 OAUTH_PROVIDERS = {"google", "github"}
 
+# `Secure` cookies are silently dropped by the browser on a plain-HTTP origin,
+# which local dev always is (FRONTEND_URL=http://localhost:5173) - hardcoding
+# secure=True broke "remember me" there entirely, not just in production
+# (#106). Derive both from the same FRONTEND_URL that already drives CORS,
+# instead of adding a separate env flag. `SameSite=None` requires `Secure`
+# per spec, so the insecure/dev case pairs with `Lax` instead - fine for local
+# dev's same-origin-via-Vite-proxy requests.
+_IS_SECURE = settings.FRONTEND_URL.startswith("https://")
+
 _COOKIE_KWARGS = dict(
     key="refresh_token",
     httponly=True,
-    secure=True,
-    samesite="none",  # required for cross-origin (Vercel → Render)
+    secure=_IS_SECURE,
+    samesite="none" if _IS_SECURE else "lax",  # "none" required for cross-origin (Vercel → Render)
     max_age=7 * 24 * 60 * 60,
     path="/",
 )
