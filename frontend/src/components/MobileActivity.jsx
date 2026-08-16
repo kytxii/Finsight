@@ -117,7 +117,7 @@ function IconBank({ color, size = 18 }) {
 // immediately snap shut - opening a row triggers the very re-render that
 // destroyed it. Takes everything it needs as props instead of closing over
 // MobileActivity's state.
-function ActivityRow({ t, first, openId, setOpenId, onEditTransaction, onDeleteTransaction, onEditDeposit, onDeleteDeposit, highlightId, setRowRef }) {
+function ActivityRow({ t, first, last, openId, setOpenId, onEditTransaction, onDeleteTransaction, onEditDeposit, onDeleteDeposit, highlightId, setRowRef }) {
   // A deposit row wraps a TipDeposit, not a Transaction (#99) - no category,
   // edit/delete route to the tip-deposits API instead of /transactions.
   const isDeposit = t.kind === "deposit";
@@ -138,6 +138,8 @@ function ActivityRow({ t, first, openId, setOpenId, onEditTransaction, onDeleteT
         onEdit={() => isDeposit ? onEditDeposit(t.__raw) : onEditTransaction(t)}
         onDelete={() => isDeposit ? onDeleteDeposit(t.id) : onDeleteTransaction(t.id)}
         border={first ? "transparent" : HOME_DIVIDER}
+        roundTop={first}
+        roundBottom={last}
         surface={HOME_SURFACE}
         text={HOME_TEXT}
         editBg={HOME_ACCENT}
@@ -517,7 +519,7 @@ export default function MobileActivity({ transactions, deposits = [], loading, o
                     <div style={cardStyle}>
                       {g.items.map((t, i) => (
                         <ActivityRow
-                          key={t.id} t={t} first={i === 0}
+                          key={t.id} t={t} first={i === 0} last={i === g.items.length - 1}
                           openId={openId} setOpenId={setOpenId}
                           onEditTransaction={onEditTransaction} onDeleteTransaction={onDeleteTransaction}
                           onEditDeposit={onEditDeposit} onDeleteDeposit={onDeleteDeposit}
@@ -534,7 +536,7 @@ export default function MobileActivity({ transactions, deposits = [], loading, o
           <div style={cardStyle}>
             {visible.map((t, i) => (
               <ActivityRow
-                key={t.id} t={t} first={i === 0}
+                key={t.id} t={t} first={i === 0} last={i === visible.length - 1}
                 openId={openId} setOpenId={setOpenId}
                 onEditTransaction={onEditTransaction} onDeleteTransaction={onDeleteTransaction}
                 onEditDeposit={onEditDeposit} onDeleteDeposit={onDeleteDeposit}
