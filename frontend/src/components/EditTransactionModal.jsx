@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CATEGORY_CONFIG } from "../utils/finance";
+import { CATEGORY_CONFIG, lockedNameFor } from "../utils/finance";
 import { updateTransaction } from "../api/transactions";
 import { updateRecurringPayment } from "../api/recurringPayments";
 import { useTheme } from "../hooks/useTheme";
@@ -29,7 +29,7 @@ export default function EditTransactionModal({ transaction, onClose, onSaved }) 
   const handleChange = (e) => {
     const { name, value } = e.target;
     if (name === "category") {
-      setForm((f) => ({ ...f, category: value, name: value === "TIPS" ? "Cash" : f.name }));
+      setForm((f) => ({ ...f, category: value, name: lockedNameFor(value) ?? f.name }));
     } else {
       setForm((f) => ({ ...f, [name]: value }));
     }
@@ -89,11 +89,11 @@ export default function EditTransactionModal({ transaction, onClose, onSaved }) 
               name="name"
               value={form.name}
               onChange={handleChange}
-              required={form.category !== "TIPS"}
-              disabled={form.category === "TIPS"}
+              required={!lockedNameFor(form.category)}
+              disabled={!!lockedNameFor(form.category)}
               placeholder="e.g. Netflix, Salary..."
               className="w-full rounded-xl px-4 py-2.5 text-sm focus:outline-none border"
-              style={form.category === "TIPS"
+              style={lockedNameFor(form.category)
                 ? { ...inputStyle, backgroundImage: `repeating-linear-gradient(45deg, transparent, transparent 5px, color-mix(in srgb, ${text} 10%, transparent) 5px, color-mix(in srgb, ${text} 10%, transparent) 10px)`, cursor: "not-allowed", opacity: 0.5 }
                 : inputStyle}
             />

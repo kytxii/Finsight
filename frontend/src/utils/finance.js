@@ -33,6 +33,18 @@ export const CATEGORY_CONFIG = {
 
 export const INCOME_TYPES = new Set(["INCOME", "REIMBURSEMENT", "TIPS"]);
 
+// Categories whose transaction name carries no information beyond the category
+// itself. These auto-fill and lock the name input at every entry point rather
+// than letting each row be named separately (#73). Centralised because the old
+// `category === "TIPS" ? "Cash" : ...` ternary was duplicated across 14 sites in
+// 7 files, so adding a second locked category meant touching all of them.
+export const LOCKED_NAMES = { TIPS: "Cash", SAVINGS: "Savings" };
+
+// The forced name for a category, or null when the user names it themselves.
+export function lockedNameFor(category) {
+  return LOCKED_NAMES[category] ?? null;
+}
+
 export function hexToHsl(hex) {
   const r = parseInt(hex.slice(1, 3), 16) / 255;
   const g = parseInt(hex.slice(3, 5), 16) / 255;

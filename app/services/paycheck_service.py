@@ -1,4 +1,4 @@
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 from datetime import date, timedelta
@@ -149,7 +149,8 @@ async def _get_owned_schedule(schedule_id: UUID, current_user: UUID, db: AsyncSe
 async def update_paycheck_schedule(schedule_id: UUID, data: UpdatePaycheckSchedule, current_user: UUID, db: AsyncSession):
     schedule = await _get_owned_schedule(schedule_id, current_user, db)
 
-    for key, value in data.model_dump(exclude_unset=True).items():
+    changes = data.model_dump(exclude_unset=True)
+    for key, value in changes.items():
         setattr(schedule, key, value)
     schedule.updated_by = current_user
 
@@ -157,6 +158,24 @@ async def update_paycheck_schedule(schedule_id: UUID, data: UpdatePaycheckSchedu
     # no longer match - drop them so the next read backfills fresh ones.
     # Paychecks with an amount already entered are real history and stay.
     await db.execute(delete(Paycheck).where(Paycheck.schedule_id == schedule_id, Paycheck.amount.is_(None)))
+
+    # A rename has to reach transactions already posted under this schedule
+    # (#97). They're named from the schedule at the moment their paycheck gets
+    # an amount, so without this they'd keep the old name forever - the
+    # Paychecks list would show the new name while Activity and the Income
+    # category page still showed the old one. Same idea as
+    # recurring_payment_service.update_recurring_payment mirroring a rename
+    # onto its linked transaction, just across every paycheck in the schedule
+    # instead of a single current-month row.
+    if "name" in changes:
+        await db.execute(
+            update(Transaction)
+            .where(Transaction.paycheck_id.in_(
+                select(Paycheck.id).where(Paycheck.schedule_id == schedule_id)
+            ))
+            .values(name=changes["name"], updated_by=current_user)
+            .execution_options(synchronize_session=False)
+        )
 
     await db.commit()
     await db.refresh(schedule)
@@ -295,8 +314,16 @@ async def update_paycheck_amount(paycheck_id: UUID, data: UpdatePaycheckAmount, 
         linked.transaction_date = paycheck.pay_date
         linked.updated_by = current_user
     else:
+        # Name the transaction after its schedule rather than a literal
+        # "Paycheck" (#97). Deliberately only on creation - an existing row's
+        # name is left alone here so an amount edit can't clobber a rename the
+        # user made by hand. Schedule renames propagate separately, in
+        # update_paycheck_schedule.
+        schedule_name = await db.scalar(
+            select(PaycheckSchedule.name).where(PaycheckSchedule.id == paycheck.schedule_id)
+        )
         db.add(Transaction(
-            name="Paycheck",
+            name=schedule_name or "Paycheck",
             amount=data.amount,
             transaction_date=paycheck.pay_date,
             category=Category.INCOME,

@@ -24,6 +24,7 @@ import {
   CATEGORY_CONFIG,
   INCOME_TYPES,
   fmt,
+  lockedNameFor,
 } from "../utils/finance";
 import { getNow, getToday } from "../utils/time";
 import Navbar from "../components/Navbar";
@@ -102,7 +103,7 @@ export default function Dashboard() {
   }
   function handleAddChange(e) {
     const { name, value } = e.target;
-    setAddForm(f => ({ ...f, [name]: value, ...(name === "category" && value === "TIPS" ? { name: "Cash" } : {}) }));
+    setAddForm(f => ({ ...f, [name]: value, ...(name === "category" && lockedNameFor(value) ? { name: lockedNameFor(value) } : {}) }));
   }
 
   async function handleAddSubmit(e) {
@@ -607,7 +608,7 @@ export default function Dashboard() {
                   </button>
                 </div>
                 {[
-                  { label: "Name", name: "name", type: "text", placeholder: "e.g. Netflix", required: addForm.category !== "TIPS", disabled: addForm.category === "TIPS" },
+                  { label: "Name", name: "name", type: "text", placeholder: "e.g. Netflix", required: !lockedNameFor(addForm.category), disabled: !!lockedNameFor(addForm.category) },
                   { label: "Amount", name: "amount", type: "number", placeholder: "$0.00", required: true },
                 ].map(({ label, ...props }) => (
                   <div key={props.name}>
@@ -618,7 +619,7 @@ export default function Dashboard() {
                       />
                     ) : (
                       <input {...props} value={addForm[props.name]} onChange={handleAddChange}
-                        style={{ width: "100%", borderRadius: 7, padding: "6px 8px", fontSize: 12, border: `1px solid ${border}`, backgroundColor: bg, backgroundImage: props.name === "name" && addForm.category === "TIPS" ? `repeating-linear-gradient(-45deg, transparent, transparent 4px, color-mix(in srgb, ${text} 6%, transparent) 4px, color-mix(in srgb, ${text} 6%, transparent) 6px)` : undefined, color: text, boxSizing: "border-box", outline: "none", opacity: props.name === "name" && addForm.category === "TIPS" ? 0.45 : 1, cursor: props.name === "name" && addForm.category === "TIPS" ? "not-allowed" : undefined }}
+                        style={{ width: "100%", borderRadius: 7, padding: "6px 8px", fontSize: 12, border: `1px solid ${border}`, backgroundColor: bg, backgroundImage: props.name === "name" && lockedNameFor(addForm.category) ? `repeating-linear-gradient(-45deg, transparent, transparent 4px, color-mix(in srgb, ${text} 6%, transparent) 4px, color-mix(in srgb, ${text} 6%, transparent) 6px)` : undefined, color: text, boxSizing: "border-box", outline: "none", opacity: props.name === "name" && lockedNameFor(addForm.category) ? 0.45 : 1, cursor: props.name === "name" && lockedNameFor(addForm.category) ? "not-allowed" : undefined }}
                       />
                     )}
                   </div>

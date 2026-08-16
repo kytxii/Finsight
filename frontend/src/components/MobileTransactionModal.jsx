@@ -2,6 +2,7 @@ import { useState } from "react";
 import { updateTransaction } from "../api/transactions";
 import { updateRecurringPayment } from "../api/recurringPayments";
 import { errorMessage } from "../utils/errors";
+import { lockedNameFor } from "../utils/finance";
 import CurrencyInput from "./CurrencyInput";
 import CategoryPicker from "./CategoryPicker";
 import CompactDateField from "./CompactDateField";
@@ -60,7 +61,7 @@ export default function MobileTransactionModal({ transaction, onClose, onSaved, 
   const busy = saving || deleting;
 
   function setCategory(category) {
-    setForm((f) => ({ ...f, category, name: category === "TIPS" ? "Cash" : f.name }));
+    setForm((f) => ({ ...f, category, name: lockedNameFor(category) ?? f.name }));
   }
 
   async function handleSave() {
@@ -152,12 +153,12 @@ export default function MobileTransactionModal({ transaction, onClose, onSaved, 
               value={form.name}
               onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
               placeholder="e.g. Netflix, Salary..."
-              disabled={form.category === "TIPS"}
-              style={form.category === "TIPS"
+              disabled={!!lockedNameFor(form.category)}
+              style={lockedNameFor(form.category)
                 ? { ...fieldStyle, opacity: 0.45, cursor: "not-allowed", backgroundImage: `repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(255,255,255,0.08) 5px, rgba(255,255,255,0.08) 10px)` }
                 : { ...fieldStyle, padding: form.name ? "9px 34px 9px 11px" : fieldStyle.padding }}
             />
-            {form.category !== "TIPS" && form.name && (
+            {!lockedNameFor(form.category) && form.name && (
               <button
                 type="button"
                 onClick={() => setForm((f) => ({ ...f, name: "" }))}
