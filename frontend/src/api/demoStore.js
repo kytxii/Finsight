@@ -950,6 +950,15 @@ export const updatePaycheckSchedule = (id, data) => {
   // them so the next read backfills fresh ones. Entered amounts stay.
   saveAll(PC_KEY, getAll(PC_KEY).filter((p) => p.schedule_id !== id || p.amount != null));
 
+  // A rename has to reach transactions already posted under this schedule
+  // (#97), mirroring paycheck_service.update_paycheck_schedule.
+  if (data.name != null) {
+    const scheduled = new Set(getAll(PC_KEY).filter((p) => p.schedule_id === id).map((p) => p.id));
+    saveAll(TX_KEY, getAll(TX_KEY).map((t) => (
+      t.paycheck_id != null && scheduled.has(t.paycheck_id) ? { ...t, name: data.name } : t
+    )));
+  }
+
   return respond(updated);
 };
 
@@ -995,9 +1004,11 @@ export const updatePaycheckAmount = (id, data) => {
     if (existingIdx !== -1) {
       transactions[existingIdx] = { ...transactions[existingIdx], amount: updated.amount, transaction_date: updated.pay_date };
     } else {
+      // Named after the schedule, not a literal "Paycheck" (#97).
+      const schedule = getAll(PS_KEY).find((s) => s.id === updated.schedule_id);
       transactions.push({
         id: nextId(),
-        name: "Paycheck",
+        name: schedule?.name || "Paycheck",
         amount: updated.amount,
         category: "INCOME",
         transaction_date: updated.pay_date,

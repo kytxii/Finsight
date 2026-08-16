@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { CATEGORY_CONFIG } from "../utils/finance";
+import { CATEGORY_CONFIG, lockedNameFor } from "../utils/finance";
 import { useTheme } from "../hooks/useTheme";
 import { createTransaction } from "../api/transactions";
 import { getToday } from "../utils/time";
@@ -11,7 +11,7 @@ let _lid = 0;
 const newDraft = () => ({ _lid: ++_lid, name: "", amount: "", category: "EXPENSE", transaction_date: today() });
 
 function isDraftValid(d) {
-  return (d.category === "TIPS" || d.name.trim() !== "") &&
+  return (!!lockedNameFor(d.category) || d.name.trim() !== "") &&
     parseFloat(d.amount) > 0 &&
     !!d.transaction_date;
 }
@@ -39,7 +39,7 @@ export default function BatchAddPanel({ active, onSaveStateChange, onSaved, onCa
     try {
       await Promise.all([
         Promise.all(valid.map(d => createTransaction({
-          name: d.category === "TIPS" ? "Cash" : d.name.trim(),
+          name: lockedNameFor(d.category) ?? d.name.trim(),
           amount: parseFloat(d.amount),
           category: d.category,
           transaction_date: d.transaction_date,
@@ -127,16 +127,16 @@ export default function BatchAddPanel({ active, onSaveStateChange, onSaved, onCa
               const catColor  = `var(--category-${d.category.toLowerCase()})`;
               return (
                 <tr key={d._lid} style={{ borderBottom: `1px solid ${border}`, backgroundColor: faint, animation: sendingLids.includes(d._lid) ? `bp-row-send 0.38s ease-in-out ${sendingLids.indexOf(d._lid) * 80}ms both` : "bp-row-in 0.2s ease-out" }}>
-                  <td style={{ ...tdStyle(false, true), ...(d.category === "TIPS" ? { backgroundImage: `repeating-linear-gradient(-45deg, transparent, transparent 4px, color-mix(in srgb, ${text} 6%, transparent) 4px, color-mix(in srgb, ${text} 6%, transparent) 6px)`, cursor: "not-allowed" } : {}) }}>
+                  <td style={{ ...tdStyle(false, true), ...(lockedNameFor(d.category) ? { backgroundImage: `repeating-linear-gradient(-45deg, transparent, transparent 4px, color-mix(in srgb, ${text} 6%, transparent) 4px, color-mix(in srgb, ${text} 6%, transparent) 6px)`, cursor: "not-allowed" } : {}) }}>
                     <input
-                      autoFocus={isLast && d.category !== "TIPS"}
+                      autoFocus={isLast && !lockedNameFor(d.category)}
                       type="text"
-                      value={d.category === "TIPS" ? "Cash" : d.name}
+                      value={lockedNameFor(d.category) ?? d.name}
                       placeholder="e.g. Netflix"
-                      disabled={d.category === "TIPS"}
-                      onChange={e => d.category !== "TIPS" && setDrafts(prev => prev.map((x, xi) => xi === idx ? { ...x, name: e.target.value } : x))}
+                      disabled={!!lockedNameFor(d.category)}
+                      onChange={e => !lockedNameFor(d.category) && setDrafts(prev => prev.map((x, xi) => xi === idx ? { ...x, name: e.target.value } : x))}
                       onKeyDown={e => e.key === "Escape" && setDrafts(prev => prev.filter((_, xi) => xi !== idx))}
-                      style={{ width: "100%", background: "transparent", color: text, border: "none", outline: "none", fontSize: "13px", fontFamily: "inherit", opacity: d.category === "TIPS" ? 0.45 : 1, cursor: d.category === "TIPS" ? "not-allowed" : "text" }}
+                      style={{ width: "100%", background: "transparent", color: text, border: "none", outline: "none", fontSize: "13px", fontFamily: "inherit", opacity: lockedNameFor(d.category) ? 0.45 : 1, cursor: lockedNameFor(d.category) ? "not-allowed" : "text" }}
                     />
                   </td>
                   <td style={tdStyle(false)}>
@@ -154,7 +154,7 @@ export default function BatchAddPanel({ active, onSaveStateChange, onSaved, onCa
                       onChange={e => setDrafts(prev => prev.map((x, xi) => {
                         if (xi !== idx) return x;
                         const newCat = e.target.value;
-                        const newName = newCat === "TIPS" ? "Cash" : x.category === "TIPS" ? "" : x.name;
+                        const newName = lockedNameFor(newCat) ?? (lockedNameFor(x.category) ? "" : x.name);
                         return { ...x, category: newCat, name: newName };
                       }))}
                       style={{

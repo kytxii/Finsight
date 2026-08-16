@@ -20,6 +20,7 @@ import MobileDepositModal from "../components/MobileDepositModal";
 import {
   CATEGORY_CONFIG,
   INCOME_TYPES,
+  lockedNameFor,
 } from "../utils/finance";
 import { useTheme } from "../hooks/useTheme";
 import { useAuth } from "../context/AuthContext";
@@ -377,14 +378,14 @@ export default function MobileDashboard() {
     setQuickLoading(true);
     try {
       await createTransaction({
-        name: quickCat === "TIPS" ? "Cash" : quickForm.name,
+        name: lockedNameFor(quickCat) ?? quickForm.name,
         amount: parseFloat(quickForm.amount),
         transaction_date: quickForm.transaction_date,
         category: quickCat,
       });
       setQuickForm((f) => ({
         ...f,
-        name: quickCat === "TIPS" ? "Cash" : "",
+        name: lockedNameFor(quickCat) ?? "",
         amount: "",
       }));
       setEntrySheetOpen(false);
@@ -403,7 +404,7 @@ export default function MobileDashboard() {
       (item) =>
         !item.amount ||
         parseFloat(item.amount) <= 0 ||
-        (item.category !== "TIPS" && !item.name.trim()),
+        (!lockedNameFor(item.category) && !item.name.trim()),
     );
     if (invalid) {
       setBatchError("All rows need a name and amount");
@@ -414,7 +415,7 @@ export default function MobileDashboard() {
       await Promise.all(
         batchItems.map((item) =>
           createTransaction({
-            name: item.category === "TIPS" ? "Cash" : item.name.trim(),
+            name: lockedNameFor(item.category) ?? item.name.trim(),
             amount: parseFloat(item.amount),
             category: item.category,
             transaction_date: item.transaction_date,
@@ -1067,7 +1068,7 @@ export default function MobileDashboard() {
             value={quickCat}
             onChange={(key) => {
               setQuickCat(key);
-              setQuickForm((f) => ({ ...f, name: key === "TIPS" ? "Cash" : f.name }));
+              setQuickForm((f) => ({ ...f, name: lockedNameFor(key) ?? f.name }));
             }}
           />
           <form onSubmit={handleQuickSubmit} className="space-y-3">
@@ -1076,14 +1077,14 @@ export default function MobileDashboard() {
               placeholder="Name"
               value={quickForm.name}
               onChange={(e) =>
-                quickCat !== "TIPS" &&
+                !lockedNameFor(quickCat) &&
                 setQuickForm((f) => ({ ...f, name: e.target.value }))
               }
-              required={quickCat !== "TIPS"}
-              disabled={quickCat === "TIPS"}
+              required={!lockedNameFor(quickCat)}
+              disabled={!!lockedNameFor(quickCat)}
               className="w-full rounded-xl px-4 py-2.5 text-sm border"
               style={
-                quickCat === "TIPS"
+                lockedNameFor(quickCat)
                   ? {
                       ...quickFieldStyle,
                       cursor: "not-allowed",
@@ -1193,7 +1194,7 @@ export default function MobileDashboard() {
                   const n = batchItems.filter(
                     (r) =>
                       parseFloat(r.amount) > 0 &&
-                      (r.category === "TIPS" || r.name.trim()),
+                      (!!lockedNameFor(r.category) || r.name.trim()),
                   ).length;
                   return n
                     ? `Add ${n} transaction${n === 1 ? "" : "s"}`
@@ -1257,7 +1258,7 @@ export default function MobileDashboard() {
                                   ...r,
                                   category: e.target.value,
                                   name:
-                                    e.target.value === "TIPS" ? "Cash" : r.name,
+                                    lockedNameFor(e.target.value) ?? r.name,
                                 }
                               : r,
                           ),
@@ -1314,26 +1315,26 @@ export default function MobileDashboard() {
                     <input
                       type="text"
                       placeholder="Name"
-                      value={item.category === "TIPS" ? "Cash" : item.name}
+                      value={lockedNameFor(item.category) ?? item.name}
                       onChange={(e) =>
-                        item.category !== "TIPS" &&
+                        !lockedNameFor(item.category) &&
                         setBatchItems((prev) =>
                           prev.map((r, i) =>
                             i === idx ? { ...r, name: e.target.value } : r,
                           ),
                         )
                       }
-                      disabled={item.category === "TIPS"}
+                      disabled={!!lockedNameFor(item.category)}
                       className="flex-1 rounded-lg px-2 py-1.5 text-xs border min-w-0"
                       style={{
                         backgroundColor: HOME_SURFACE,
                         borderColor: HOME_DIVIDER,
                         color: HOME_TEXT,
-                        opacity: item.category === "TIPS" ? 0.45 : 1,
+                        opacity: lockedNameFor(item.category) ? 0.45 : 1,
                         cursor:
-                          item.category === "TIPS" ? "not-allowed" : undefined,
+                          lockedNameFor(item.category) ? "not-allowed" : undefined,
                         backgroundImage:
-                          item.category === "TIPS"
+                          lockedNameFor(item.category)
                             ? `repeating-linear-gradient(-45deg, transparent, transparent 4px, rgba(255,255,255,0.08) 4px, rgba(255,255,255,0.08) 6px)`
                             : undefined,
                       }}
