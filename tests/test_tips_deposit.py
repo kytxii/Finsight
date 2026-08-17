@@ -1,6 +1,6 @@
 import pytest
 from uuid import UUID
-from datetime import date
+from datetime import date, timedelta
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from httpx import AsyncClient
@@ -20,9 +20,13 @@ async def clean_finance(test_user: dict, db: AsyncSession):
     await db.commit()
 
 
-async def _set_balance(client: AsyncClient, token: str, amount: str):
+async def _set_balance(client: AsyncClient, token: str, amount: str, as_of_date: date | None = None):
+    # Defaults to yesterday - current_balance is already inclusive of its own
+    # as_of_date, so same-day transactions/deposits added within a test would
+    # be excluded (not double-counted) if the anchor were dated today.
+    as_of_date = as_of_date or date.today() - timedelta(days=1)
     res = await client.put("/paychecks/balance", json={
-        "current_balance": amount, "as_of_date": date.today().isoformat(),
+        "current_balance": amount, "as_of_date": as_of_date.isoformat(),
     }, headers=auth_headers(token))
     assert res.status_code == 200
 
@@ -71,6 +75,17 @@ async def test_deposit_adds_to_checking(test_user: dict, client: AsyncClient, cl
 
     await _add_deposit(client, token, "200.00")
     assert await _running_balance(client, token) == 1200.0
+
+
+async def test_same_day_as_anchor_not_double_counted(test_user: dict, client: AsyncClient, clean_finance):
+    # current_balance is a real-world snapshot (e.g. read off a bank app),
+    # already inclusive of that day's activity - a transaction dated the
+    # same day as as_of_date must not be replayed on top of it.
+    token = test_user["token"]
+    await _set_balance(client, token, "1000.00", as_of_date=date.today())
+
+    await _add_deposit(client, token, "200.00")
+    assert await _running_balance(client, token) == 1000.0
 
 
 async def test_cash_on_hand_is_tips_minus_deposits(test_user: dict, client: AsyncClient, clean_finance):
