@@ -20,6 +20,7 @@ class DuplicateTransactionSummary(BaseModel):
 class ImportPreviewRow(BaseModel):
     row_number: int
     name: str
+    note: str | None = None
     amount: Decimal | None = None
     transaction_date: date | None = None
     category: Category | None = None
@@ -36,6 +37,7 @@ class ImportPreviewResponse(BaseModel):
 
 class ImportCommitRow(BaseModel):
     name: str = Field(min_length=1, max_length=100)
+    note: str | None = Field(default=None, max_length=100)
     amount: Decimal
     transaction_date: date
     category: Category

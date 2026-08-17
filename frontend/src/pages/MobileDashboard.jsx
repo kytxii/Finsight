@@ -25,7 +25,7 @@ import {
 import { useTheme } from "../hooks/useTheme";
 import { useAuth } from "../context/AuthContext";
 import { getPresetRange } from "../components/DateRangeFilter";
-import { getToday } from "../utils/time";
+import { getToday, getNow } from "../utils/time";
 import { errorMessage } from "../utils/errors";
 import MobilePageSlide from "../components/MobilePageSlide";
 import MobileScreen from "../components/MobileScreen";
@@ -164,6 +164,7 @@ const newBatchRow = () => ({
   amount: "",
   category: "EXPENSE",
   transaction_date: getToday(),
+  note: "",
 });
 
 export default function MobileDashboard() {
@@ -348,11 +349,24 @@ export default function MobileDashboard() {
     name: "",
     amount: "",
     transaction_date: getToday(),
+    note: "",
   });
   const [quickLoading, setQuickLoading] = useState(false);
   const [quickError, setQuickError] = useState("");
   const quickTileColor = TILE_COLOR[quickCat];
   const quickFieldStyle = { backgroundColor: "rgba(255,255,255,0.04)", borderColor: HOME_DIVIDER, color: HOME_TEXT };
+  const quickNameRef = useRef(null);
+  const quickAmountRef = useRef(null);
+
+  // The entry sheet stays mounted across open/close (translateY, not a
+  // conditional render), so autoFocus - which only fires on mount - wouldn't
+  // refire on reopen (#114, same fix as MobileTopbar's search field). Name is
+  // the default target; locked-name categories (tips, savings) skip straight
+  // to amount since there's nothing to type in name.
+  useEffect(() => {
+    if (!entrySheetOpen) return;
+    (lockedNameFor(quickCat) ? quickAmountRef : quickNameRef).current?.focus();
+  }, [entrySheetOpen, quickCat]);
 
   const [batchSheetOpen, setBatchSheetOpen] = useState(false);
   const [batchItems, setBatchItems] = useState(() => [newBatchRow()]);
@@ -382,11 +396,13 @@ export default function MobileDashboard() {
         amount: parseFloat(quickForm.amount),
         transaction_date: quickForm.transaction_date,
         category: quickCat,
+        note: quickForm.note.trim() || null,
       });
       setQuickForm((f) => ({
         ...f,
         name: lockedNameFor(quickCat) ?? "",
         amount: "",
+        note: "",
       }));
       setEntrySheetOpen(false);
       setAddSheetOpen(false);
@@ -419,6 +435,7 @@ export default function MobileDashboard() {
             amount: parseFloat(item.amount),
             category: item.category,
             transaction_date: item.transaction_date,
+            note: item.note.trim() || null,
           }),
         ),
       );
@@ -640,27 +657,47 @@ export default function MobileDashboard() {
     [upcomingItems],
   );
 
-  // ── Last month (for the small +/-% badges on Home's Income/Expense cards)
+  // ── Last month (for the small +/-% badges on Home's Income/Expense cards,
+  // and MobileCategory's own vs-last-month card, #108)
   const dashLastMonthRange = useMemo(() => getPresetRange("Last Month"), []);
   const dashLastMonthDeposits = useMemo(
     () => depositsInRange(dashLastMonthRange.from, dashLastMonthRange.to),
     [depositsInRange, dashLastMonthRange],
   );
+  const dashLastMonthTransactions = useMemo(() => transactions.filter((t) => {
+    const d = new Date(t.transaction_date + "T00:00:00");
+    return d >= dashLastMonthRange.from && d <= dashLastMonthRange.to;
+  }), [transactions, dashLastMonthRange]);
   const dashLastMonthSummary = useMemo(() => {
-    const inRange = transactions.filter((t) => {
-      const d = new Date(t.transaction_date + "T00:00:00");
-      return d >= dashLastMonthRange.from && d <= dashLastMonthRange.to;
-    });
-    const totalIn = inRange
+    const totalIn = dashLastMonthTransactions
       .filter((t) => INCOME_TYPES.has(t.category))
       .reduce((s, t) => s + parseFloat(t.amount), 0) + dashLastMonthDeposits;
     // Same SAVINGS exclusion as dashSummary.totalOut, so the Expenses
     // change-badge compares like-for-like across months (#69).
-    const totalOut = inRange
+    const totalOut = dashLastMonthTransactions
       .filter((t) => !INCOME_TYPES.has(t.category) && t.category !== "SAVINGS")
       .reduce((s, t) => s + parseFloat(t.amount), 0);
     return { totalIn, totalOut };
-  }, [transactions, dashLastMonthRange, dashLastMonthDeposits]);
+  }, [dashLastMonthTransactions, dashLastMonthDeposits]);
+
+  // ── Rolling N-month window for MobileCategory's bar history (#108) - oldest
+  // to newest, last entry is always the current (in-progress) month. Slides
+  // forward automatically since it's built off getNow() each render, not a
+  // fixed calendar anchor.
+  const CATEGORY_HISTORY_MONTHS = 6;
+  const dashCategoryHistory = useMemo(() => {
+    const now = getNow();
+    const buckets = [];
+    for (let i = CATEGORY_HISTORY_MONTHS - 1; i >= 0; i--) {
+      const monthStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const monthEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 0, 23, 59, 59, 999);
+      buckets.push(transactions.filter((t) => {
+        const d = new Date(t.transaction_date + "T00:00:00");
+        return d >= monthStart && d <= monthEnd;
+      }));
+    }
+    return buckets;
+  }, [transactions]);
 
   useEffect(() => {
     document.body.style.overflow =
@@ -733,6 +770,7 @@ export default function MobileDashboard() {
               <MobileCategory
                 category={categoryView}
                 transactions={dashFiltered}
+                monthlyHistory={dashCategoryHistory}
                 loading={loading}
                 upcomingItems={upcomingItems}
                 onBack={() => setCategoryView(null)}
@@ -1073,6 +1111,7 @@ export default function MobileDashboard() {
           />
           <form onSubmit={handleQuickSubmit} className="space-y-3">
             <input
+              ref={quickNameRef}
               type="text"
               placeholder="Name"
               value={quickForm.name}
@@ -1096,6 +1135,7 @@ export default function MobileDashboard() {
             />
             <div className="grid grid-cols-2 gap-3">
               <CurrencyInput
+                ref={quickAmountRef}
                 placeholder="0.00"
                 value={quickForm.amount}
                 onChange={(v) =>
@@ -1113,6 +1153,15 @@ export default function MobileDashboard() {
                 style={quickFieldStyle}
               />
             </div>
+            <input
+              type="text"
+              placeholder="Note (optional)"
+              value={quickForm.note}
+              onChange={(e) => setQuickForm((f) => ({ ...f, note: e.target.value }))}
+              maxLength={100}
+              className="w-full rounded-xl px-4 py-2.5 text-sm border"
+              style={quickFieldStyle}
+            />
             {quickError && <p className="text-xs text-red-500">{quickError}</p>}
             <button
               type="submit"
@@ -1379,6 +1428,25 @@ export default function MobileDashboard() {
                       }}
                     />
                   </div>
+                  <input
+                    type="text"
+                    placeholder="Note (optional)"
+                    value={item.note}
+                    onChange={(e) =>
+                      setBatchItems((prev) =>
+                        prev.map((r, i) =>
+                          i === idx ? { ...r, note: e.target.value } : r,
+                        ),
+                      )
+                    }
+                    maxLength={100}
+                    className="w-full rounded-lg px-2 py-1.5 text-xs border mt-2"
+                    style={{
+                      backgroundColor: HOME_SURFACE,
+                      borderColor: HOME_DIVIDER,
+                      color: HOME_TEXT,
+                    }}
+                  />
                 </div>
               </div>
             );

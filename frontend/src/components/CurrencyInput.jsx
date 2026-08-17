@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, forwardRef } from "react";
 
 // Cents-first currency input. The user types digits and the decimal fills in
 // from the right (50000 -> $500.00, 1000 -> $10.00). It renders a formatted,
@@ -25,8 +25,12 @@ function display(digits, prefix) {
   return `${prefix}${dollars}.${cents}`;
 }
 
-export default function CurrencyInput({ value, onChange, prefix = "$", maxDigits = 10, onFocus, ...props }) {
-  const ref = useRef(null);
+// forwardRef so callers whose entry sheet stays mounted across open/close
+// (rather than remounting) can call .focus() imperatively - plain `autoFocus`
+// only fires once, on mount.
+const CurrencyInput = forwardRef(function CurrencyInput({ value, onChange, prefix = "$", maxDigits = 10, onFocus, ...props }, forwardedRef) {
+  const innerRef = useRef(null);
+  const ref = forwardedRef ?? innerRef;
   const digits = toDigits(value).slice(0, maxDigits);
   const text = display(digits, prefix);
 
@@ -60,4 +64,6 @@ export default function CurrencyInput({ value, onChange, prefix = "$", maxDigits
       {...props}
     />
   );
-}
+});
+
+export default CurrencyInput;

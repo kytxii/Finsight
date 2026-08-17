@@ -225,7 +225,10 @@ export default function MobileTips({ transactions, loading, onBack, onEditTransa
             [...Array(3)].map((_, i) => (
               <div key={i} style={{ display: "flex", alignItems: "center", gap: 14, padding: "11px 14px", borderTop: i > 0 ? `1px solid ${HOME_DIVIDER}` : "none" }}>
                 <Skel h={40} w={40} style={{ borderRadius: "50%" }} />
-                <div style={{ flex: 1 }}><Skel h={16} w="45%" /></div>
+                <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
+                  <Skel h={16.5} w="35%" />
+                  <Skel h={13} w="30%" />
+                </div>
               </div>
             ))
           ) : tips.length === 0 ? (
@@ -294,7 +297,15 @@ export default function MobileTips({ transactions, loading, onBack, onEditTransa
 
         <div style={cardStyle}>
           {depositsLoading ? (
-            <div style={{ padding: "20px 0" }} />
+            [...Array(2)].map((_, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 14, padding: "11px 14px", borderTop: i > 0 ? `1px solid ${HOME_DIVIDER}` : "none" }}>
+                <Skel h={40} w={40} style={{ borderRadius: "50%" }} />
+                <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
+                  <Skel h={16.5} w="35%" />
+                  <Skel h={13} w="40%" />
+                </div>
+              </div>
+            ))
           ) : monthDeposits.length === 0 ? (
             <p style={{ fontSize: 13, color: HOME_MUTED, textAlign: "center", padding: "22px 0" }}>No deposits yet</p>
           ) : (

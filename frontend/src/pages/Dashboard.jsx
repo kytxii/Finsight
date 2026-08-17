@@ -58,7 +58,7 @@ export default function Dashboard() {
   const [addMode, setAddMode] = useState(null); // null | "menu" | "single" | "batch" | "import"
   const addOpen = addMode !== null;
   const addToday = getToday();
-  const [addForm, setAddForm] = useState({ name: "", amount: "", category: "EXPENSE", transaction_date: addToday });
+  const [addForm, setAddForm] = useState({ name: "", amount: "", category: "EXPENSE", transaction_date: addToday, note: "" });
   const [addLoading, setAddLoading] = useState(false);
   const [addError, setAddError] = useState("");
   const [batchSaveState, setBatchSaveState] = useState({ isDirty: false, isSaving: false, saveStatus: "idle", onSave: null });
@@ -112,7 +112,7 @@ export default function Dashboard() {
     setAddLoading(true);
     try {
       await createTransaction({ ...addForm, amount: parseFloat(addForm.amount) });
-      setAddForm({ name: "", amount: "", category: "EXPENSE", transaction_date: addToday });
+      setAddForm({ name: "", amount: "", category: "EXPENSE", transaction_date: addToday, note: "" });
       setAddMode(null);
       refreshTransactions();
     } catch (err) {
@@ -638,6 +638,12 @@ export default function Dashboard() {
                   <p style={{ fontSize: 10, color: muted, marginBottom: 3, paddingLeft: 2 }}>Date</p>
                   <input type="date" name="transaction_date" value={addForm.transaction_date} onChange={handleAddChange} required
                     style={{ width: "100%", borderRadius: 7, padding: "6px 8px", fontSize: 12, border: `1px solid ${border}`, backgroundColor: bg, color: text, colorScheme: dark ? "dark" : "light", boxSizing: "border-box", outline: "none" }}
+                  />
+                </div>
+                <div>
+                  <p style={{ fontSize: 10, color: muted, marginBottom: 3, paddingLeft: 2 }}>Note (optional)</p>
+                  <input type="text" name="note" value={addForm.note} onChange={handleAddChange} placeholder="e.g. Refund" maxLength={100}
+                    style={{ width: "100%", borderRadius: 7, padding: "6px 8px", fontSize: 12, border: `1px solid ${border}`, backgroundColor: bg, color: text, boxSizing: "border-box", outline: "none" }}
                   />
                 </div>
                 {addError && <p style={{ fontSize: 11, color: "var(--category-expense)" }}>{addError}</p>}

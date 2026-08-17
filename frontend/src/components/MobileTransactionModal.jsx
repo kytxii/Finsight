@@ -50,6 +50,7 @@ export default function MobileTransactionModal({ transaction, onClose, onSaved, 
     amount: String(transaction.amount),
     category: transaction.category,
     transaction_date: transaction.transaction_date,
+    note: transaction.note ?? "",
   });
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -203,6 +204,18 @@ export default function MobileTransactionModal({ transaction, onClose, onSaved, 
               style={fieldStyle}
             />
           </div>
+        </div>
+
+        <div>
+          <p style={labelStyle}>Note (optional)</p>
+          <input
+            type="text"
+            value={form.note}
+            onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))}
+            placeholder="e.g. Refund, from John..."
+            maxLength={100}
+            style={fieldStyle}
+          />
         </div>
 
         {error && <p style={{ fontSize: 12, color: HOME_EXPENSE, margin: 0 }}>{error}</p>}

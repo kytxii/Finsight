@@ -231,7 +231,17 @@ export default function TransactionTable({ rows, onAdd, onEdit, onDelete, active
                       month: "short", day: "numeric", year: "numeric",
                     })}
                   </td>
-                  <td className="px-6 py-4 text-lg font-medium">{t.name}</td>
+                  <td className="px-6 py-4 text-lg font-medium">
+                    {t.name}
+                    {t.note && (
+                      <span
+                        className="ml-2 px-2 py-0.5 rounded-full text-sm font-semibold align-middle"
+                        style={{ color: muted, backgroundColor: "rgba(128,128,128,0.12)" }}
+                      >
+                        {t.note}
+                      </span>
+                    )}
+                  </td>
                   <td className="px-6 py-4">
                     <span
                       className="px-3 py-1 rounded-full text-base font-semibold"

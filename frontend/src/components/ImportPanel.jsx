@@ -15,9 +15,8 @@ function formatShortDate(isoDate) {
 // Bank-extracted names often come through as ALL CAPS ("CHECKCARD 0616 GROCERY
 // MART..."); read much better title-cased than shouted. Only reshape names
 // that are genuinely still shouting, though — the backend already hands back
-// deliberately-cased names (Zelle memos like "Zelle (LinkedIn)", merchant
-// aliases like "Walmart"), and blindly re-casing those mangles anything after
-// the first character of each word (e.g. "Zelle (Rent)" -> "Zelle (rent)").
+// deliberately-cased names (merchant aliases like "Walmart"), and blindly
+// re-casing those mangles anything after the first character of each word.
 function toTitleCase(str) {
   if (!str || str !== str.toUpperCase()) return str;
   return str
@@ -32,6 +31,7 @@ const nextId = () => ++_lid;
 const toRow = (r) => ({
   _lid: nextId(),
   name: toTitleCase(r.name),
+  note: r.note ?? "",
   amount: r.amount ?? "",
   category: r.category ?? "EXPENSE",
   transaction_date: r.transaction_date ?? "",
@@ -222,7 +222,7 @@ export default function ImportPanel({ active, onSaveStateChange, onSaved, onCanc
     setIsSaving(true);
     try {
       const commitRows = rows.filter(isRowValid).map(r => ({
-        name: r.name.trim(), amount: parseFloat(r.amount), category: r.category, transaction_date: r.transaction_date, skip: false,
+        name: r.name.trim(), note: r.note?.trim() || null, amount: parseFloat(r.amount), category: r.category, transaction_date: r.transaction_date, skip: false,
       }));
       const splitCommitRows = rows.filter(r => r.is_split).flatMap(r => r.splitItems.filter(isSplitItemValid).map(item => ({
         name: item.name.trim(), amount: parseFloat(item.amount), category: item.category, transaction_date: item.transaction_date, skip: false,

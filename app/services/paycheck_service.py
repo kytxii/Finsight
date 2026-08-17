@@ -1,4 +1,5 @@
 from sqlalchemy import select, delete, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 from datetime import date, timedelta
@@ -211,17 +212,24 @@ async def _backfill_paychecks(schedules: list[PaycheckSchedule], current_user: U
     for schedule_id, pay_date in existing_rows:
         existing_by_schedule.setdefault(schedule_id, set()).add(pay_date)
 
-    for schedule in active:
-        existing_dates = existing_by_schedule.get(schedule.id, set())
-        for pay_date in expected_by_schedule[schedule.id]:
-            if pay_date not in existing_dates:
-                db.add(Paycheck(
-                    schedule_id=schedule.id,
-                    pay_date=pay_date,
-                    amount=None,
-                    created_by=current_user,
-                    updated_by=current_user,
-                ))
+    rows = [
+        {"schedule_id": schedule.id, "pay_date": pay_date, "amount": None, "created_by": current_user, "updated_by": current_user}
+        for schedule in active
+        for pay_date in expected_by_schedule[schedule.id]
+        if pay_date not in existing_by_schedule.get(schedule.id, set())
+    ]
+    if not rows:
+        return
+
+    # The existing_dates check above is only an optimization to skip re-sending
+    # rows we already know about - it's not itself race-safe (two concurrent
+    # calls can both see a date as missing and both try to insert it). The
+    # uq_paychecks_schedule_id_pay_date constraint plus ON CONFLICT DO NOTHING
+    # is what actually prevents the duplicate, whichever request loses the race.
+    await db.execute(
+        pg_insert(Paycheck).on_conflict_do_nothing(index_elements=["schedule_id", "pay_date"]),
+        rows,
+    )
 
 
 async def _average_recent_amounts(schedule_id: UUID, db: AsyncSession, limit: int = 3) -> Decimal | None:

@@ -1,5 +1,6 @@
 from app.services.import_service import (
     clean_display_name,
+    clean_display_name_and_note,
     is_atm_deposit,
     is_balance_marker_row,
     is_bill_hint,
@@ -32,28 +33,35 @@ def test_strips_purchase_prefix_and_city_state():
 
 
 def test_zelle_collapses_to_zelle_with_quoted_memo_dropping_sender():
+    # Memo used to be baked into the name ("Zelle (Rent)"); it's now a
+    # separate note so the display name is always just "Zelle" (#105).
     raw = "Zelle payment to Maya OGrady for \"Rent\"; Conf# ls6z39zze"
-    assert clean_display_name(raw) == "Zelle (Rent)"
+    assert clean_display_name(raw) == "Zelle"
+    assert clean_display_name_and_note(raw) == ("Zelle", "Rent")
 
 
 def test_zelle_memo_preserves_intentional_mixed_case_brand_names():
     raw = "Zelle payment from JULIE TILLEY for \"LinkedIn\"; Conf# glgihhctp"
-    assert clean_display_name(raw) == "Zelle (LinkedIn)"
+    assert clean_display_name(raw) == "Zelle"
+    assert clean_display_name_and_note(raw) == ("Zelle", "LinkedIn")
 
 
 def test_zelle_memo_title_cases_sentence_case_text():
     raw = "Zelle payment from JULIE TILLEY for \"Din din at din\"; Conf# g0w5rfv8p"
-    assert clean_display_name(raw) == "Zelle (Din Din At Din)"
+    assert clean_display_name(raw) == "Zelle"
+    assert clean_display_name_and_note(raw) == ("Zelle", "Din Din At Din")
 
 
 def test_zelle_without_memo_collapses_to_bare_zelle():
     raw = "Zelle payment from JULIE TILLEY Conf# i6ffq988s"
     assert clean_display_name(raw) == "Zelle"
+    assert clean_display_name_and_note(raw) == ("Zelle", None)
 
 
 def test_zelle_memo_extracted_even_when_not_quoted():
     raw = "Zelle payment to Maya OGrady for Rent; Conf# ls6z39zze"
-    assert clean_display_name(raw) == "Zelle (Rent)"
+    assert clean_display_name(raw) == "Zelle"
+    assert clean_display_name_and_note(raw) == ("Zelle", "Rent")
 
 
 def test_collapses_duplicated_merchant_around_middle_purchase_marker():

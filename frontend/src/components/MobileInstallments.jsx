@@ -586,9 +586,29 @@ export default function MobileInstallments({ onSaved, openAddSignal }) {
       )}
 
       {loading ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {[...Array(4)].map((_, i) => (
-            <Skel key={i} h={60} style={{ borderRadius: 14, opacity: 1 - i * 0.15 }} />
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {[...Array(3)].map((_, i) => (
+            <div key={i} style={{
+              display: "flex", flexDirection: "column", gap: 10, padding: "12px 14px 14px",
+              backgroundColor: HOME_SURFACE, borderRadius: 18, opacity: 1 - i * 0.15,
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                <Skel h={44} w={44} style={{ borderRadius: "50%" }} />
+                <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 5 }}>
+                  <Skel h={17} w="50%" />
+                  <Skel h={13} w="35%" />
+                </div>
+                <Skel h={22} w={70} style={{ borderRadius: 999 }} />
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, paddingTop: 10, borderTop: `1px solid ${HOME_DIVIDER}` }}>
+                {[...Array(6)].map((_, j) => (
+                  <div key={j} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    <Skel h={10.5} w="60%" />
+                    <Skel h={13.5} w="80%" />
+                  </div>
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       ) : loadFailed ? (

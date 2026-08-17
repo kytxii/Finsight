@@ -1,6 +1,7 @@
 import { CATEGORY_CONFIG, INCOME_TYPES, fmt, fmtWhole } from "../utils/finance";
 import { periodLabel, relativeDate } from "../utils/mobileFormat";
 import Skel from "./Skel";
+import NotePill from "./NotePill";
 import {
   HOME_TEXT,
   HOME_MUTED,
@@ -400,11 +401,17 @@ export default function MobileHome({
           {loading ? (
             <>
               <div style={{ flex: 1, ...cardStyle, padding: "12px 14px 13px" }}>
-                <Skel h={13} w="55%" style={{ marginBottom: 8 }} />
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                  <Skel h={13} w="40%" />
+                  <Skel h={13} w={28} />
+                </div>
                 <Skel h={21} w="75%" />
               </div>
               <div style={{ flex: 1, ...cardStyle, padding: "12px 14px 13px" }}>
-                <Skel h={13} w="55%" style={{ marginBottom: 8 }} />
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                  <Skel h={13} w="40%" />
+                  <Skel h={13} w={28} />
+                </div>
                 <Skel h={21} w="75%" />
               </div>
             </>
@@ -795,15 +802,19 @@ export default function MobileHome({
                 <div
                   style={{
                     flex: 1,
+                    minWidth: 0,
                     display: "flex",
                     flexDirection: "column",
-                    gap: 6,
+                    gap: 4,
                   }}
                 >
-                  <Skel h={14} w="40%" />
-                  <Skel h={16} w="65%" />
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <Skel h={13} w="30%" />
+                    <Skel h={16} w={50} />
+                  </div>
+                  <Skel h={17} w="65%" />
+                  <Skel h={13} w="35%" />
                 </div>
-                <Skel h={16} w={60} />
               </div>
             ))
           ) : dashSorted.length === 0 ? (
@@ -899,19 +910,24 @@ export default function MobileHome({
                         {fmt(t.amount)}
                       </span>
                     </div>
-                    <span
-                      style={{
-                        fontSize: 17,
-                        fontWeight: 600,
-                        letterSpacing: "-0.2px",
-                        color: HOME_TEXT,
-                        whiteSpace: "nowrap",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                      }}
-                    >
-                      {t.name}
-                    </span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                      <span
+                        style={{
+                          flex: "0 1 auto",
+                          minWidth: 0,
+                          fontSize: 17,
+                          fontWeight: 600,
+                          letterSpacing: "-0.2px",
+                          color: HOME_TEXT,
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                        }}
+                      >
+                        {t.name}
+                      </span>
+                      <NotePill note={t.note} style={{ flexShrink: 0 }} />
+                    </div>
                     <span
                       style={{
                         fontSize: 13,

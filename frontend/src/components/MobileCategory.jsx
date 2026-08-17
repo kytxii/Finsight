@@ -3,6 +3,7 @@ import SwipeableRow from "./SwipeableRow";
 import AmountSortButton from "./AmountSortButton";
 import Skel from "./Skel";
 import CurrencyInput from "./CurrencyInput";
+import NotePill from "./NotePill";
 import { CATEGORY_CONFIG, INCOME_TYPES, fmt, nextAmountSort } from "../utils/finance";
 import { periodLabel, relativeDate } from "../utils/mobileFormat";
 import { getToday } from "../utils/time";
@@ -179,7 +180,7 @@ function UpcomingRow({ item, today, tileColor, icon, first, onConfirm, onSkip })
 }
 
 export default function MobileCategory({
-  category, transactions, loading, upcomingItems = [], onBack, onEditTransaction, onDeleteTransaction, onOpenPaychecks, onRefresh,
+  category, transactions, monthlyHistory = [], loading, upcomingItems = [], onBack, onEditTransaction, onDeleteTransaction, onOpenPaychecks, onRefresh,
 }) {
   const [openId, setOpenId] = useState(null);
   const [amountSort, setAmountSort] = useState(null); // null | "asc" | "desc"
@@ -240,6 +241,25 @@ export default function MobileCategory({
     });
   const total = catTxns.reduce((s, t) => s + parseFloat(t.amount), 0);
 
+  // vs-last-month card (#108) - a sliding window of monthlyHistory's per-month
+  // category totals fills the bars (oldest to newest, always ending at the
+  // current month), while the headline % still compares just the two most
+  // recent. Same goodWhenUp convention as Home's ChangeBadge: up is good for
+  // income-type categories, bad everywhere else.
+  const monthlyTotals = monthlyHistory.map((bucket) =>
+    bucket.filter((t) => t.category === category).reduce((s, t) => s + parseFloat(t.amount), 0)
+  );
+  // Current month's own total already comes from the live `transactions`
+  // prop (`total`, above) - swapped in for monthlyHistory's own last entry
+  // rather than trusting the two to stay in perfect sync bucket-for-bucket.
+  const historyTotals = monthlyTotals.length > 0 ? [...monthlyTotals.slice(0, -1), total] : [];
+  const lastMonthTotal = historyTotals.length >= 2 ? historyTotals[historyTotals.length - 2] : 0;
+  const pctChange = lastMonthTotal > 0 ? ((total - lastMonthTotal) / lastMonthTotal) * 100 : null;
+  const changeUp = pctChange !== null && pctChange >= 0;
+  const changeGood = changeUp === isIncome;
+  const changeColor = changeGood ? HOME_INCOME : HOME_EXPENSE;
+  const barMax = Math.max(...historyTotals, 0) || 1;
+
   return (
     <>
       {/* Header */}
@@ -283,14 +303,56 @@ export default function MobileCategory({
               </p>
             )}
           </div>
-          <div style={{ flex: 1, backgroundColor: HOME_SURFACE, borderRadius: 18, padding: "13px 15px 14px" }}>
-            <p style={{ margin: "0 0 4px", fontSize: 13, fontWeight: 500, color: HOME_MUTED }}>Transactions</p>
+          <div style={{ flex: 1, backgroundColor: HOME_SURFACE, borderRadius: 18, padding: "13px 15px 14px", display: "flex", flexDirection: "column" }}>
             {loading ? (
-              <Skel h={23} w="35%" />
+              <>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                  <Skel h={13} w={70} />
+                  <Skel h={15} w={28} />
+                </div>
+                <div style={{ flex: 1, display: "flex", alignItems: "flex-end", justifyContent: "space-between" }}>
+                  {[11, 7, 15, 9, 13, 17].map((h, i) => (
+                    <Skel key={i} w={12} h={h} style={{ borderRadius: "2px 2px 0 0" }} />
+                  ))}
+                </div>
+              </>
+            ) : historyTotals.every((v) => v === 0) ? (
+              <>
+                <p style={{ margin: "0 0 4px", fontSize: 13, fontWeight: 500, color: HOME_MUTED }}>vs Last Month</p>
+                <p style={{ margin: 0, fontSize: 23, fontWeight: 700, color: HOME_MUTED }}>—</p>
+              </>
             ) : (
-              <p style={{ margin: 0, fontSize: 23, fontWeight: 700, letterSpacing: "-0.5px", fontVariantNumeric: "tabular-nums", color: HOME_TEXT }}>
-                {catTxns.length}
-              </p>
+              <>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                  <p style={{ margin: 0, fontSize: 13, fontWeight: 500, color: HOME_MUTED }}>vs Last Month</p>
+                  <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    {pctChange !== null && (
+                      <svg width={11} height={11} viewBox="0 0 24 24" fill={changeColor} style={{ transform: changeUp ? undefined : "rotate(180deg)", flexShrink: 0 }}>
+                        <path d="M12 3 L22 20 L2 20 Z" />
+                      </svg>
+                    )}
+                    <p style={{ margin: 0, fontSize: 15, fontWeight: 700, letterSpacing: "-0.3px", fontVariantNumeric: "tabular-nums", color: pctChange !== null ? changeColor : HOME_TEXT }}>
+                      {pctChange !== null ? `${Math.round(Math.abs(pctChange))}%` : "New"}
+                    </p>
+                  </div>
+                </div>
+                <div style={{ flex: 1, display: "flex", alignItems: "flex-end", justifyContent: "space-between" }}>
+                  {historyTotals.map((v, i) => {
+                    // Every bar is the category's own color - older months fade
+                    // out via opacity instead of switching color, so the chart
+                    // still reads as "this category" rather than borrowing the
+                    // headline's sentiment red/green.
+                    const opacity = historyTotals.length > 1 ? 0.35 + (i / (historyTotals.length - 1)) * 0.65 : 1;
+                    return (
+                      <div key={i} style={{
+                        width: 12, flex: "0 0 auto", borderRadius: "3px 3px 0 0",
+                        height: `${Math.max((v / barMax) * 20, 2)}px`,
+                        backgroundColor: tileColor, opacity,
+                      }} />
+                    );
+                  })}
+                </div>
+              </>
             )}
           </div>
         </div>
@@ -365,8 +427,19 @@ export default function MobileCategory({
 
       {/* Transactions */}
       <div>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "0 4px 12px" }}>
-          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, letterSpacing: "-0.4px", color: HOME_TEXT }}>Transactions</h2>
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", margin: "0 4px 12px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, letterSpacing: "-0.4px", color: HOME_TEXT }}>Transactions</h2>
+            <span style={{
+              display: "block", minWidth: 26, height: 26, lineHeight: "26px",
+              padding: "0 8px", borderRadius: 999, textAlign: "center",
+              fontSize: 13, fontWeight: 700, fontVariantNumeric: "tabular-nums",
+              color: tileColor, backgroundColor: `color-mix(in srgb, ${tileColor} 16%, transparent)`,
+              boxSizing: "content-box",
+            }}>
+              {catTxns.length}
+            </span>
+          </div>
           <AmountSortButton sort={amountSort} onToggle={() => setAmountSort(nextAmountSort)} color={tileColor} />
         </div>
         <div style={{ backgroundColor: HOME_SURFACE, borderRadius: 18, overflow: "hidden" }}>
@@ -418,9 +491,12 @@ export default function MobileCategory({
                     <Icon />
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ margin: 0, fontSize: 17, fontWeight: 600, letterSpacing: "-0.2px", color: HOME_TEXT, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                      {t.name}
-                    </p>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                      <p style={{ margin: 0, flex: "0 1 auto", minWidth: 0, fontSize: 17, fontWeight: 600, letterSpacing: "-0.2px", color: HOME_TEXT, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {t.name}
+                      </p>
+                      <NotePill note={t.note} style={{ flexShrink: 0 }} />
+                    </div>
                     <p style={{ margin: "2px 0 0", fontSize: 13, fontWeight: 500, color: HOME_MUTED }}>
                       {relativeDate(t.transaction_date)}
                     </p>
