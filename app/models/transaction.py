@@ -16,6 +16,12 @@ class Transaction(Base):
     transaction_date: Mapped[date] = mapped_column(Date, nullable=False)
     category: Mapped[Category] = mapped_column(CategoryEnum(Category), nullable=False)
 
+    # Lightweight per-transaction context note (who/what/why) - not part of the
+    # name, not a spending-category rollup like a future "Tag" would be (#28).
+    # e.g. "Refund" on a reimbursement, or a Zelle memo - previously crammed
+    # into the name itself via parentheses (#105).
+    note: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     

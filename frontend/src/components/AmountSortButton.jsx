@@ -9,14 +9,14 @@ import { HOME_MUTED } from "./categoryVisuals";
 // text label visually (label is kept for the aria-label regardless); `hideArrow`
 // drops the direction chevron for a field like Name whose label text ("A–Z" /
 // "Z–A") already conveys direction on its own.
-export default function AmountSortButton({ sort, onToggle, color = HOME_MUTED, label = "Amount", icon = null, hideArrow = false, minWidth }) {
+export default function AmountSortButton({ sort, onToggle, color = HOME_MUTED, label = "Amount", icon = null, hideArrow = false, minWidth, grow = false }) {
   return (
     <button
       onClick={onToggle}
       aria-label={`Sort by ${label.toLowerCase()}`}
       style={{
         display: "flex", alignItems: "center", gap: 5, justifyContent: "center",
-        height: 34, minWidth, padding: "0 14px", borderRadius: 10, border: "none",
+        height: 34, minWidth, ...(grow ? { flexGrow: 1, flexBasis: 0 } : {}), padding: "0 14px", borderRadius: 10, border: "none",
         color: sort ? "#fff" : HOME_MUTED,
         backgroundColor: sort ? color : "rgba(255,255,255,0.06)",
         fontSize: 13, fontWeight: 600,

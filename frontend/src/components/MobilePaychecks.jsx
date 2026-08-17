@@ -427,11 +427,26 @@ export default function MobilePaychecks({ onSaved }) {
             <Skel w={80} h={12} />
             <Skel w={18} h={18} style={{ borderRadius: 4 }} />
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {[...Array(6)].map((_, i) => (
-              <Skel key={i} h={44} style={{ borderRadius: 12, opacity: 1 - i * 0.1 }} />
-            ))}
-          </div>
+          {[3, 2, 2].map((rowCount, g) => (
+            <div key={g} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <Skel w={70} h={11} style={{ marginLeft: 4 }} />
+              <div style={{ backgroundColor: HOME_SURFACE, borderRadius: 18, overflow: "hidden" }}>
+                {[...Array(rowCount)].map((_, i) => (
+                  <div key={i} style={{
+                    display: "flex", alignItems: "center", gap: 12, padding: "11px 14px", minHeight: 60,
+                    borderTop: i === 0 ? "none" : `1px solid ${HOME_DIVIDER}`, opacity: 1 - i * 0.12,
+                  }}>
+                    <Skel h={40} w={40} style={{ borderRadius: "50%" }} />
+                    <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
+                      <Skel h={13.5} w="35%" />
+                      <Skel h={17} w="55%" />
+                    </div>
+                    <Skel h={16} w={60} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
       )}
 

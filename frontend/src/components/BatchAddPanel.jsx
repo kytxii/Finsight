@@ -8,7 +8,7 @@ import CurrencyInput from "./CurrencyInput";
 const today = () => getToday();
 
 let _lid = 0;
-const newDraft = () => ({ _lid: ++_lid, name: "", amount: "", category: "EXPENSE", transaction_date: today() });
+const newDraft = () => ({ _lid: ++_lid, name: "", amount: "", category: "EXPENSE", transaction_date: today(), note: "" });
 
 function isDraftValid(d) {
   return (!!lockedNameFor(d.category) || d.name.trim() !== "") &&
@@ -43,6 +43,7 @@ export default function BatchAddPanel({ active, onSaveStateChange, onSaved, onCa
           amount: parseFloat(d.amount),
           category: d.category,
           transaction_date: d.transaction_date,
+          note: d.note.trim() || null,
         }))),
         new Promise(r => setTimeout(r, 420 + (valid.length - 1) * 80)),
       ]);
@@ -66,10 +67,11 @@ export default function BatchAddPanel({ active, onSaveStateChange, onSaved, onCa
   const showAddRow = drafts.length < MAX_ROWS && (drafts.length === 0 || isDraftValid(drafts[drafts.length - 1]));
 
   const COLS = [
-    { field: "name",             label: "Name",     width: "27%" },
-    { field: "amount",           label: "Amount",   width: "16%" },
-    { field: "category",         label: "Category", width: "24%" },
-    { field: "transaction_date", label: "Date",     width: "28%" },
+    { field: "name",             label: "Name",     width: "22%" },
+    { field: "amount",           label: "Amount",   width: "14%" },
+    { field: "category",         label: "Category", width: "20%" },
+    { field: "transaction_date", label: "Date",     width: "20%" },
+    { field: "note",             label: "Note",     width: "19%" },
   ];
 
   const tdStyle = (last = false, first = false) => ({
@@ -115,7 +117,7 @@ export default function BatchAddPanel({ active, onSaveStateChange, onSaved, onCa
           <tbody>
             {drafts.length === 0 && (
               <tr>
-                <td colSpan={5} style={{ padding: "48px 16px", textAlign: "center", color: muted }}>
+                <td colSpan={6} style={{ padding: "48px 16px", textAlign: "center", color: muted }}>
                   <div style={{ fontSize: "13px", fontWeight: 500 }}>No rows yet</div>
                   <div style={{ fontSize: "12px", marginTop: "4px" }}>Click + to add transactions</div>
                 </td>
@@ -178,13 +180,23 @@ export default function BatchAddPanel({ active, onSaveStateChange, onSaved, onCa
                       ))}
                     </select>
                   </td>
-                  <td style={tdStyle(true)}>
+                  <td style={tdStyle(false)}>
                     <input
                       type="date"
                       value={d.transaction_date}
                       onChange={e => setDrafts(prev => prev.map((x, xi) => xi === idx ? { ...x, transaction_date: e.target.value } : x))}
                       onKeyDown={e => e.key === "Escape" && setDrafts(prev => prev.filter((_, xi) => xi !== idx))}
                       style={{ width: "100%", background: "transparent", color: text, border: "none", outline: "none", fontSize: "13px", fontFamily: "inherit", colorScheme: dark ? "dark" : "light" }}
+                    />
+                  </td>
+                  <td style={tdStyle(true)}>
+                    <input
+                      type="text"
+                      value={d.note}
+                      placeholder="Optional"
+                      onChange={e => setDrafts(prev => prev.map((x, xi) => xi === idx ? { ...x, note: e.target.value } : x))}
+                      onKeyDown={e => e.key === "Escape" && setDrafts(prev => prev.filter((_, xi) => xi !== idx))}
+                      style={{ width: "100%", background: "transparent", color: text, border: "none", outline: "none", fontSize: "13px", fontFamily: "inherit" }}
                     />
                   </td>
                   <td style={{ padding: "8px 12px 8px 6px", width: "36px" }}>

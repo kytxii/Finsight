@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import SwipeableRow from "./SwipeableRow";
 import AmountSortButton from "./AmountSortButton";
 import Skel from "./Skel";
+import NotePill from "./NotePill";
 import { CATEGORIES, CATEGORY_CONFIG, INCOME_TYPES, fmt } from "../utils/finance";
 import { relativeDate } from "../utils/mobileFormat";
 import {
@@ -162,9 +163,12 @@ function ActivityRow({ t, first, last, openId, setOpenId, onEditTransaction, onD
             {isDeposit ? <IconBank color={TIPS_DEPOSITED} /> : <Icon />}
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <p style={{ margin: 0, fontSize: 17, fontWeight: 600, letterSpacing: "-0.2px", color: HOME_TEXT, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-              {t.name}
-            </p>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+              <p style={{ margin: 0, flex: "0 1 auto", minWidth: 0, fontSize: 17, fontWeight: 600, letterSpacing: "-0.2px", color: HOME_TEXT, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {t.name}
+              </p>
+              <NotePill note={t.note} style={{ flexShrink: 0 }} />
+            </div>
             <p style={{ margin: "2px 0 0", fontSize: 13, fontWeight: 500, color: HOME_MUTED }}>
               {relativeDate(t.transaction_date)}
             </p>
@@ -424,21 +428,22 @@ export default function MobileActivity({ transactions, deposits = [], loading, o
           onClick={advanceCategory}
         />
         <div style={{ width: 1, height: 18, backgroundColor: HOME_DIVIDER, flexShrink: 0 }} />
-        {/* flex:1 + space-between spreads the 3 buttons across whatever width
-            remains, so the last one (Date) lands at the row's right edge on
-            screens wide enough to fit everything - falls back to the row's
-            own overflowX:auto scroll on narrower phones instead of squeezing. */}
-        <div style={{ display: "flex", flex: 1, justifyContent: "space-between", gap: 6 }}>
+        {/* Each button grows (flexGrow:1, minWidth as the floor) to share the
+            row's remaining width instead of the gaps absorbing it - falls back
+            to the row's own overflowX:auto scroll on narrower phones instead
+            of squeezing below minWidth. */}
+        <div style={{ display: "flex", flex: 1, gap: 6 }}>
           <AmountSortButton
             label={sortField === "name" && sortDir === "desc" ? "Z–A" : "A–Z"}
             hideArrow
             minWidth={72}
+            grow
             sort={sortField === "name" ? sortDir : null}
             onToggle={() => toggleFieldSort("name")}
             color={HOME_ACCENT}
           />
-          <AmountSortButton label="Amount" icon={<IconDollar />} minWidth={72} sort={sortField === "amount" ? sortDir : null} onToggle={() => toggleFieldSort("amount")} color={HOME_ACCENT} />
-          <AmountSortButton label="Date" icon={<IconCalendar />} minWidth={72} sort={sortField === "date" ? sortDir : null} onToggle={() => toggleFieldSort("date")} color={HOME_ACCENT} />
+          <AmountSortButton label="Amount" icon={<IconDollar />} minWidth={72} grow sort={sortField === "amount" ? sortDir : null} onToggle={() => toggleFieldSort("amount")} color={HOME_ACCENT} />
+          <AmountSortButton label="Date" icon={<IconCalendar />} minWidth={72} grow sort={sortField === "date" ? sortDir : null} onToggle={() => toggleFieldSort("date")} color={HOME_ACCENT} />
         </div>
       </div>
 

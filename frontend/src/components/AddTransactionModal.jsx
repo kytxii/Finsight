@@ -33,6 +33,7 @@ export default function AddTransactionModal({
     amount: "",
     category: defaultCategory,
     transaction_date: today,
+    note: "",
   });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -153,6 +154,20 @@ export default function AddTransactionModal({
               value={form.transaction_date}
               onChange={handleChange}
               required
+              className="w-full rounded-xl px-4 py-2.5 text-sm focus:outline-none border"
+              style={inputStyle}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1.5">Note <span className="font-normal opacity-60">(optional)</span></label>
+            <input
+              type="text"
+              name="note"
+              value={form.note}
+              onChange={handleChange}
+              placeholder="e.g. Refund, from John..."
+              maxLength={100}
               className="w-full rounded-xl px-4 py-2.5 text-sm focus:outline-none border"
               style={inputStyle}
             />

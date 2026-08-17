@@ -211,16 +211,21 @@ def _strip_trailing_city_state(name: str) -> str:
     return name
 
 
-def _clean_zelle_name(name: str) -> str:
+def _clean_zelle_name(name: str) -> tuple[str, str | None]:
+    """Returns (display_name, memo) - the memo used to be baked into the name
+    itself via parens ("Zelle (Rent)"); it's now kept separate so the caller
+    can route it to the transaction's `note` field instead (#105)."""
     stripped = ZELLE_CONF_RE.sub("", name).strip()
     memo_match = ZELLE_MEMO_RE.search(stripped)
     memo = memo_match.group(1).strip() if memo_match else ""
-    if memo:
-        return f"Zelle ({_smart_title_case(memo)})"
-    return "Zelle"
+    return "Zelle", (_smart_title_case(memo) if memo else None)
 
 
-def clean_display_name(raw_name: str) -> str:
+def clean_display_name_and_note(raw_name: str) -> tuple[str, str | None]:
+    """Same cleanup as `clean_display_name`, but also surfaces a per-transaction
+    context note parsed out along the way (currently just a Zelle memo) - kept
+    as a separate return so `clean_display_name` itself can stay a drop-in,
+    note-less helper for every existing caller that doesn't need it."""
     name = raw_name.strip()
 
     des_match = DES_SPLIT_RE.search(name)
@@ -248,8 +253,12 @@ def clean_display_name(raw_name: str) -> str:
     name = _strip_trailing_city_state(name)
 
     if AMAZON_RE.match(name):
-        return "Amazon"
-    return name
+        return "Amazon", None
+    return name, None
+
+
+def clean_display_name(raw_name: str) -> str:
+    return clean_display_name_and_note(raw_name)[0]
 
 
 def is_atm_deposit(name: str) -> bool:
@@ -352,7 +361,7 @@ async def _build_preview_rows(
 
     rows: list[ImportPreviewRow] = []
     for row_number, (raw_name, raw_date, raw_amount) in enumerate(raw_rows, start=1):
-        raw_name = clean_display_name(raw_name or "")
+        raw_name, note = clean_display_name_and_note(raw_name or "")
         raw_date = (raw_date or "").strip()
         raw_amount = (raw_amount or "").strip()
         is_tip_deposit_candidate = is_atm_deposit(raw_name)
@@ -441,9 +450,14 @@ async def _build_preview_rows(
                             duplicate_transaction = candidate
                             break
 
+        # Later collapses (ATM cash, savings transfer, lump-sum card payment)
+        # override raw_name for a different reason than the Zelle memo was
+        # parsed for - if any of those fired, the memo no longer describes
+        # what's actually being displayed, so drop it.
         rows.append(ImportPreviewRow(
             row_number=row_number,
             name=raw_name,
+            note=note if raw_name == "Zelle" else None,
             amount=amount,
             transaction_date=parsed_date,
             category=category,
@@ -520,6 +534,7 @@ async def commit_import(
             continue
         transaction = Transaction(
             name=row.name,
+            note=row.note,
             amount=row.amount,
             transaction_date=row.transaction_date,
             category=row.category,

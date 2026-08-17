@@ -321,9 +321,26 @@ export default function MobileRecurring({ onSaved, openAddSignal }) {
       )}
 
       {loading ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {[...Array(5)].map((_, i) => (
-            <Skel key={i} h={56} style={{ borderRadius: 14, opacity: 1 - i * 0.12 }} />
+        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+          {[0, 1].map((group) => (
+            <div key={group} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <Skel w={70} h={11} style={{ marginLeft: 4 }} />
+              <div style={{ backgroundColor: HOME_SURFACE, borderRadius: 18, overflow: "hidden" }}>
+                {[...Array(group === 0 ? 3 : 2)].map((_, i) => (
+                  <div key={i} style={{
+                    display: "flex", alignItems: "center", gap: 12, padding: "11px 14px", minHeight: 60,
+                    borderTop: i === 0 ? "none" : `1px solid ${HOME_DIVIDER}`, opacity: 1 - i * 0.12,
+                  }}>
+                    <Skel h={40} w={40} style={{ borderRadius: "50%" }} />
+                    <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
+                      <Skel h={17} w="50%" />
+                      <Skel h={13} w="30%" />
+                    </div>
+                    <Skel h={16} w={55} />
+                  </div>
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       ) : rows.length === 0 ? (
