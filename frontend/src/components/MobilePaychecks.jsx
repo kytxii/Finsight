@@ -15,6 +15,7 @@ import {
 } from "../api/paychecks";
 import { IconIncomeTile } from "./categoryIcons";
 import CurrencyInput from "./CurrencyInput";
+import CompactDateField from "./CompactDateField";
 import Skel from "./Skel";
 import { HOME_TEXT, HOME_MUTED, HOME_SURFACE, HOME_DIVIDER, HOME_INCOME, HOME_EXPENSE, TILE_COLOR } from "./categoryVisuals";
 
@@ -72,27 +73,6 @@ function SaveLabel({ status, idle }) {
   if (status === "saving") return "Saving…";
   if (status === "saved") return <><IconCheck />Saved</>;
   return idle;
-}
-
-// Worked example under a helper line (#112) - shows the mechanic as an equation
-// instead of spelling the arithmetic out in the sentence. Operators sit at half
-// opacity so the figures carry the line, and the result picks up the income
-// accent since that's the number the section is actually about.
-function Formula({ expr, result }) {
-  return (
-    <div style={{
-      display: "flex", alignItems: "baseline", gap: 5, flexWrap: "wrap", width: "fit-content",
-      margin: "6px 2px 0", padding: "5px 9px", borderRadius: 8,
-      backgroundColor: "rgba(255,255,255,0.04)",
-      fontSize: 11.5, fontVariantNumeric: "tabular-nums", color: HOME_MUTED,
-    }}>
-      {expr.map((tok, i) => (
-        <span key={i} style={{ opacity: /^[+−]$/.test(tok) ? 0.5 : 1 }}>{tok}</span>
-      ))}
-      <span style={{ opacity: 0.5 }}>=</span>
-      <span style={{ color: HOME_INCOME, fontWeight: 700 }}>{result}</span>
-    </div>
-  );
 }
 
 // Height-animated swap between an edit panel and its read-only row (#112). Both
@@ -227,7 +207,10 @@ export default function MobilePaychecks({ onSaved }) {
       setPending(paychecksRes.data.pending_paychecks);
       setBalanceAnchorState(balanceRes.data);
       if (balanceRes.data) {
-        setBalanceDraft({ current_balance: String(balanceRes.data.current_balance), as_of_date: balanceRes.data.as_of_date });
+        // as_of_date defaults to today, not the stored anchor's date - editing
+        // the balance means re-snapshotting it now, and leaving a stale past
+        // date behind silently double-counts everything since then (#115).
+        setBalanceDraft({ current_balance: String(balanceRes.data.current_balance), as_of_date: getToday() });
       }
       setSpendingReserveState(reserveRes.data.spending_reserve);
       setReserveDraft(String(reserveRes.data.spending_reserve));
@@ -648,10 +631,9 @@ export default function MobilePaychecks({ onSaved }) {
                     </div>
                     <div>
                       <p style={labelStyle}>As of</p>
-                      <input
-                        type="date"
+                      <CompactDateField
                         value={balanceDraft.as_of_date}
-                        onChange={e => setBalanceDraft(d => ({ ...d, as_of_date: e.target.value }))}
+                        onChange={v => setBalanceDraft(d => ({ ...d, as_of_date: v }))}
                         style={fieldStyle}
                       />
                     </div>
@@ -701,7 +683,6 @@ export default function MobilePaychecks({ onSaved }) {
                 <p style={{ fontSize: 11, color: HOME_MUTED, margin: "8px 0 0", padding: "0 2px" }}>
                   Available Cash builds forward from here using your transactions.
                 </p>
-                <Formula expr={["$2,400", "−", "$60", "+", "$1,800"]} result="$4,140" />
               </div>
 
               {/* ── Spending reserve ── */}
@@ -753,7 +734,26 @@ export default function MobilePaychecks({ onSaved }) {
                 <p style={{ fontSize: 11, color: HOME_MUTED, margin: "8px 0 0", padding: "0 2px" }}>
                   Held back from Available Cash, so it isn't counted as free to allocate.
                 </p>
-                <Formula expr={["$4,140", "−", "$400"]} result="$3,740" />
+                {balanceAnchor && (
+                  // Reuses the real Starting Balance and Reserve figures already
+                  // shown above rather than computing a third number here - the
+                  // dashboard's actual Available Cash also factors in bills and
+                  // projected income, which this panel doesn't have, so naming
+                  // the result instead of a dollar amount avoids showing a figure
+                  // that wouldn't match.
+                  <div style={{
+                    display: "flex", alignItems: "baseline", gap: 5, flexWrap: "wrap", width: "fit-content",
+                    margin: "6px 2px 0", padding: "5px 9px", borderRadius: 8,
+                    backgroundColor: "rgba(255,255,255,0.04)",
+                    fontSize: 11.5, fontVariantNumeric: "tabular-nums", color: HOME_MUTED,
+                  }}>
+                    <span>{fmt(balanceAnchor.current_balance)}</span>
+                    <span style={{ opacity: 0.5 }}>−</span>
+                    <span>{fmt(spendingReserve)}</span>
+                    <span style={{ opacity: 0.5 }}>=</span>
+                    <span style={{ color: HOME_INCOME, fontWeight: 700 }}>Available Cash</span>
+                  </div>
+                )}
               </div>
             </>
           ) : (

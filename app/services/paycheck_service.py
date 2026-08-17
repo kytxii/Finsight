@@ -374,12 +374,16 @@ async def _get_running_balance(current_user: UUID, db: AsyncSession) -> Decimal 
     if anchor is None:
         return None
 
-    # Bounded to today - an already-entered future-dated paycheck transaction
-    # must not inflate the *current* running balance. Future income is instead
-    # surfaced explicitly via the projected-income sum in get_spendable_surplus.
+    # Strictly after as_of_date - current_balance is treated as already
+    # inclusive of that day's activity (it's the real balance the user read
+    # off their bank), so replaying same-day transactions on top would
+    # double-count them. Bounded to today - an already-entered future-dated
+    # paycheck transaction must not inflate the *current* running balance.
+    # Future income is instead surfaced explicitly via the projected-income
+    # sum in get_spendable_surplus.
     transactions = (await db.scalars(select(Transaction).where(
         Transaction.created_by == current_user,
-        Transaction.transaction_date >= anchor.as_of_date,
+        Transaction.transaction_date > anchor.as_of_date,
         Transaction.transaction_date <= date.today(),
     ))).all()
     net = sum((_balance_delta(t) for t in transactions), start=Decimal("0"))
@@ -387,7 +391,7 @@ async def _get_running_balance(current_user: UUID, db: AsyncSession) -> Decimal 
     # Cash deposits credit checking as transfers-in, over the same window.
     deposits = (await db.scalars(select(TipDeposit).where(
         TipDeposit.created_by == current_user,
-        TipDeposit.deposit_date >= anchor.as_of_date,
+        TipDeposit.deposit_date > anchor.as_of_date,
         TipDeposit.deposit_date <= date.today(),
     ))).all()
     deposit_total = sum((d.amount for d in deposits), start=Decimal("0"))

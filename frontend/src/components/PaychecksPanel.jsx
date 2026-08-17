@@ -119,7 +119,10 @@ export default function PaychecksPanel({ mobile = false, onSaved }) {
       setPending(paychecksRes.data.pending_paychecks);
       setBalanceAnchorState(balanceRes.data);
       if (balanceRes.data) {
-        setBalanceDraft({ current_balance: String(balanceRes.data.current_balance), as_of_date: balanceRes.data.as_of_date });
+        // as_of_date defaults to today, not the stored anchor's date - editing
+        // the balance means re-snapshotting it now, and leaving a stale past
+        // date behind silently double-counts everything since then (#115).
+        setBalanceDraft({ current_balance: String(balanceRes.data.current_balance), as_of_date: getToday() });
       }
       setSpendingReserveState(reserveRes.data.spending_reserve);
       setReserveDraft(String(reserveRes.data.spending_reserve));
