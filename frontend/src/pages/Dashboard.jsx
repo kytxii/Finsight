@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { HOME_BG, HOME_SURFACE, HOME_DIVIDER, HOME_TEXT, HOME_MUTED, HOME_INCOME, HOME_EXPENSE, ACCENT, ACCENT_TEXT, CATEGORY_ACCENT, CATEGORY_ICON } from "../components/categoryVisuals";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { HOME_BG, HOME_SURFACE, HOME_DIVIDER, HOME_TEXT, HOME_MUTED, HOME_INCOME, HOME_EXPENSE, ACCENT, ACCENT_DEEP, ACCENT_TEXT, CATEGORY_ACCENT, CATEGORY_ICON } from "../components/categoryVisuals";
 import Skel from "../components/Skel";
 import {
   Cell,
@@ -36,6 +36,7 @@ import InstallmentsPanel from "../components/InstallmentsPanel";
 import SummaryCard from "../components/SummaryCard";
 import ChartCard from "../components/ChartCard";
 import TransactionTable from "../components/TransactionTable";
+import CategoryTrendPanel from "../components/CategoryTrendPanel";
 import EditTransactionModal from "../components/EditTransactionModal";
 import { BalanceBody, BillsBody, CashBody, SavingsBody } from "../components/OverviewBreakdownSheet";
 import Footer from "../components/Footer";
@@ -87,16 +88,70 @@ function IconToolTile({ children }) {
 // background of its own.
 function TrendPill({ label, value, color }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 10px", borderRadius: 999, backgroundColor: "rgba(255,255,255,0.05)" }}>
-      <span style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: color, flexShrink: 0 }} />
-      <span style={{ fontSize: 11, fontWeight: 600, color: HOME_MUTED }}>{label}</span>
-      <span style={{ fontSize: 12.5, fontWeight: 700, color: HOME_TEXT, fontVariantNumeric: "tabular-nums" }}>{value}</span>
+    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 16px", borderRadius: 999, backgroundColor: "rgba(255,255,255,0.05)" }}>
+      <span style={{ width: 9, height: 9, borderRadius: "50%", backgroundColor: color, flexShrink: 0 }} />
+      <span style={{ fontSize: 14, fontWeight: 600, color: HOME_MUTED }}>{label}</span>
+      <span style={{ fontSize: 14, fontWeight: 700, color: HOME_TEXT, fontVariantNumeric: "tabular-nums" }}>{value}</span>
     </div>
   );
 }
 
-function monthYearLabel(date) {
-  return date.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+// "saved so far / target" as a stacked fraction (numerator, rule, denominator)
+// instead of a slash - reads better at the Estimated Savings column's smaller
+// size than a single "$X / $Y" line would.
+function StackedFraction({ num, den, color }) {
+  return (
+    <span style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-start", lineHeight: 1.2 }}>
+      <span style={{ fontSize: 20, fontWeight: 700, color, fontVariantNumeric: "tabular-nums" }}>{num}</span>
+      <span style={{ width: "100%", borderTop: `1.5px solid color-mix(in srgb, ${color} 45%, transparent)`, margin: "3px 0" }} />
+      <span style={{ fontSize: 13, fontWeight: 600, color: HOME_MUTED, fontVariantNumeric: "tabular-nums" }}>{den}</span>
+    </span>
+  );
+}
+
+// One quarter of the unified overview panel (#123) - same click-to-expand
+// affordance the old standalone SummaryCard gave Balance/Bills/Cash/Savings
+// (chevron flips, ring highlight while its drawer is open below), just laid
+// out as a column inside one shared surface instead of four separate card
+// shells side by side.
+function OverviewColumn({ label, value, valueNode, color, caption, onClick, active, first }) {
+  const [hovered, setHovered] = useState(false);
+  const tint = color ?? HOME_TEXT;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      className="text-left cursor-pointer transition-all duration-150 active:scale-[0.98]"
+      style={{
+        flex: 1, minWidth: 0, padding: "16px 20px", border: "none", borderRadius: 0,
+        borderLeft: first ? "none" : `1px solid ${HOME_DIVIDER}`,
+        backgroundColor: active
+          ? `color-mix(in srgb, ${tint} 12%, transparent)`
+          : hovered
+            ? `color-mix(in srgb, ${tint} 7%, transparent)`
+            : "transparent",
+        font: "inherit", color: "inherit",
+      }}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: HOME_MUTED, margin: 0 }}>{label}</p>
+        <svg
+          xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+          style={{
+            color: active || hovered ? tint : HOME_MUTED, flexShrink: 0,
+            transform: active ? "rotate(180deg)" : "none", transition: "transform 200ms ease, color 150ms ease",
+          }}
+        >
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+      </div>
+      {valueNode ?? <p style={{ fontSize: 22, fontWeight: 700, color, margin: "6px 0 0", fontVariantNumeric: "tabular-nums" }}>{value}</p>}
+      {caption != null && <p style={{ fontSize: 11, fontWeight: 600, color: HOME_MUTED, margin: "5px 0 0" }}>{caption}</p>}
+    </button>
+  );
 }
 
 // Neither PRESETS nor getPresetRange generalize past "this month" / "last
@@ -109,6 +164,17 @@ function stepMonth(range, dir) {
   const to = new Date(anchor.getFullYear(), anchor.getMonth() + dir + 1, 0, 23, 59, 59, 999);
   return { from, to };
 }
+
+// Same shape stepMonth produces, but jumping straight to an arbitrary
+// year/month instead of stepping relative to the current one - what the
+// header's month/year picker (#124) uses once a specific one is clicked.
+function monthRangeFor(year, month) {
+  const from = new Date(year, month, 1, 0, 0, 0, 0);
+  const to = new Date(year, month + 1, 0, 23, 59, 59, 999);
+  return { from, to };
+}
+
+const MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 // Real categories only - "ALL" isn't a per-line series, it's the tab that
 // gets you to this chart in the first place.
@@ -163,6 +229,46 @@ function loadTrendCategories() {
 export default function Dashboard() {
   const { isDemo } = useAuth();
   const [transactions, setTransactions] = useState([]);
+
+  // Moved up here (was declared much further down) - the picker block below
+  // and trackedYears/trackedMonthsByYear both need it, and its init only
+  // depends on getNow(), so there's no ordering reason for it to sit later.
+  const [dateRange, setDateRange] = useState(() => {
+    const now = getNow();
+    const from = new Date(now);
+    from.setDate(1);
+    from.setHours(0, 0, 0, 0);
+    const to = new Date(now);
+    to.setMonth(to.getMonth() + 1, 0);
+    to.setHours(23, 59, 59, 999);
+    return { from, to };
+  });
+
+  // Years the header's year picker offers (#124) - only ones with at least
+  // one transaction, not every year since account creation. `transactions`
+  // is the whole unfiltered history (date-range filtering happens client-side
+  // below), so this doesn't need its own fetch. Declared up here, ahead of
+  // the picker's own state block, since its effects reference this.
+  const trackedYears = useMemo(() => {
+    const years = new Set(transactions.map((t) => Number(t.transaction_date.slice(0, 4))));
+    return [...years].sort((a, b) => a - b);
+  }, [transactions]);
+
+  // Same idea, per year - the month picker only offers months that year
+  // actually has a transaction in, not every month of the calendar. Keyed
+  // by year since the same month index means something different depending
+  // on which year is selected (e.g. 2025 might skip Jan-Mar while 2026 has
+  // them).
+  const trackedMonthsByYear = useMemo(() => {
+    const map = {};
+    for (const t of transactions) {
+      const year = Number(t.transaction_date.slice(0, 4));
+      const month = Number(t.transaction_date.slice(5, 7)) - 1;
+      (map[year] ??= new Set()).add(month);
+    }
+    return map;
+  }, [transactions]);
+
   const [loading, setLoading] = useState(true);
   const [safeToSpend, setSafeToSpend] = useState(null);
   const [safeToSpendStatus, setSafeToSpendStatus] = useState("loading"); // loading | ok | no-balance | no-schedule | error
@@ -193,6 +299,119 @@ export default function Dashboard() {
   const [categoriesOpen, setCategoriesOpen] = useState(false);
   const [categoriesSaved, setCategoriesSaved] = useState(false);
   const categoriesPanelRef = useRef(null);
+  // Header's month/year picker (#124) - null | "month" | "year". The strip
+  // of choices opens inline next to the title, pushing the next-month arrow
+  // right as it grows, instead of overlaying a dropdown on top of the page.
+  // Animated via `max-width` rather than `grid-template-columns: 0fr->1fr` -
+  // that trick reads fine for a single already-known-size drawer (see
+  // OverviewBreakdownSheet's grid-template-rows use), but interpolating a
+  // grid track's `fr` unit isn't reliably animatable the way plain length
+  // properties are, and it showed up here as the close snapping shut
+  // instantly instead of sliding. `max-width` doesn't have that problem, but
+  // needs an actual pixel target instead of `1fr` - `pickerWidth` below is
+  // that target, measured off the real content each time it changes.
+  //
+  // `datePicker` is the requested/target state (what the click asked for);
+  // `renderPicker` is what's actually mounted right now and can lag behind
+  // it, so content stays visible/measured before the width transition plays
+  // rather than the two racing in the same paint. `pickerOpen` drives the
+  // max-width transition itself, kept as its own boolean so switching
+  // straight from month to year (still "open" the whole time datePicker-wise)
+  // still goes through a real close-then-reopen instead of the content just
+  // cutting over mid-strip.
+  const [datePicker, setDatePicker] = useState(null);
+  const [renderPicker, setRenderPicker] = useState(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerWidth, setPickerWidth] = useState(0);
+  const pickerTimerRef = useRef(null);
+  const pickerContentRef = useRef(null);
+  const datePickerRef = useRef(null);
+  const PICKER_TRANSITION_MS = 320;
+  // The drawer's own cubic-bezier(0.32,0.72,0,1) is heavily front-loaded -
+  // 72% of the motion lands in the first third of the duration, which reads
+  // as a near-instant snap rather than a visible slide on a strip this
+  // small/short-lived. An even, standard ease reads as actual motion here.
+  const PICKER_EASE = "cubic-bezier(0.4, 0, 0.2, 1)";
+
+  // Blocks a new open/close/switch request until the current one has fully
+  // finished animating - spamming Month/Year otherwise re-triggers the
+  // effect below mid-transition, cancelling and restarting it every click
+  // instead of ever letting the slide actually play out. A plain ref (not
+  // state) since it only ever gates click handlers, never drives a render.
+  const pickerBusyRef = useRef(false);
+  const pickerBusyTimerRef = useRef(null);
+  function lockPicker(ms) {
+    pickerBusyRef.current = true;
+    clearTimeout(pickerBusyTimerRef.current);
+    pickerBusyTimerRef.current = setTimeout(() => { pickerBusyRef.current = false; }, ms);
+  }
+  // Toggling closed re-checks the button clicked rather than always the
+  // opposite of open, so a click while busy (ignored below) can't leave a
+  // stale toggle target for the next click that lands after the lock clears.
+  function requestPicker(next) {
+    if (pickerBusyRef.current) return;
+    setDatePicker((p) => (p === next ? null : next));
+  }
+
+  useEffect(() => {
+    clearTimeout(pickerTimerRef.current);
+    if (datePicker == null) {
+      // Closing - collapse first, unmount the strip's content only once
+      // that's finished so it's visibly still there while it shrinks
+      // (mirrors opening, where content is already there as it grows).
+      if (renderPicker != null) lockPicker(PICKER_TRANSITION_MS + 60);
+      setPickerOpen(false);
+      pickerTimerRef.current = setTimeout(() => setRenderPicker(null), PICKER_TRANSITION_MS);
+    } else if (renderPicker == null) {
+      // Opening from fully closed - mount the new content but stay closed
+      // (max-width 0) for this render; the layout-effect below measures it,
+      // and the plain effect after that opens it only once that measurement
+      // has actually painted, so the transition has a real "before" to
+      // animate from instead of both changes landing in the same frame.
+      lockPicker(PICKER_TRANSITION_MS + 60);
+      setRenderPicker(datePicker);
+    } else if (renderPicker !== datePicker) {
+      // Switching between month and year while already open - collapse the
+      // old content first, then swap and reopen, instead of the buttons
+      // just cutting over mid-strip with no transition at all. Two transition
+      // windows back-to-back, so the lock covers both.
+      lockPicker(PICKER_TRANSITION_MS * 2 + 60);
+      setPickerOpen(false);
+      pickerTimerRef.current = setTimeout(() => setRenderPicker(datePicker), PICKER_TRANSITION_MS);
+    }
+    // renderPicker deliberately excluded - it's only ever changed by this
+    // same effect, and reacting to it too would refire this on its own updates.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [datePicker]);
+
+  useEffect(() => () => {
+    clearTimeout(pickerTimerRef.current);
+    clearTimeout(pickerBusyTimerRef.current);
+  }, []);
+
+  // Measures the just-mounted strip before it's opened (see above) - runs
+  // synchronously after the DOM update but before the browser paints, so the
+  // 0-width state below never actually flashes on screen with the wrong
+  // target baked in.
+  useLayoutEffect(() => {
+    if (renderPicker && pickerContentRef.current) {
+      setPickerWidth(pickerContentRef.current.scrollWidth);
+    }
+    // Re-measure if the strip's own item count can change under it - a new
+    // tracked year/month, or (month strip specifically) the selected year
+    // changing which months that year actually has data for.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [renderPicker, trackedYears.length, dateRange.from.getFullYear()]);
+
+  // Opens the strip once it's mounted, measured, and actually matches what
+  // was requested - deliberately a normal (post-paint) effect, not the
+  // layout one above, so the closed/0 state gets a real paint first and the
+  // max-width transition has something to animate from.
+  useEffect(() => {
+    if (renderPicker && renderPicker === datePicker) {
+      setPickerOpen(true);
+    }
+  }, [renderPicker, datePicker, pickerWidth]);
   const [addMode, setAddMode] = useState(null); // null | "menu" | "single" | "batch" | "import"
   const addOpen = addMode !== null;
   const addToday = getToday();
@@ -272,6 +491,18 @@ export default function Dashboard() {
     setDateRange((prev) => stepMonth(prev, dir));
   }
 
+  function gotoMonth(monthIndex) {
+    setActivePreset(null);
+    setDateRange((prev) => monthRangeFor((prev.from ?? getNow()).getFullYear(), monthIndex));
+    setDatePicker(null);
+  }
+
+  function gotoYear(year) {
+    setActivePreset(null);
+    setDateRange((prev) => monthRangeFor(year, (prev.from ?? getNow()).getMonth()));
+    setDatePicker(null);
+  }
+
   function handleAddChange(e) {
     const { name, value } = e.target;
     setAddForm(f => ({ ...f, [name]: value, ...(name === "category" && lockedNameFor(value) ? { name: lockedNameFor(value) } : {}) }));
@@ -295,16 +526,6 @@ export default function Dashboard() {
 
   const tableRef = useRef(null);
   const addFormRef = useRef(null);
-  const [dateRange, setDateRange] = useState(() => {
-    const now = getNow();
-    const from = new Date(now);
-    from.setDate(1);
-    from.setHours(0, 0, 0, 0);
-    const to = new Date(now);
-    to.setMonth(to.getMonth() + 1, 0);
-    to.setHours(23, 59, 59, 999);
-    return { from, to };
-  });
 
   async function devFetch() {
     if (devForceErrorRef.current) {
@@ -676,6 +897,18 @@ export default function Dashboard() {
     return () => document.removeEventListener("mousedown", handleOutsideClick);
   }, [categoriesOpen]);
 
+  useEffect(() => {
+    if (!datePicker) return;
+    function handleOutsideClick(e) {
+      if (pickerBusyRef.current) return;
+      if (datePickerRef.current && !datePickerRef.current.contains(e.target)) {
+        setDatePicker(null);
+      }
+    }
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => document.removeEventListener("mousedown", handleOutsideClick);
+  }, [datePicker]);
+
   // Toggling previews on the chart immediately; Save just persists that
   // selection to localStorage so it's remembered next visit.
   function toggleTrendCategory(cat) {
@@ -739,7 +972,11 @@ export default function Dashboard() {
   let overviewSavings;
   if (savingsStatus === "ok" && savings) {
     overviewSavings = {
-      value: `${fmtWhole(savings.saved_so_far)} / ${fmtWhole(savings.estimated_savings)}`,
+      // Kept as separate saved/estimated fields (not a single joined string)
+      // so the overview column can render them as a stacked fraction; the
+      // breakdown drawer's own SavingsBody still joins them with "/" itself.
+      saved: fmtWhole(savings.saved_so_far),
+      estimated: fmtWhole(savings.estimated_savings),
       color: CATEGORY_ACCENT.SAVINGS,
     };
   } else if (savingsStatus === "loading") {
@@ -1236,7 +1473,112 @@ export default function Dashboard() {
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
               </button>
-              <h1 className="text-3xl font-bold tracking-tight" style={{ color: text, minWidth: "13ch", textAlign: "center" }}>{monthYearLabel(dateRange.from)}</h1>
+              {/* Clicking Month or Year opens a strip of choices right next
+                  to the title - grid-template-columns 0fr->1fr smoothly
+                  opens the space for it and pushes the next-month arrow
+                  right as it grows (#124), instead of overlaying a dropdown
+                  on top of the page. Year only ever offers years that
+                  actually have a transaction. */}
+              <div ref={datePickerRef} className="flex items-center">
+                <div className="flex items-center" style={{ gap: 10 }}>
+                  <button
+                    onClick={() => requestPicker("month")}
+                    className="text-3xl font-bold tracking-tight cursor-pointer transition-colors"
+                    style={{ color: datePicker === "month" ? ACCENT : text, background: "none", border: "none", padding: 0 }}
+                    onMouseEnter={e => e.currentTarget.style.color = datePicker === "month" ? ACCENT_DEEP : ACCENT}
+                    onMouseLeave={e => e.currentTarget.style.color = datePicker === "month" ? ACCENT : text}
+                  >
+                    {dateRange.from.toLocaleDateString("en-US", { month: "long" })}
+                  </button>
+                  <button
+                    onClick={() => requestPicker("year")}
+                    className="text-3xl font-bold tracking-tight cursor-pointer transition-colors"
+                    style={{ color: datePicker === "year" ? ACCENT : text, background: "none", border: "none", padding: 0 }}
+                    onMouseEnter={e => e.currentTarget.style.color = datePicker === "year" ? ACCENT_DEEP : ACCENT}
+                    onMouseLeave={e => e.currentTarget.style.color = datePicker === "year" ? ACCENT : text}
+                  >
+                    {dateRange.from.getFullYear()}
+                  </button>
+                </div>
+
+                <div style={{
+                  overflow: "hidden",
+                  maxWidth: pickerOpen ? pickerWidth : 0,
+                  transition: `max-width ${PICKER_TRANSITION_MS}ms ${PICKER_EASE}`,
+                }}>
+                  <div ref={pickerContentRef} className="flex items-center" style={{ gap: 4, paddingLeft: 16, width: "max-content" }}>
+                      {renderPicker === "month" && (() => {
+                        const trackedMonths = trackedMonthsByYear[dateRange.from.getFullYear()];
+                        if (!trackedMonths || trackedMonths.size === 0) {
+                          return <span style={{ fontSize: 12.5, color: muted, whiteSpace: "nowrap" }}>No tracked months this year</span>;
+                        }
+                        return MONTH_ABBR.map((m, i) => {
+                          if (!trackedMonths.has(i)) return null;
+                          const active = i === dateRange.from.getMonth();
+                          // Today's real month gets its own ring regardless of
+                          // which month is being viewed, so "jump back to now"
+                          // stays a glance instead of a count - active fills
+                          // solid, current-but-not-active just gets outlined.
+                          const isCurrentMonth = i === getNow().getMonth() && dateRange.from.getFullYear() === getNow().getFullYear();
+                          return (
+                          <button
+                            key={m}
+                            onClick={() => gotoMonth(i)}
+                            className="transition-colors"
+                            style={{
+                              padding: "6px 10px", borderRadius: 999, cursor: "pointer",
+                              fontSize: 13, fontWeight: 700, whiteSpace: "nowrap",
+                              border: isCurrentMonth && !active ? `1.5px solid ${text}` : "1.5px solid transparent",
+                              color: active ? ACCENT_TEXT : muted,
+                              backgroundColor: active ? ACCENT : "rgba(255,255,255,0.05)",
+                            }}
+                            onMouseEnter={e => {
+                              e.currentTarget.style.backgroundColor = active ? ACCENT_DEEP : `color-mix(in srgb, ${ACCENT} 22%, transparent)`;
+                              if (!active) e.currentTarget.style.color = ACCENT;
+                            }}
+                            onMouseLeave={e => {
+                              e.currentTarget.style.backgroundColor = active ? ACCENT : "rgba(255,255,255,0.05)";
+                              if (!active) e.currentTarget.style.color = muted;
+                            }}
+                          >
+                            {m}
+                          </button>
+                          );
+                        });
+                      })()}
+                      {renderPicker === "year" && (trackedYears.length === 0 ? (
+                        <span style={{ fontSize: 12.5, color: muted, whiteSpace: "nowrap" }}>No tracked years yet</span>
+                      ) : trackedYears.map(y => {
+                        const active = y === dateRange.from.getFullYear();
+                        const isCurrentYear = y === getNow().getFullYear();
+                        return (
+                          <button
+                            key={y}
+                            onClick={() => gotoYear(y)}
+                            className="transition-colors"
+                            style={{
+                              padding: "6px 14px", borderRadius: 999, cursor: "pointer",
+                              fontSize: 13, fontWeight: 700, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap",
+                              border: isCurrentYear && !active ? `1.5px solid ${text}` : "1.5px solid transparent",
+                              color: active ? ACCENT_TEXT : muted,
+                              backgroundColor: active ? ACCENT : "rgba(255,255,255,0.05)",
+                            }}
+                            onMouseEnter={e => {
+                              e.currentTarget.style.backgroundColor = active ? ACCENT_DEEP : `color-mix(in srgb, ${ACCENT} 22%, transparent)`;
+                              if (!active) e.currentTarget.style.color = ACCENT;
+                            }}
+                            onMouseLeave={e => {
+                              e.currentTarget.style.backgroundColor = active ? ACCENT : "rgba(255,255,255,0.05)";
+                              if (!active) e.currentTarget.style.color = muted;
+                            }}
+                          >
+                            {y}
+                          </button>
+                        );
+                      }))}
+                  </div>
+                </div>
+              </div>
               <button
                 onClick={() => handleStepMonth(1)}
                 aria-label="Next month"
@@ -1266,7 +1608,7 @@ export default function Dashboard() {
                   </div>
                 ))}
               </div>
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-4 gap-4">
                 {[...Array(4)].map((_, i) => (
                   <div key={i} className="rounded-2xl px-5 py-5" style={{ backgroundColor: surface }}>
                     <Skel h={16} w="45%" />
@@ -1276,7 +1618,7 @@ export default function Dashboard() {
               </div>
             </div>
           ) : (
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-4 gap-4">
               {[...Array(4)].map((_, i) => (
                 <div key={i} className="rounded-2xl px-5 py-5" style={{ backgroundColor: surface }}>
                   <Skel h={16} w="45%" />
@@ -1310,45 +1652,47 @@ export default function Dashboard() {
                 valueColor={HOME_EXPENSE}
               />
             </div>
-            {/* Overview grid — same four fields as mobile's Home overview
-                card (Current Balance / Upcoming Bills / Available Cash /
-                Estimated Savings). All four cards stay compact/uniform;
-                clicking one opens a shared drawer below the grid instead of
-                growing the card itself or opening a modal. */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <SummaryCard
+            {/* Overview panel (#123) — same four fields as mobile's Home
+                overview card (Current Balance / Upcoming Bills / Available
+                Cash / Estimated Savings), merged into one wide surface with
+                internal columns instead of four repeated card shells.
+                Clicking a column still opens the same shared drawer below it
+                (toggleBreakdown/renderDrawerBody, unchanged) rather than
+                growing the column itself or opening a modal. */}
+            <div className="grid grid-cols-4 rounded-2xl overflow-hidden" style={{ backgroundColor: surface }}>
+              <OverviewColumn
+                first
                 label="CURRENT BALANCE"
                 value={overviewBalance.value}
-                activeColor={overviewBalance.color}
-                valueColor={overviewBalance.color}
-                extraLabel={overviewBalance.caption}
+                color={overviewBalance.color}
+                caption={overviewBalance.caption}
                 onClick={() => toggleBreakdown("balance")}
                 active={breakdownCell === "balance"}
               />
-              <SummaryCard
+              <OverviewColumn
                 label="UPCOMING BILLS"
                 value={overviewBills.value}
-                activeColor={overviewBills.color}
-                valueColor={overviewBills.color}
-                extraLabel={overviewBills.caption}
+                color={overviewBills.color}
+                caption={overviewBills.caption}
                 onClick={() => toggleBreakdown("bills")}
                 active={breakdownCell === "bills"}
               />
-              <SummaryCard
+              <OverviewColumn
                 label="AVAILABLE CASH"
                 value={overviewCash.value}
-                activeColor={overviewCash.color}
-                valueColor={overviewCash.color}
-                extraLabel={overviewCash.caption}
+                color={overviewCash.color}
+                caption={overviewCash.caption}
                 onClick={() => toggleBreakdown("cash")}
                 active={breakdownCell === "cash"}
               />
-              <SummaryCard
+              <OverviewColumn
                 label="ESTIMATED SAVINGS"
                 value={overviewSavings.value}
-                activeColor={overviewSavings.color}
-                valueColor={overviewSavings.color}
-                extraLabel={overviewSavings.caption}
+                valueNode={overviewSavings.saved != null
+                  ? <StackedFraction num={overviewSavings.saved} den={overviewSavings.estimated} color={overviewSavings.color} />
+                  : undefined}
+                color={overviewSavings.color}
+                caption={overviewSavings.caption}
                 onClick={() => toggleBreakdown("savings")}
                 active={breakdownCell === "savings"}
               />
@@ -1382,6 +1726,19 @@ export default function Dashboard() {
                       animation: `breakdown-fade-out ${SWITCH_TRANSITION_MS}ms ease forwards`,
                       pointerEvents: "none",
                     }}
+                    // Clears outgoingCell off the browser's own animation
+                    // clock instead of only the JS setTimeout in
+                    // toggleBreakdown (kept as a fallback) - that timer's
+                    // ~180ms and the CSS animation's ~180ms start from two
+                    // different clocks (JS call time vs. whenever the
+                    // browser actually starts the animation next paint), so
+                    // they drift. If the timer fired first it ripped
+                    // `animation` off the incoming layer below mid-flight,
+                    // snapping its opacity from wherever a still-running
+                    // fade-in had reached in the *transition* meant for the
+                    // toggle-closed case, instead of easing the rest of the
+                    // way - the flash/double-run on a switch (#128).
+                    onAnimationEnd={() => setOutgoingCell(null)}
                   >
                     {renderDrawerBody(outgoingCell)}
                   </div>
@@ -1393,12 +1750,17 @@ export default function Dashboard() {
                     style={{
                       backgroundColor: surface,
                       opacity: breakdownClosing ? 0 : 1,
-                      transition: `opacity ${DRAWER_TRANSITION_MS}ms ease`,
+                      // Mutually exclusive with `animation` below rather than
+                      // both targeting opacity at once - a CSS animation
+                      // always wins over a transition on the same property,
+                      // so leaving this transition active during a switch
+                      // did nothing but race it (#128).
+                      transition: outgoingCell ? "none" : `opacity ${DRAWER_TRANSITION_MS}ms ease`,
                       // Only fades in when there's an outgoing layer under it
                       // (a switch) - a fresh open already gets its motion from
                       // the outer grid-rows/margin animation and doesn't need
                       // a second, redundant entrance animation on top of it.
-                      animation: outgoingCell ? `breakdown-fade-in ${SWITCH_TRANSITION_MS}ms ease` : undefined,
+                      animation: outgoingCell ? `breakdown-fade-in ${SWITCH_TRANSITION_MS}ms ease forwards` : undefined,
                     }}
                   >
                     {renderDrawerBody(breakdownCell, { showClose: true })}
@@ -1408,7 +1770,7 @@ export default function Dashboard() {
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-4 gap-4">
             <SummaryCard
               label={`${CATEGORY_CONFIG[activeTab].label.toUpperCase()} TOTAL`}
               value={fmt(summary.categoryTotal)}
@@ -1492,7 +1854,7 @@ export default function Dashboard() {
               <Skel h={TREND_CHART_HEIGHT} style={{ borderRadius: 16 }} />
             </div>
           ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-4">
               <div className="rounded-2xl p-6" style={{ backgroundColor: surface }}>
                 <Skel h={28} w="42%" />
                 <Skel h={275} style={{ marginTop: 20, borderRadius: 12 }} />
@@ -1513,14 +1875,14 @@ export default function Dashboard() {
                   <button
                     onClick={() => setCategoriesOpen((v) => !v)}
                     style={{
-                      display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 999,
-                      border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, color: text,
+                      display: "flex", alignItems: "center", gap: 8, padding: "8px 16px", borderRadius: 999,
+                      border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600, color: text,
                       backgroundColor: categoriesOpen ? "rgba(255,255,255,0.09)" : "rgba(255,255,255,0.05)",
                       transition: "background-color 150ms ease",
                     }}
                   >
                     Categories
-                    <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                    <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
                       style={{ transform: categoriesOpen ? "rotate(180deg)" : "none", transition: "transform 150ms ease" }}>
                       <path d="M6 9l6 6 6-6" />
                     </svg>
@@ -1575,14 +1937,14 @@ export default function Dashboard() {
                     <TrendPill key={cat} label={CATEGORY_CONFIG[cat].label} value={fmt(trendTotals[cat])} color={CATEGORY_ACCENT[cat]} />
                   ))}
                 </div>
-              <div className="flex items-center gap-1" style={{ padding: 3, borderRadius: 999, backgroundColor: "rgba(255,255,255,0.05)", flexShrink: 0 }}>
+              <div className="flex items-center gap-1" style={{ padding: 2, borderRadius: 999, backgroundColor: "rgba(255,255,255,0.05)", flexShrink: 0 }}>
                 {[[1, "1M"], [3, "3M"], [6, "6M"], [12, "1Y"], ["all", "Lifetime"]].map(([n, label]) => (
                   <button
                     key={n}
                     onClick={() => setTrendMonths(n)}
                     style={{
-                      padding: "5px 12px", borderRadius: 999, border: "none", cursor: "pointer",
-                      fontSize: 12, fontWeight: 700,
+                      padding: "8px 16px", borderRadius: 999, border: "none", cursor: "pointer",
+                      fontSize: 14, fontWeight: 700,
                       color: trendMonths === n ? ACCENT_TEXT : muted,
                       backgroundColor: trendMonths === n ? ACCENT : "transparent",
                       transition: "background-color 150ms ease, color 150ms ease",
@@ -1650,7 +2012,7 @@ export default function Dashboard() {
             ) : <Empty />}
           </div>
         ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 gap-4">
           <ChartCard title="Spending Over Time" activeColor={activeColor}>
             {areaData.length > 0 ? (
               <ResponsiveContainer
@@ -1784,52 +2146,70 @@ export default function Dashboard() {
         )}
 
         {loading ? (
-          <div className="rounded-2xl" style={{ backgroundColor: surface }}>
-            {/* card header — matches px-6 py-4 */}
-            <div className="px-6 py-4 border-b" style={{ borderColor: border }}>
-              <Skel h={28} w="160px" />
-            </div>
-            {/* thead — text-base = 24px line-height, py-3 */}
-            <div className="px-6 py-3 border-b flex items-center gap-6" style={{ borderColor: border }}>
-              <Skel h={24} w="110px" />
-              <Skel h={24} style={{ flex: 1 }} />
-              <Skel h={24} w="90px" />
-              <Skel h={24} w="80px" />
-              <Skel h={24} w="40px" />
-            </div>
-            {/* rows — text-lg name = 28px line-height, py-4 */}
-            {[...Array(10)].map((_, i) => (
-              <div key={i} className="px-6 py-4 border-t flex items-center gap-6" style={{ borderColor: border }}>
-                <Skel h={20} w="110px" />
-                <Skel h={28} style={{ flex: 1 }} />
-                <Skel h={26} w="90px" style={{ borderRadius: 999 }} />
-                <Skel h={24} w="80px" />
-                <Skel h={20} w="40px" />
+          <div className="grid gap-4 items-start" style={{ gridTemplateColumns: "2fr 1fr" }}>
+            <div className="rounded-2xl" style={{ backgroundColor: surface }}>
+              {/* card header — title + pagination pills all live in one row
+                  now (#127), matches px-6 py-4 */}
+              <div className="px-6 py-4 border-b flex items-center justify-between" style={{ borderColor: border }}>
+                <Skel h={28} w="140px" />
+                <Skel h={28} w="200px" style={{ borderRadius: 999 }} />
               </div>
-            ))}
-            {/* footer — text-xs = 16px line-height, py-3 */}
-            <div className="px-6 py-3 border-t flex items-center justify-between" style={{ borderColor: border }}>
-              <Skel h={16} w="160px" />
-              <Skel h={16} w="100px" />
+              {/* thead — text-base = 24px line-height, py-3. Name/Amount/Date
+                  order matches the real table (#125) - no Category column
+                  anymore, that's now just the dot in front of each row's name. */}
+              <div className="px-6 py-3 border-b flex items-center gap-6" style={{ borderColor: border }}>
+                <Skel h={24} style={{ flex: 1 }} />
+                <Skel h={24} w="90px" />
+                <Skel h={24} w="110px" />
+                <Skel h={24} w="40px" />
+              </div>
+              {/* rows — text-lg name = 28px line-height, py-4 */}
+              {[...Array(8)].map((_, i) => (
+                <div key={i} className="px-6 py-4 border-t flex items-center gap-6" style={{ borderColor: border }}>
+                  <div className="flex items-center gap-3" style={{ flex: 1 }}>
+                    <Skel h={9} w="9px" style={{ borderRadius: 999, flexShrink: 0 }} />
+                    <Skel h={28} style={{ flex: 1 }} />
+                  </div>
+                  <Skel h={24} w="90px" />
+                  <Skel h={20} w="110px" />
+                  <Skel h={20} w="40px" />
+                </div>
+              ))}
+            </div>
+            <div className="rounded-2xl" style={{ backgroundColor: surface }}>
+              <div className="px-6 py-4 border-b" style={{ borderColor: border }}>
+                <Skel h={28} w="120px" />
+              </div>
+              {[...Array(6)].map((_, i) => (
+                <div key={i} className="px-6 py-4 flex items-center gap-4" style={{ borderTop: i === 0 ? "none" : `1px solid ${border}` }}>
+                  <Skel h={9} w="9px" style={{ borderRadius: 999, flexShrink: 0 }} />
+                  <Skel h={24} style={{ flex: 1 }} />
+                  <Skel h={28} w="72px" />
+                  <Skel h={24} w="84px" />
+                </div>
+              ))}
             </div>
           </div>
         ) : (
-        <div ref={tableRef}>
-          <TransactionTable
-            rows={paginated}
-            page={page}
-            perPage={perPage}
-            total={sorted.length}
-            onPageChange={setPage}
-            onPerPageChange={setPerPage}
-            onEdit={(t) => { setEditingTransaction(t); setEditingFromSearch(false); }}
-            onDelete={handleDelete}
-            activeColor={activeColor}
-            highlightId={highlightId}
-            sortColumn={sortColumn}
-            sortDir={sortDir}
-            onSort={handleSort}
-          />
+        <div className="grid gap-4 items-start" style={{ gridTemplateColumns: "2fr 1fr" }}>
+          <div ref={tableRef}>
+            <TransactionTable
+              rows={paginated}
+              page={page}
+              perPage={perPage}
+              total={sorted.length}
+              onPageChange={setPage}
+              onPerPageChange={setPerPage}
+              onEdit={(t) => { setEditingTransaction(t); setEditingFromSearch(false); }}
+              onDelete={handleDelete}
+              activeColor={activeColor}
+              highlightId={highlightId}
+              sortColumn={sortColumn}
+              sortDir={sortDir}
+              onSort={handleSort}
+            />
+          </div>
+          <CategoryTrendPanel transactions={transactions} dateRange={dateRange} />
         </div>
         )}
       </main>

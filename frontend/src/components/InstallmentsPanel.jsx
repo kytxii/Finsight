@@ -71,7 +71,14 @@ export default function InstallmentsPanel({ desktop = false, addSignal, onSaved 
   const [loadFailed, setLoadFailed] = useState(false);
   const [availableCash, setAvailableCash] = useState(null);
 
+  // `showForm` is the edit modal (existing row); `showAddCard` is a new
+  // installment, which desktop now adds inline in the grid instead of
+  // through that same modal (#123 follow-up - matches how Recurring's own
+  // "+" already added a draft card in place rather than popping a dialog).
+  // The sidebar/mobile-modal layout below still renders formNode inline
+  // either way, so this split only changes desktop's behavior.
   const [showForm, setShowForm] = useState(false);
+  const [showAddCard, setShowAddCard] = useState(false);
   const [editingId, setEditingId] = useState(null); // null while adding, row id while editing
   const [draft, setDraft] = useState(EMPTY_DRAFT);
   const [saving, setSaving] = useState(false);
@@ -109,7 +116,7 @@ export default function InstallmentsPanel({ desktop = false, addSignal, onSaved 
     setEditingId(null);
     setDraft(EMPTY_DRAFT);
     setFormError("");
-    setShowForm(true);
+    setShowAddCard(true);
   }
 
   // Same "bump a counter, watch it" signal MobileInstallments already uses
@@ -133,11 +140,13 @@ export default function InstallmentsPanel({ desktop = false, addSignal, onSaved 
     });
     setFormError("");
     setShowForm(true);
+    setShowAddCard(false);
     setDeleteConfirmId(null);
   }
 
   function closeForm() {
     setShowForm(false);
+    setShowAddCard(false);
     setFormError("");
   }
 
@@ -362,12 +371,24 @@ export default function InstallmentsPanel({ desktop = false, addSignal, onSaved 
               Try again
             </button>
           </div>
-        ) : rows.length === 0 ? (
+        ) : rows.length === 0 && !showAddCard ? (
           <div style={{ textAlign: "center", padding: "28px 16px", border: `1px dashed ${border}`, borderRadius: 16 }}>
             <p style={{ fontSize: 13, color: muted, margin: 0 }}>No installments yet - use the + above to add one</p>
           </div>
         ) : (
           <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 16, alignItems: "start" }}>
+            <style>{`
+              @keyframes ip-card-in {
+                from { opacity: 0; transform: translateY(-6px); }
+                to   { opacity: 1; transform: translateY(0); }
+              }
+            `}</style>
+            {/* New installment (the page header's "+") adds inline here now
+                instead of popping the same dialog editing a row opens (#123
+                follow-up) - matches Recurring's own draft-card treatment. */}
+            {showAddCard && (
+              <div style={{ animation: "ip-card-in 0.2s ease-out" }}>{formNode}</div>
+            )}
             {rows.map(row => {
               const impact = rowImpact(row);
               const barColor = impact ? STATUS_COLOR[impact.status] : muted;
@@ -411,9 +432,10 @@ export default function InstallmentsPanel({ desktop = false, addSignal, onSaved 
           </div>
         )}
 
-        {/* Detail/edit modal - clicking any card (or the page header's "+")
-            opens this instead of a card-level edit button; delete now lives
-            in here too instead of on the main card. */}
+        {/* Detail/edit modal - clicking an existing card opens this instead
+            of a card-level edit button; delete now lives in here too instead
+            of on the main card. Adding a new installment no longer goes
+            through this - see showAddCard above. */}
         {showForm && (
           <div
             className="fixed inset-0 z-50 flex items-center justify-center px-4"
@@ -431,7 +453,7 @@ export default function InstallmentsPanel({ desktop = false, addSignal, onSaved 
     <div style={{ flex: 1, overflowY: "auto", overscrollBehavior: "contain", padding: "16px 20px 32px", display: "flex", flexDirection: "column", gap: 20, color: text }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <p style={{ ...labelStyle, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 0 }}>Installments</p>
-        {!showForm && (
+        {!showForm && !showAddCard && (
           <button onClick={openAdd} style={{ fontSize: 11, fontWeight: 600, color: muted, background: "none", border: "none", cursor: "pointer" }}>
             + Add
           </button>
@@ -456,7 +478,7 @@ export default function InstallmentsPanel({ desktop = false, addSignal, onSaved 
         </div>
       ) : (
         <>
-          {rows.length === 0 && !showForm && (
+          {rows.length === 0 && !showForm && !showAddCard && (
             <div style={{ textAlign: "center", padding: "20px 12px", border: `1px dashed ${border}`, borderRadius: 12 }}>
               <p style={{ fontSize: 13, color: muted, marginBottom: 10 }}>No installments yet</p>
               <button
@@ -505,7 +527,7 @@ export default function InstallmentsPanel({ desktop = false, addSignal, onSaved 
             </div>
           )}
 
-          {showForm && formNode}
+          {(showForm || showAddCard) && formNode}
         </>
       )}
     </div>

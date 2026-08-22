@@ -718,11 +718,17 @@ export default function RecurringPaymentsModal({ onClose, inline = false, deskto
 
   function categorySection(categoryKey, label, sectionRows) {
     const sectionDrafts = draftsWithIndex.filter(({ d }) => d.category === categoryKey);
+    const color = CATEGORY_ACCENT[categoryKey];
     return (
       <div>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 12 }}>
-          <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: muted, margin: 0 }}>{label}</p>
-          <p style={{ fontSize: 12, fontWeight: 700, color: text, margin: 0, fontVariantNumeric: "tabular-nums" }}>{fmt(sumOf(sectionRows))}/mo</p>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+          <p style={{ fontSize: 17, fontWeight: 800, letterSpacing: "-0.2px", color: text, margin: 0 }}>{label}</p>
+          <span style={{
+            fontSize: 12.5, fontWeight: 700, color, fontVariantNumeric: "tabular-nums",
+            padding: "3px 10px", borderRadius: 999, backgroundColor: `color-mix(in srgb, ${color} 16%, transparent)`,
+          }}>
+            {fmt(sumOf(sectionRows))}/mo
+          </span>
         </div>
         {sectionRows.length === 0 && sectionDrafts.length === 0 ? (
           <div style={{ textAlign: "center", padding: "20px 16px", border: `1px dashed ${border}`, borderRadius: 16 }}>
@@ -738,8 +744,32 @@ export default function RecurringPaymentsModal({ onClose, inline = false, deskto
     );
   }
 
+  // Shared by both layouts below (table/sidebar and this desktop card grid) -
+  // previously defined only inside tableContent's own <style>, so a draft
+  // card added here on desktop (which renders desktopCardsContent, never
+  // tableContent) referenced these keyframe names but they were never
+  // actually in the DOM - the animation was a silent no-op (#123 follow-up).
+  const keyframesStyle = (
+    <style>{`
+        @keyframes rp-bar-sweep {
+          0%   { transform: scaleX(0); opacity: 0.9; }
+          55%  { transform: scaleX(1); opacity: 0.9; }
+          100% { transform: scaleX(1); opacity: 0;   }
+        }
+        @keyframes rp-row-in {
+          from { opacity: 0; transform: translateY(-6px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes rp-pill-pop {
+          0%   { transform: scale(0.88); opacity: 0.6; }
+          100% { transform: scale(1);    opacity: 1;   }
+        }
+    `}</style>
+  );
+
   const desktopCardsContent = (
     <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
+      {keyframesStyle}
       {rows.length === 0 && drafts.length === 0 && !loading ? (
         <div style={{ textAlign: "center", padding: "28px 16px", border: `1px dashed ${border}`, borderRadius: 16 }}>
           <p style={{ fontSize: 13, color: muted, margin: 0 }}>No recurring payments yet</p>
@@ -761,21 +791,7 @@ export default function RecurringPaymentsModal({ onClose, inline = false, deskto
 
   const tableContent = (
     <>
-      <style>{`
-        @keyframes rp-bar-sweep {
-          0%   { transform: scaleX(0); opacity: 0.9; }
-          55%  { transform: scaleX(1); opacity: 0.9; }
-          100% { transform: scaleX(1); opacity: 0;   }
-        }
-        @keyframes rp-row-in {
-          from { opacity: 0; transform: translateY(-6px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes rp-pill-pop {
-          0%   { transform: scale(0.88); opacity: 0.6; }
-          100% { transform: scale(1);    opacity: 1;   }
-        }
-      `}</style>
+      {keyframesStyle}
 
       <div style={{
         overflowX: "auto",
@@ -1035,34 +1051,6 @@ export default function RecurringPaymentsModal({ onClose, inline = false, deskto
   if (desktop) {
     return (
       <div style={{ padding: "24px 28px 5px", display: "flex", flexDirection: "column", gap: 24, color: text }}>
-        {loading ? (
-          <div className="grid grid-cols-3 gap-4">
-            {[...Array(3)].map((_, i) => (
-              <div key={i} className="rounded-2xl px-5 py-4" style={{ backgroundColor: bg }}>
-                <Skel w="60%" h={11} />
-                <Skel w="50%" h={22} style={{ marginTop: 8 }} />
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="grid grid-cols-3 gap-4">
-            <div className="rounded-2xl px-5 py-4" style={{ backgroundColor: bg }}>
-              <p style={{ fontSize: 11, fontWeight: 600, color: muted, margin: 0 }}>TOTAL MONTHLY</p>
-              <p style={{ fontSize: 22, fontWeight: 700, color: text, margin: "4px 0 0", fontVariantNumeric: "tabular-nums" }}>{fmt(sumOf(rows))}</p>
-              <p style={{ fontSize: 11.5, color: muted, margin: "3px 0 0" }}>{rows.length} recurring payment{rows.length !== 1 ? "s" : ""}</p>
-            </div>
-            <div className="rounded-2xl px-5 py-4" style={{ backgroundColor: bg }}>
-              <p style={{ fontSize: 11, fontWeight: 600, color: muted, margin: 0 }}>BILLS</p>
-              <p style={{ fontSize: 22, fontWeight: 700, color: CATEGORY_ACCENT.BILL, margin: "4px 0 0", fontVariantNumeric: "tabular-nums" }}>{fmt(sumOf(bills))}</p>
-              <p style={{ fontSize: 11.5, color: muted, margin: "3px 0 0" }}>{bills.length} bill{bills.length !== 1 ? "s" : ""}</p>
-            </div>
-            <div className="rounded-2xl px-5 py-4" style={{ backgroundColor: bg }}>
-              <p style={{ fontSize: 11, fontWeight: 600, color: muted, margin: 0 }}>SUBSCRIPTIONS</p>
-              <p style={{ fontSize: 22, fontWeight: 700, color: CATEGORY_ACCENT.SUBSCRIPTION, margin: "4px 0 0", fontVariantNumeric: "tabular-nums" }}>{fmt(sumOf(subscriptions))}</p>
-              <p style={{ fontSize: 11.5, color: muted, margin: "3px 0 0" }}>{subscriptions.length} subscription{subscriptions.length !== 1 ? "s" : ""}</p>
-            </div>
-          </div>
-        )}
         {loading ? (
           <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 16 }}>
             {[...Array(4)].map((_, i) => <Skel key={i} h={128} style={{ borderRadius: 16, opacity: 1 - i * 0.12 }} />)}
