@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { CATEGORY_CONFIG, INCOME_TYPES, fmt } from "../utils/finance";
-import { useTheme } from "../hooks/useTheme";
+import { HOME_SURFACE, HOME_DIVIDER, HOME_TEXT, HOME_MUTED, HOME_INCOME, HOME_EXPENSE, CATEGORY_ACCENT } from "./categoryVisuals";
 
 function SortIcon({ active, dir, activeColor, muted }) {
   if (active && dir === "asc") {
@@ -28,7 +28,6 @@ function SortIcon({ active, dir, activeColor, muted }) {
 }
 
 export default function TransactionTable({ rows, onAdd, onEdit, onDelete, activeColor, page, perPage, total, onPageChange, onPerPageChange, highlightId, typeFilter, onTypeFilterChange, sortColumn, sortDir, onSort }) {
-  const dark = useTheme();
   const [addHovered, setAddHovered] = useState(false);
   const [hoveredBtn, setHoveredBtn] = useState(null);
   const [openMenuId, setOpenMenuId] = useState(null);
@@ -46,10 +45,10 @@ export default function TransactionTable({ rows, onAdd, onEdit, onDelete, active
     return () => document.removeEventListener("mousedown", onMouseDown);
   }, []);
 
-  const bg    = dark ? "var(--dark-surface)" : "var(--light-surface)";
-  const border = dark ? "var(--dark-border)"  : "var(--light-border)";
-  const text   = dark ? "var(--dark-text)"    : "var(--light-text)";
-  const muted  = `color-mix(in srgb, ${text} 50%, transparent)`;
+  const bg    = HOME_SURFACE;
+  const border = HOME_DIVIDER;
+  const text   = HOME_TEXT;
+  const muted  = HOME_MUTED;
 
   const colBtn = (col, label, align = "left") => {
     if (!onSort) return <span>{label}</span>;
@@ -72,7 +71,7 @@ export default function TransactionTable({ rows, onAdd, onEdit, onDelete, active
   };
 
   return (
-    <div className="rounded-2xl border" style={{ backgroundColor: bg, borderColor: activeColor, color: text }}>
+    <div className="rounded-2xl" style={{ backgroundColor: bg, color: text }}>
       <style>{`
         @keyframes tx-bar-sweep {
           0%   { transform: scaleX(0); opacity: 0.9; }
@@ -210,7 +209,7 @@ export default function TransactionTable({ rows, onAdd, onEdit, onDelete, active
                 style={{
                   borderColor: border,
                   backgroundColor: t.id === highlightId && !deleting.has(t.id)
-                    ? `color-mix(in srgb, var(--category-${t.category.toLowerCase()}) 12%, transparent)`
+                    ? `color-mix(in srgb, ${CATEGORY_ACCENT[t.category]} 12%, transparent)`
                     : undefined,
                   transition: "background-color 0.6s ease",
                   pointerEvents: deleting.has(t.id) ? "none" : undefined,
@@ -220,7 +219,7 @@ export default function TransactionTable({ rows, onAdd, onEdit, onDelete, active
                   <td colSpan={5} style={{ padding: 0, position: "relative", overflow: "hidden", height: "60px" }}>
                     <div style={{
                       position: "absolute", inset: 0,
-                      backgroundColor: `color-mix(in srgb, var(--category-expense) 18%, ${bg})`,
+                      backgroundColor: `color-mix(in srgb, ${HOME_EXPENSE} 18%, ${bg})`,
                       transformOrigin: "right center",
                       animation: "tx-bar-sweep 0.7s ease-out forwards",
                     }} />
@@ -245,12 +244,12 @@ export default function TransactionTable({ rows, onAdd, onEdit, onDelete, active
                   <td className="px-6 py-4">
                     <span
                       className="px-3 py-1 rounded-full text-base font-semibold"
-                      style={{ color: `var(--category-${t.category.toLowerCase()})` }}
+                      style={{ color: CATEGORY_ACCENT[t.category] }}
                     >
                       {CATEGORY_CONFIG[t.category]?.label ?? t.category}
                     </span>
                   </td>
-                  <td className="px-6 py-4 text-right text-lg font-bold" style={{ paddingRight: "24px", color: INCOME_TYPES.has(t.category) ? "var(--category-income)" : "var(--category-expense)" }}>
+                  <td className="px-6 py-4 text-right text-lg font-bold" style={{ paddingRight: "24px", color: INCOME_TYPES.has(t.category) ? HOME_INCOME : HOME_EXPENSE }}>
                     {INCOME_TYPES.has(t.category) ? "+" : "-"}{fmt(t.amount)}
                   </td>
                   <td className="py-4 text-center" style={{ width: "96px", minWidth: "96px" }}>
@@ -302,7 +301,7 @@ export default function TransactionTable({ rows, onAdd, onEdit, onDelete, active
                           onClick={() => handleDelete(t)}
                           className="cursor-pointer rounded-lg"
                           style={{ color: muted, padding: "0 6px" }}
-                          onMouseEnter={e => e.currentTarget.style.color = "var(--category-expense)"}
+                          onMouseEnter={e => e.currentTarget.style.color = HOME_EXPENSE}
                           onMouseLeave={e => e.currentTarget.style.color = muted}
                         >
                           <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -336,7 +335,7 @@ export default function TransactionTable({ rows, onAdd, onEdit, onDelete, active
                   color: active || hov ? activeColor : muted,
                   borderColor: active || hov ? activeColor : border,
                   backgroundColor: active
-                    ? dark ? `color-mix(in srgb, ${activeColor} ${hov ? "20%" : "12%"}, transparent)` : "var(--light-surface)"
+                    ? `color-mix(in srgb, ${activeColor} ${hov ? "20%" : "12%"}, transparent)`
                     : hov ? `color-mix(in srgb, ${activeColor} 12%, transparent)` : "transparent",
                   boxShadow: active || hov ? `0 0 0 2px color-mix(in srgb, ${activeColor} 20%, transparent)` : "none",
                 }}

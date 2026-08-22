@@ -20,14 +20,17 @@ function shortDate(d) {
   return new Date(d + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-function Row({ label, value, color = HOME_TEXT, strong = false, muted = false, divider = false }) {
+// `compact` tightens padding/font sizes for desktop's inline card detail
+// (fixed-height box, no room to spare) without touching mobile's bottom
+// sheet, which has the full screen height and keeps the roomier defaults.
+function Row({ label, value, color = HOME_TEXT, strong = false, muted = false, divider = false, compact = false }) {
   return (
     <div style={{
       display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
-      padding: "10px 0", borderTop: divider ? `1px solid ${HOME_DIVIDER}` : "none",
+      padding: compact ? "6px 0" : "10px 0", borderTop: divider ? `1px solid ${HOME_DIVIDER}` : "none",
     }}>
-      <span style={{ fontSize: strong ? 15 : 14, fontWeight: strong ? 700 : 500, color: muted ? HOME_MUTED : HOME_TEXT }}>{label}</span>
-      <span style={{ fontSize: strong ? 16 : 14.5, fontWeight: strong ? 800 : 600, fontVariantNumeric: "tabular-nums", color }}>{value}</span>
+      <span style={{ fontSize: strong ? (compact ? 13.5 : 15) : (compact ? 12.5 : 14), fontWeight: strong ? 700 : 500, color: muted ? HOME_MUTED : HOME_TEXT }}>{label}</span>
+      <span style={{ fontSize: strong ? (compact ? 14.5 : 16) : (compact ? 13 : 14.5), fontWeight: strong ? 800 : 600, fontVariantNumeric: "tabular-nums", color }}>{value}</span>
     </div>
   );
 }
@@ -36,38 +39,41 @@ function Row({ label, value, color = HOME_TEXT, strong = false, muted = false, d
 // name, muted meta subtitle underneath - reused here so Available Cash and
 // Estimated Savings share its spacing, padding, and two-line rhythm instead
 // of a flatter single-line label/value pair.
-function DotRow({ label, meta, value, color = HOME_TEXT, dotColor = HOME_MUTED, divider = false }) {
+function DotRow({ label, meta, value, color = HOME_TEXT, dotColor = HOME_MUTED, divider = false, compact = false }) {
   return (
     <div style={{
-      display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
-      padding: "11px 0", borderTop: divider ? `1px solid ${HOME_DIVIDER}` : "none",
+      display: "flex", alignItems: "center", justifyContent: "space-between", gap: compact ? 8 : 12,
+      padding: compact ? "6px 0" : "11px 0", borderTop: divider ? `1px solid ${HOME_DIVIDER}` : "none",
     }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-        <span style={{ width: 8, height: 8, borderRadius: "50%", background: dotColor, flexShrink: 0 }} />
+      <div style={{ display: "flex", alignItems: "center", gap: compact ? 7 : 10, minWidth: 0 }}>
+        <span style={{ width: compact ? 6 : 8, height: compact ? 6 : 8, borderRadius: "50%", background: dotColor, flexShrink: 0 }} />
         <div style={{ minWidth: 0 }}>
-          <p style={{ margin: 0, fontSize: 14.5, fontWeight: 600, color: HOME_TEXT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</p>
-          {meta && <p style={{ margin: "1px 0 0", fontSize: 12, color: HOME_MUTED }}>{meta}</p>}
+          <p style={{ margin: 0, fontSize: compact ? 13 : 14.5, fontWeight: 600, color: HOME_TEXT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</p>
+          {meta && <p style={{ margin: "1px 0 0", fontSize: compact ? 10.5 : 12, color: HOME_MUTED }}>{meta}</p>}
         </div>
       </div>
-      <span style={{ fontSize: 14.5, fontWeight: 700, fontVariantNumeric: "tabular-nums", color, flexShrink: 0 }}>{value}</span>
+      <span style={{ fontSize: compact ? 13 : 14.5, fontWeight: 700, fontVariantNumeric: "tabular-nums", color, flexShrink: 0 }}>{value}</span>
     </div>
   );
 }
 
-function Note({ children }) {
-  return <p style={{ margin: "12px 2px 0", fontSize: 12.5, lineHeight: 1.5, color: HOME_MUTED }}>{children}</p>;
+function Note({ children, compact = false }) {
+  return <p style={{ margin: compact ? "8px 2px 0" : "12px 2px 0", fontSize: compact ? 11.5 : 12.5, lineHeight: 1.45, color: HOME_MUTED }}>{children}</p>;
 }
 
 // ── Per-cell content ─────────────────────────────────────────────────────────
 
-function BalanceBody({ safeToSpend, status }) {
+// Exported so Dashboard.jsx's desktop overview cards can render these
+// in-place (expand within the card itself) instead of going through the
+// bottom-sheet/modal below - mobile still uses the sheet, desktop doesn't.
+export function BalanceBody({ safeToSpend, status, compact = false }) {
   if (status !== "ok" || !safeToSpend) {
-    return <Note>Set a starting balance in Paychecks to track your running balance here.</Note>;
+    return <Note compact={compact}>Set a starting balance in Paychecks to track your running balance here.</Note>;
   }
   return (
     <>
-      <Row label="Checking" value={fmt(safeToSpend.running_balance)} color={HOME_TEXT} strong />
-      <Note>
+      <Row label="Checking" value={fmt(safeToSpend.running_balance)} color={HOME_TEXT} strong compact={compact} />
+      <Note compact={compact}>
         Builds forward from the starting balance you set in Paychecks, using your
         actual transactions since then. A live bank-synced balance will replace
         this once account integration ships.
@@ -76,18 +82,18 @@ function BalanceBody({ safeToSpend, status }) {
   );
 }
 
-function BillsBody({ safeToSpend, status }) {
+export function BillsBody({ safeToSpend, status, compact = false }) {
   if (status !== "ok" || !safeToSpend) {
-    return <Note>Set up a paycheck schedule and starting balance to see your upcoming bills.</Note>;
+    return <Note compact={compact}>Set up a paycheck schedule and starting balance to see your upcoming bills.</Note>;
   }
   const bills = safeToSpend.bills_breakdown ?? [];
   return (
     <>
-      <p style={{ margin: "0 2px 6px", fontSize: 12.5, color: HOME_MUTED }}>
+      <p style={{ margin: compact ? "0 2px 3px" : "0 2px 6px", fontSize: compact ? 11.5 : 12.5, color: HOME_MUTED }}>
         Due before your next paycheck on {shortDate(safeToSpend.next_payday)}
       </p>
       {bills.length === 0 ? (
-        <Note>No bills are due before your next paycheck.</Note>
+        <Note compact={compact}>No bills are due before your next paycheck.</Note>
       ) : (
         <>
           {bills.map((b, i) => {
@@ -95,34 +101,34 @@ function BillsBody({ safeToSpend, status }) {
             const label = CATEGORY_CONFIG[b.category]?.label ?? b.category;
             return (
               <div key={`${b.name}-${i}`} style={{
-                display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
-                padding: "11px 0", borderTop: i > 0 ? `1px solid ${HOME_DIVIDER}` : "none",
+                display: "flex", alignItems: "center", justifyContent: "space-between", gap: compact ? 8 : 12,
+                padding: compact ? "6px 0" : "11px 0", borderTop: i > 0 ? `1px solid ${HOME_DIVIDER}` : "none",
               }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: color, flexShrink: 0 }} />
+                <div style={{ display: "flex", alignItems: "center", gap: compact ? 7 : 10, minWidth: 0 }}>
+                  <span style={{ width: compact ? 6 : 8, height: compact ? 6 : 8, borderRadius: "50%", background: color, flexShrink: 0 }} />
                   <div style={{ minWidth: 0 }}>
-                    <p style={{ margin: 0, fontSize: 14.5, fontWeight: 600, color: HOME_TEXT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.name}</p>
-                    <p style={{ margin: "1px 0 0", fontSize: 12, color: HOME_MUTED }}>
+                    <p style={{ margin: 0, fontSize: compact ? 13 : 14.5, fontWeight: 600, color: HOME_TEXT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.name}</p>
+                    <p style={{ margin: "1px 0 0", fontSize: compact ? 10.5 : 12, color: HOME_MUTED }}>
                       {b.due_date ? `${label} · due ${shortDate(b.due_date)}` : `${label} · estimated`}
                     </p>
                   </div>
                 </div>
-                <span style={{ fontSize: 14.5, fontWeight: 700, fontVariantNumeric: "tabular-nums", color: HOME_TEXT, flexShrink: 0 }}>
+                <span style={{ fontSize: compact ? 13 : 14.5, fontWeight: 700, fontVariantNumeric: "tabular-nums", color: HOME_TEXT, flexShrink: 0 }}>
                   {fmt(b.amount)}
                 </span>
               </div>
             );
           })}
-          <Row label="Total due" value={fmt(safeToSpend.bills_before_next_payday)} color={TILE_COLOR.BILL} strong divider />
+          <Row label="Total due" value={fmt(safeToSpend.bills_before_next_payday)} color={TILE_COLOR.BILL} strong divider compact={compact} />
         </>
       )}
     </>
   );
 }
 
-function CashBody({ safeToSpend, status }) {
+export function CashBody({ safeToSpend, status, compact = false }) {
   if (status !== "ok" || !safeToSpend) {
-    return <Note>Set a starting balance and paycheck schedule to project your leftover cash.</Note>;
+    return <Note compact={compact}>Set a starting balance and paycheck schedule to project your leftover cash.</Note>;
   }
   const surplus = parseFloat(safeToSpend.spendable_surplus);
   const freeToAllocate = parseFloat(safeToSpend.free_to_allocate);
@@ -131,7 +137,7 @@ function CashBody({ safeToSpend, status }) {
   const billCount = safeToSpend.bills_breakdown?.length ?? 0;
   return (
     <>
-      <DotRow label="Current balance" meta="As of today" value={fmt(safeToSpend.running_balance)} />
+      <DotRow label="Current balance" meta="As of today" value={fmt(safeToSpend.running_balance)} compact={compact} />
       <DotRow
         label="Next paycheck"
         meta={safeToSpend.next_payday_estimate != null ? `Estimated · ${nextPaydayLabel}` : `No estimate yet · ${nextPaydayLabel}`}
@@ -139,6 +145,7 @@ function CashBody({ safeToSpend, status }) {
         color={HOME_INCOME}
         dotColor={HOME_INCOME}
         divider
+        compact={compact}
       />
       <DotRow
         label="Bills before then"
@@ -147,21 +154,22 @@ function CashBody({ safeToSpend, status }) {
         color={HOME_EXPENSE}
         dotColor={HOME_EXPENSE}
         divider
+        compact={compact}
       />
       {reserved > 0.005 && (
-        <DotRow label="Spending reserve" meta="Set aside, not spendable" value={`−${fmt(reserved)}`} color={HOME_EXPENSE} dotColor={HOME_EXPENSE} divider />
+        <DotRow label="Spending reserve" meta="Set aside, not spendable" value={`−${fmt(reserved)}`} color={HOME_EXPENSE} dotColor={HOME_EXPENSE} divider compact={compact} />
       )}
-      <Row label="Available cash" value={fmt(safeToSpend.free_to_allocate)} color={freeToAllocate >= 0 ? HOME_INCOME : HOME_EXPENSE} strong divider />
+      <Row label="Available cash" value={fmt(safeToSpend.free_to_allocate)} color={freeToAllocate >= 0 ? HOME_INCOME : HOME_EXPENSE} strong divider compact={compact} />
     </>
   );
 }
 
-function SavingsBody({ savings, status }) {
+export function SavingsBody({ savings, status, compact = false }) {
   if (status === "no-history") {
-    return <Note>Your savings estimate needs at least 3 months of spending history to project from.</Note>;
+    return <Note compact={compact}>Your savings estimate needs at least 3 months of spending history to project from.</Note>;
   }
   if (status !== "ok" || !savings) {
-    return <Note>Add a paycheck amount and some spending history to estimate what you can save.</Note>;
+    return <Note compact={compact}>Add a paycheck amount and some spending history to estimate what you can save.</Note>;
   }
   return (
     <>
@@ -170,22 +178,23 @@ function SavingsBody({ savings, status }) {
           instead of vanishing once payday passes. The spending side blends
           what's actually posted so far with a historical rate for the days
           left, so the total gets more accurate as the month goes on (#85). */}
-      <DotRow label="Income this month" meta="Paychecks + other income" value={`+${fmt(savings.whole_month_income)}`} color={HOME_INCOME} dotColor={HOME_INCOME} />
-      <DotRow label="Fixed bills" meta="Recurring, non-savings" value={`−${fmt(savings.committed_recurring)}`} color={HOME_EXPENSE} dotColor={HOME_EXPENSE} divider />
-      <DotRow label="Spent so far" meta="Discretionary, this month" value={`−${fmt(savings.discretionary_spent_so_far)}`} color={HOME_EXPENSE} dotColor={HOME_EXPENSE} divider />
-      <DotRow label="Typical spending" meta="Historical avg, rest of month" value={`−${fmt(savings.discretionary_projected_remaining)}`} color={HOME_EXPENSE} dotColor={HOME_EXPENSE} divider />
+      <DotRow label="Income this month" meta="Paychecks + other income" value={`+${fmt(savings.whole_month_income)}`} color={HOME_INCOME} dotColor={HOME_INCOME} compact={compact} />
+      <DotRow label="Fixed bills" meta="Recurring, non-savings" value={`−${fmt(savings.committed_recurring)}`} color={HOME_EXPENSE} dotColor={HOME_EXPENSE} divider compact={compact} />
+      <DotRow label="Spent so far" meta="Discretionary, this month" value={`−${fmt(savings.discretionary_spent_so_far)}`} color={HOME_EXPENSE} dotColor={HOME_EXPENSE} divider compact={compact} />
+      <DotRow label="Typical spending" meta="Historical avg, rest of month" value={`−${fmt(savings.discretionary_projected_remaining)}`} color={HOME_EXPENSE} dotColor={HOME_EXPENSE} divider compact={compact} />
       <Row
         label="Saved / projected"
         value={`${fmt(savings.saved_so_far)} / ${fmt(savings.estimated_savings)}`}
         color={TILE_COLOR.SAVINGS}
         strong
         divider
+        compact={compact}
       />
     </>
   );
 }
 
-export default function OverviewBreakdownSheet({ cell, onClose, safeToSpend, safeToSpendStatus, savings, savingsStatus }) {
+export default function OverviewBreakdownSheet({ cell, onClose, safeToSpend, safeToSpendStatus, savings, savingsStatus, desktop = false }) {
   // Closing is staged rather than immediate: the parent unmounts this component
   // the moment onClose fires, which would cut the exit animation off. Hold it for
   // one animation, then hand control back. (#46)
@@ -211,6 +220,57 @@ export default function OverviewBreakdownSheet({ cell, onClose, safeToSpend, saf
 
   const { dragY, dragging, handlers } = useSheetDrag(requestClose);
   if (!cell) return null;
+
+  const body = (
+    <>
+      {cell === "balance" && <BalanceBody safeToSpend={safeToSpend} status={safeToSpendStatus} />}
+      {cell === "bills" && <BillsBody safeToSpend={safeToSpend} status={safeToSpendStatus} />}
+      {cell === "cash" && <CashBody safeToSpend={safeToSpend} status={safeToSpendStatus} />}
+      {cell === "savings" && <SavingsBody savings={savings} status={savingsStatus} />}
+    </>
+  );
+
+  // Desktop has no drag-to-dismiss gesture and no bottom safe-area to hug -
+  // same title/body content, but a centered fade+scale modal instead of a
+  // bottom sheet sliding up from the edge of the screen.
+  if (desktop) {
+    return (
+      <div
+        onClick={requestClose}
+        style={{
+          position: "fixed", inset: 0, zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
+          background: closing ? "rgba(0,0,0,0)" : "rgba(0,0,0,0.55)",
+          transition: `background ${EXIT_MS}ms ease`,
+        }}
+      >
+        <style>{`@keyframes breakdown-pop { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }`}</style>
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="w-full max-w-md"
+          style={{
+            maxHeight: "82vh", overflowY: "auto", overscrollBehavior: "contain",
+            background: HOME_SURFACE, borderRadius: 20,
+            padding: "20px 22px 24px",
+            boxShadow: "0 24px 64px rgba(0,0,0,0.5)",
+            opacity: closing ? 0 : 1,
+            transform: closing ? "scale(0.96)" : "scale(1)",
+            animation: closing ? undefined : "breakdown-pop 0.2s cubic-bezier(0.32, 0.72, 0, 1)",
+            transition: `opacity ${EXIT_MS}ms ease, transform ${EXIT_MS}ms ease`,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+            <h2 style={{ margin: 0, fontSize: 19, fontWeight: 800, letterSpacing: "-0.3px", color: HOME_TEXT }}>{TITLES[cell]}</h2>
+            <button onClick={requestClose} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: HOME_MUTED, display: "flex", padding: 2 }}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M18 6 6 18M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          {body}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -254,10 +314,7 @@ export default function OverviewBreakdownSheet({ cell, onClose, safeToSpend, saf
           </div>
         </div>
 
-        {cell === "balance" && <BalanceBody safeToSpend={safeToSpend} status={safeToSpendStatus} />}
-        {cell === "bills" && <BillsBody safeToSpend={safeToSpend} status={safeToSpendStatus} />}
-        {cell === "cash" && <CashBody safeToSpend={safeToSpend} status={safeToSpendStatus} />}
-        {cell === "savings" && <SavingsBody savings={savings} status={savingsStatus} />}
+        {body}
       </div>
     </div>
   );

@@ -1,16 +1,14 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { useTheme } from "../hooks/useTheme";
 import { useAuth } from "../context/AuthContext";
 import { CATEGORY_CONFIG, fmt } from "../utils/finance";
 import RecurringPaymentsModal from "./RecurringPaymentsModal";
 import AccountPanel from "./AccountPanel";
 import PaychecksPanel from "./PaychecksPanel";
 import { Wordmark } from "./Logo";
-import { HOME_SURFACE, HOME_TEXT, HOME_MUTED, HOME_DIVIDER, FIELD, ACCENT } from "./categoryVisuals";
+import { HOME_SURFACE, HOME_TEXT, HOME_MUTED, HOME_DIVIDER, ACCENT, HOME_INCOME, HOME_EXPENSE, CATEGORY_ACCENT } from "./categoryVisuals";
 
 export default function Navbar({ transactions = [], onSelectTransaction, onDeleteRecurringPayment, onSaveRecurringPayment, onPaycheckSaved, onCommand }) {
-  const dark = useTheme();
   const { logout, user, isDemo } = useAuth();
   const navigate = useNavigate();
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -22,11 +20,11 @@ export default function Navbar({ transactions = [], onSelectTransaction, onDelet
   const [paychecksHovered, setPaychecksHovered] = useState(false);
   const [recurringHovered, setRecurringHovered] = useState(false);
   const [feedbackHovered, setFeedbackHovered] = useState(false);
-  const [themeHovered, setThemeHovered] = useState(false);
   const [menuHovered, setMenuHovered] = useState(false);
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [open, setOpen] = useState(false);
+  const [searchFocused, setSearchFocused] = useState(false);
   const debounceRef = useRef(null);
   const containerRef = useRef(null);
 
@@ -39,12 +37,12 @@ export default function Navbar({ transactions = [], onSelectTransaction, onDelet
     return () => { document.body.style.overflow = previousOverflow; };
   }, [drawerOpen]);
 
-  // Pinned to the app's jade/teal dark theme (matches the auth pages and
-  // mobile dashboard), independent of the light/dark toggle — see #50.
+  // Pinned to the app's jade/teal dark theme, matching the auth pages,
+  // mobile dashboard, and the rest of desktop now that the old light/dark
+  // toggle is gone entirely — see #50, #22.
   const bg     = HOME_SURFACE;
   const border = HOME_DIVIDER;
   const text   = HOME_TEXT;
-  const input  = FIELD;
   const muted  = HOME_MUTED;
 
   const handleQueryChange = (e) => {
@@ -103,10 +101,6 @@ export default function Navbar({ transactions = [], onSelectTransaction, onDelet
     onSelectTransaction?.(t);
   };
 
-  function toggleTheme() {
-    document.documentElement.classList.toggle("dark");
-  }
-
   return (
     <>
       <nav
@@ -116,28 +110,50 @@ export default function Navbar({ transactions = [], onSelectTransaction, onDelet
         <div className="px-6 py-4 flex items-center gap-4">
           <Wordmark size={32} textSize={26} />
 
-          {/* Search */}
+          {/* Search — no box, just a subtle underline that grows into the
+              accent color on focus, and a suggestions panel that slides
+              down the first time it opens per search session (mount-once
+              CSS animation) but updates in place after that, since results
+              re-filtering as you type more isn't a fresh "open". */}
           <div className="flex-1 flex justify-center" ref={containerRef}>
+            <style>{`@keyframes navSearchSlide { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }`}</style>
             <div className="relative w-full max-w-lg">
               <input
                 value={query}
                 onChange={handleQueryChange}
                 onKeyDown={handleKeyDown}
-                onFocus={(e) => { query && setOpen(true); e.target.style.borderColor = ACCENT; }}
-                onBlur={(e) => { e.target.style.borderColor = border; }}
+                onFocus={() => { setSearchFocused(true); if (query) setOpen(true); }}
+                onBlur={() => setSearchFocused(false)}
                 placeholder="Search transactions..."
-                className="w-full rounded-xl px-4 py-2 text-sm border"
-                style={{ backgroundColor: input, borderColor: border, color: text, outline: "none", transition: "border-color 0.15s" }}
+                className="w-full px-1 py-2 text-sm"
+                style={{
+                  backgroundColor: "transparent",
+                  border: "none",
+                  borderBottom: `1px solid ${border}`,
+                  color: text,
+                  outline: "none",
+                  transition: "border-color 200ms ease",
+                }}
+              />
+              {/* Accent underline, grows in from center on focus */}
+              <span
+                style={{
+                  position: "absolute", left: 0, right: 0, bottom: -1, height: 2,
+                  backgroundColor: ACCENT, borderRadius: 1,
+                  transform: `scaleX(${searchFocused ? 1 : 0})`, transformOrigin: "center",
+                  transition: "transform 250ms cubic-bezier(0.4, 0, 0.2, 1)",
+                  pointerEvents: "none",
+                }}
               />
 
               {/* Dropdown */}
-              {open && suggestions.length > 0 && (
+              {open && debouncedQuery.trim() && (
                 <div
-                  className="absolute top-full mt-1.5 w-full rounded-xl border shadow-lg overflow-hidden z-50"
-                  style={{ backgroundColor: bg, borderColor: border }}
+                  className="absolute top-full mt-2 w-full rounded-xl shadow-lg overflow-hidden z-50"
+                  style={{ backgroundColor: bg, animation: "navSearchSlide 220ms cubic-bezier(0.32, 0.72, 0, 1)" }}
                 >
-                  {suggestions.map((t) => {
-                    const catColor = `var(--category-${t.category.toLowerCase()})`;
+                  {suggestions.length > 0 ? suggestions.map((t) => {
+                    const catColor = CATEGORY_ACCENT[t.category];
                     const date = new Date(t.transaction_date + "T00:00:00").toLocaleDateString("en-US", {
                       month: "short", day: "numeric", year: "numeric",
                     });
@@ -168,17 +184,11 @@ export default function Navbar({ transactions = [], onSelectTransaction, onDelet
                         </span>
                       </button>
                     );
-                  })}
-                </div>
-              )}
-
-              {/* No results */}
-              {open && debouncedQuery.trim() && suggestions.length === 0 && (
-                <div
-                  className="absolute top-full mt-1.5 w-full rounded-xl border shadow-lg px-4 py-3 text-sm z-50"
-                  style={{ backgroundColor: bg, borderColor: border, color: muted }}
-                >
-                  No transactions found
+                  }) : (
+                    <div className="px-4 py-3 text-sm" style={{ color: muted }}>
+                      No transactions found
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -271,7 +281,7 @@ export default function Navbar({ transactions = [], onSelectTransaction, onDelet
             {(recurringOpen || accountOpen) && (() => {
               const save = recurringOpen ? rpSave : acctSave;
               const status = save.isSaving ? "Saving…" : save.isDirty ? "Unsaved" : save.saveStatus === "saved" ? "Saved" : null;
-              const statusColor = save.saveStatus === "saved" && !save.isDirty ? "var(--category-income)" : `color-mix(in srgb, ${text} 40%, transparent)`;
+              const statusColor = save.saveStatus === "saved" && !save.isDirty ? HOME_INCOME : `color-mix(in srgb, ${text} 40%, transparent)`;
               return status ? <span style={{ fontSize: "11px", color: statusColor, transition: "color 0.3s" }}>{status}</span> : null;
             })()}
             {(recurringOpen || accountOpen) && (() => {
@@ -280,7 +290,7 @@ export default function Navbar({ transactions = [], onSelectTransaction, onDelet
                 <button
                   onClick={() => save.onSave?.()}
                   disabled={!save.isDirty || save.isSaving}
-                  style={{ fontSize: "12px", fontWeight: 600, padding: "4px 12px", borderRadius: "8px", border: "1px solid var(--category-income)", color: "var(--category-income)", backgroundColor: save.isDirty ? "color-mix(in srgb, var(--category-income) 18%, transparent)" : "transparent", boxShadow: save.isDirty ? "0 0 0 2px color-mix(in srgb, var(--category-income) 20%, transparent)" : "none", cursor: save.isDirty && !save.isSaving ? "pointer" : "default", opacity: save.isDirty ? (save.isSaving ? 0.6 : 1) : 0.25, transition: "all 0.2s ease" }}
+                  style={{ fontSize: "12px", fontWeight: 600, padding: "4px 12px", borderRadius: "8px", border: `1px solid ${HOME_INCOME}`, color: HOME_INCOME, backgroundColor: save.isDirty ? `color-mix(in srgb, ${HOME_INCOME} 18%, transparent)` : "transparent", boxShadow: save.isDirty ? `0 0 0 2px color-mix(in srgb, ${HOME_INCOME} 20%, transparent)` : "none", cursor: save.isDirty && !save.isSaving ? "pointer" : "default", opacity: save.isDirty ? (save.isSaving ? 0.6 : 1) : 0.25, transition: "all 0.2s ease" }}
                 >
                   {save.isSaving ? "Saving…" : "Save"}
                 </button>
@@ -381,30 +391,6 @@ export default function Navbar({ transactions = [], onSelectTransaction, onDelet
             <div className="mx-5 border-t" style={{ borderColor: border }} />
 
             <div className="px-3 py-3 flex flex-col gap-3">
-              <button
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium cursor-pointer text-left"
-                style={{
-                  color: text,
-                  border: "1px solid",
-                  borderColor: themeHovered ? `color-mix(in srgb, ${text} 40%, transparent)` : `color-mix(in srgb, ${text} 18%, transparent)`,
-                  backgroundColor: themeHovered ? `color-mix(in srgb, ${text} 10%, transparent)` : `color-mix(in srgb, ${text} 5%, transparent)`,
-                  transition: "background-color 150ms ease, border-color 150ms ease",
-                }}
-                onMouseEnter={() => setThemeHovered(true)}
-                onMouseLeave={() => setThemeHovered(false)}
-                onClick={toggleTheme}
-              >
-                {dark ? (
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
-                  </svg>
-                ) : (
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
-                  </svg>
-                )}
-                {dark ? "Light Mode" : "Dark Mode"}
-              </button>
               {!isDemo() && (
                 <a
                   href="https://forms.gle/BC6ebwbZtgYmSYBeA"
@@ -435,7 +421,7 @@ export default function Navbar({ transactions = [], onSelectTransaction, onDelet
               )}
               <button
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium cursor-pointer transition-colors text-left"
-                style={{ color: "var(--category-expense)" }}
+                style={{ color: HOME_EXPENSE }}
                 onClick={() => { logout(); navigate("/login"); }}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"

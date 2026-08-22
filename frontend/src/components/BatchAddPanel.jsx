@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { CATEGORY_CONFIG, lockedNameFor } from "../utils/finance";
-import { useTheme } from "../hooks/useTheme";
+import { HOME_SURFACE, HOME_DIVIDER, HOME_TEXT, HOME_MUTED, HOME_EXPENSE, CATEGORY_ACCENT } from "./categoryVisuals";
 import { createTransaction } from "../api/transactions";
 import { getToday } from "../utils/time";
 import CurrencyInput from "./CurrencyInput";
@@ -17,11 +17,10 @@ function isDraftValid(d) {
 }
 
 export default function BatchAddPanel({ active, onSaveStateChange, onSaved, onCancel }) {
-  const dark   = useTheme();
-  const bg     = dark ? "var(--dark-surface)" : "var(--light-surface)";
-  const border = dark ? "var(--dark-border)"  : "var(--light-border)";
-  const text   = dark ? "var(--dark-text)"    : "var(--light-text)";
-  const muted  = `color-mix(in srgb, ${text} 45%, transparent)`;
+  const bg     = HOME_SURFACE;
+  const border = HOME_DIVIDER;
+  const text   = HOME_TEXT;
+  const muted  = HOME_MUTED;
   const faint  = `color-mix(in srgb, ${text} 5%, ${bg})`;
 
   const [drafts, setDrafts]         = useState(() => [newDraft()]);
@@ -126,7 +125,7 @@ export default function BatchAddPanel({ active, onSaveStateChange, onSaved, onCa
 
             {drafts.map((d, idx) => {
               const isLast    = idx === drafts.length - 1;
-              const catColor  = `var(--category-${d.category.toLowerCase()})`;
+              const catColor  = CATEGORY_ACCENT[d.category];
               return (
                 <tr key={d._lid} style={{ borderBottom: `1px solid ${border}`, backgroundColor: faint, animation: sendingLids.includes(d._lid) ? `bp-row-send 0.38s ease-in-out ${sendingLids.indexOf(d._lid) * 80}ms both` : "bp-row-in 0.2s ease-out" }}>
                   <td style={{ ...tdStyle(false, true), ...(lockedNameFor(d.category) ? { backgroundImage: `repeating-linear-gradient(-45deg, transparent, transparent 4px, color-mix(in srgb, ${text} 6%, transparent) 4px, color-mix(in srgb, ${text} 6%, transparent) 6px)`, cursor: "not-allowed" } : {}) }}>
@@ -170,7 +169,7 @@ export default function BatchAddPanel({ active, onSaveStateChange, onSaved, onCa
                         outline: "none",
                         cursor: "pointer",
                         fontFamily: "inherit",
-                        colorScheme: dark ? "dark" : "light",
+                        colorScheme: "dark",
                         animation: "bp-pill-pop 0.25s ease-out",
                         maxWidth: "100%",
                       }}
@@ -186,7 +185,7 @@ export default function BatchAddPanel({ active, onSaveStateChange, onSaved, onCa
                       value={d.transaction_date}
                       onChange={e => setDrafts(prev => prev.map((x, xi) => xi === idx ? { ...x, transaction_date: e.target.value } : x))}
                       onKeyDown={e => e.key === "Escape" && setDrafts(prev => prev.filter((_, xi) => xi !== idx))}
-                      style={{ width: "100%", background: "transparent", color: text, border: "none", outline: "none", fontSize: "13px", fontFamily: "inherit", colorScheme: dark ? "dark" : "light" }}
+                      style={{ width: "100%", background: "transparent", color: text, border: "none", outline: "none", fontSize: "13px", fontFamily: "inherit", colorScheme: "dark" }}
                     />
                   </td>
                   <td style={tdStyle(true)}>
@@ -204,7 +203,7 @@ export default function BatchAddPanel({ active, onSaveStateChange, onSaved, onCa
                       <button
                         onClick={() => setDrafts(prev => prev.filter((_, xi) => xi !== idx))}
                         style={{ color: muted, cursor: "pointer", background: "none", border: "none", padding: "2px", display: "inline-flex" }}
-                        onMouseEnter={e => e.currentTarget.style.color = "var(--category-expense)"}
+                        onMouseEnter={e => e.currentTarget.style.color = HOME_EXPENSE}
                         onMouseLeave={e => e.currentTarget.style.color = muted}
                       >
                         <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

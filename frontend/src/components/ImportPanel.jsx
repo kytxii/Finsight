@@ -1,9 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { CATEGORY_CONFIG, INCOME_TYPES } from "../utils/finance";
-import { useTheme } from "../hooks/useTheme";
 import { previewImport, commitImport, aiCleanupNames } from "../api/imports";
 import { LOADING_SYMBOLS, IMPORT_LOADING_PHRASES } from "../utils/authFlavor";
-import { HOME_SURFACE, HOME_DIVIDER, HOME_TEXT, HOME_MUTED } from "./categoryVisuals";
+import { HOME_SURFACE, HOME_DIVIDER, HOME_TEXT, HOME_MUTED, HOME_INCOME, HOME_EXPENSE, CATEGORY_ACCENT, DUPLICATE_ALERT } from "./categoryVisuals";
 
 const isDemo = () => localStorage.getItem("demo") === "true";
 
@@ -77,18 +76,16 @@ function needsAction(r) {
   return r.is_duplicate || r.is_credit_card_payment_candidate || r.errors?.length > 0;
 }
 
-export default function ImportPanel({ active, onSaveStateChange, onSaved, onCancel, mobile = false }) {
-  // `mobile` branches onto the pinned-dark HOME_* palette instead of the
-  // light/dark-toggle system - this component is shared with desktop
-  // (Dashboard.jsx), which keeps its existing theme untouched. Desktop's own
-  // dark-UI pass is tracked separately (#65), not assumed here.
-  const dark   = useTheme();
-  const bg     = mobile ? HOME_SURFACE : (dark ? "var(--dark-surface)" : "var(--light-surface)");
-  const border = mobile ? HOME_DIVIDER : (dark ? "var(--dark-border)"  : "var(--light-border)");
-  const text   = mobile ? HOME_TEXT    : (dark ? "var(--dark-text)"    : "var(--light-text)");
-  const muted  = mobile ? HOME_MUTED   : `color-mix(in srgb, ${text} 45%, transparent)`;
-  const faint  = mobile ? "rgba(255,255,255,0.04)" : `color-mix(in srgb, ${text} 5%, ${bg})`;
-  const colorScheme = mobile ? "dark" : (dark ? "dark" : "light");
+export default function ImportPanel({ active, onSaveStateChange, onSaved, onCancel }) {
+  // Shared between desktop (Dashboard.jsx) and mobile (MobileDashboard.jsx) -
+  // both are pinned to the same dark HOME_* palette now, so there's no
+  // per-caller branching left to do here.
+  const bg     = HOME_SURFACE;
+  const border = HOME_DIVIDER;
+  const text   = HOME_TEXT;
+  const muted  = HOME_MUTED;
+  const faint  = "rgba(255,255,255,0.04)";
+  const colorScheme = "dark";
 
   const fileInputRef = useRef(null);
   const nameEditRef = useRef({});
@@ -293,7 +290,7 @@ export default function ImportPanel({ active, onSaveStateChange, onSaved, onCanc
 
       {!loading && loadError && (
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flex: 1, gap: 10, padding: 24 }}>
-          <p style={{ color: "var(--category-expense)", fontSize: 13, textAlign: "center", maxWidth: 320 }}>{loadError}</p>
+          <p style={{ color: HOME_EXPENSE, fontSize: 13, textAlign: "center", maxWidth: 320 }}>{loadError}</p>
           <button onClick={reset} style={{ fontSize: 12, color: muted, background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>
             Choose a different file
           </button>
@@ -325,8 +322,8 @@ export default function ImportPanel({ active, onSaveStateChange, onSaved, onCanc
                   aria-label={`${duplicateCount} possible duplicate${duplicateCount !== 1 ? "s" : ""}`}
                   style={{
                     display: "flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 600,
-                    color: "var(--duplicate-alert)", backgroundColor: "color-mix(in srgb, var(--duplicate-alert) 18%, transparent)",
-                    border: "1px solid color-mix(in srgb, var(--duplicate-alert) 40%, transparent)",
+                    color: DUPLICATE_ALERT, backgroundColor: `color-mix(in srgb, ${DUPLICATE_ALERT} 18%, transparent)`,
+                    border: `1px solid color-mix(in srgb, ${DUPLICATE_ALERT} 40%, transparent)`,
                     borderRadius: 999, padding: "3px 9px", cursor: "pointer",
                   }}
                 >
@@ -375,7 +372,7 @@ export default function ImportPanel({ active, onSaveStateChange, onSaved, onCanc
                               onClick={() => setRows(prev => prev.map(x => x._lid === r._lid ? { ...x, skip: true } : x))}
                               style={{
                                 fontSize: 10, fontWeight: 600, padding: "3px 8px", cursor: "pointer", border: "none", fontFamily: "inherit",
-                                backgroundColor: r.skip ? "color-mix(in srgb, var(--duplicate-alert) 30%, transparent)" : "transparent",
+                                backgroundColor: r.skip ? `color-mix(in srgb, ${DUPLICATE_ALERT} 30%, transparent)` : "transparent",
                                 color: r.skip ? text : muted,
                               }}
                             >
@@ -387,8 +384,8 @@ export default function ImportPanel({ active, onSaveStateChange, onSaved, onCanc
                               style={{
                                 fontSize: 10, fontWeight: 600, padding: "3px 8px", cursor: "pointer", fontFamily: "inherit",
                                 border: "none", borderLeft: `1px solid ${border}`,
-                                backgroundColor: !r.skip ? "color-mix(in srgb, var(--category-income) 25%, transparent)" : "transparent",
-                                color: !r.skip ? "var(--category-income)" : muted,
+                                backgroundColor: !r.skip ? `color-mix(in srgb, ${HOME_INCOME} 25%, transparent)` : "transparent",
+                                color: !r.skip ? HOME_INCOME : muted,
                               }}
                             >
                               Keep
@@ -401,9 +398,9 @@ export default function ImportPanel({ active, onSaveStateChange, onSaved, onCanc
                 )}
               </div>
             )}
-            {errorCount > 0 && <span style={{ color: "var(--category-expense)" }}>{errorCount} row{errorCount !== 1 ? "s" : ""} need attention</span>}
+            {errorCount > 0 && <span style={{ color: HOME_EXPENSE }}>{errorCount} row{errorCount !== 1 ? "s" : ""} need attention</span>}
             <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
-              {aiCleanupError && <span style={{ color: "var(--category-expense)" }}>{aiCleanupError}</span>}
+              {aiCleanupError && <span style={{ color: HOME_EXPENSE }}>{aiCleanupError}</span>}
               <button
                 type="button"
                 onClick={handleAiCleanup}
@@ -411,8 +408,8 @@ export default function ImportPanel({ active, onSaveStateChange, onSaved, onCanc
                 title="Sends only the merchant name strings below to an AI model to suggest cleaner names — nothing else, and you can still edit or undo any result before saving."
                 style={{
                   fontSize: 12, borderRadius: 999, padding: "3px 10px", cursor: aiCleanupLoading ? "default" : "pointer", minWidth: 44, textAlign: "center",
-                  color: aiCleanupStatus === "success" ? "var(--category-income)" : muted,
-                  border: `1px solid ${aiCleanupStatus === "success" ? "color-mix(in srgb, var(--category-income) 45%, transparent)" : border}`,
+                  color: aiCleanupStatus === "success" ? HOME_INCOME : muted,
+                  border: `1px solid ${aiCleanupStatus === "success" ? `color-mix(in srgb, ${HOME_INCOME} 45%, transparent)` : border}`,
                   background: "none",
                 }}
               >
@@ -428,7 +425,7 @@ export default function ImportPanel({ active, onSaveStateChange, onSaved, onCanc
           <div style={{ overflowY: "auto", flex: 1, padding: "10px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
             {(() => {
             const renderRow = (r) => {
-              const catColor = `var(--category-${r.category.toLowerCase()})`;
+              const catColor = CATEGORY_ACCENT[r.category];
               const hasError = r.errors?.length > 0;
               const update = (patch) => setRows(prev => prev.map(x => x._lid === r._lid ? { ...x, ...patch } : x));
               return (
@@ -436,7 +433,7 @@ export default function ImportPanel({ active, onSaveStateChange, onSaved, onCanc
                   position: "relative",
                   borderRadius: 12,
                   border: `1px solid ${border}`,
-                  backgroundColor: hasError ? "color-mix(in srgb, var(--category-expense) 8%, transparent)" : faint,
+                  backgroundColor: hasError ? `color-mix(in srgb, ${HOME_EXPENSE} 8%, transparent)` : faint,
                   padding: 12,
                 }}>
                   <div style={{ position: "relative", marginBottom: 4, display: "flex", alignItems: "center", gap: 6 }}>
@@ -448,10 +445,10 @@ export default function ImportPanel({ active, onSaveStateChange, onSaved, onCanc
                         flexShrink: 0, width: 16, height: 16, borderRadius: "50%",
                         display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center",
                         fontSize: 11, fontWeight: 700, lineHeight: 1,
-                        color: INCOME_TYPES.has(r.category) ? "var(--category-income)" : "var(--category-expense)",
+                        color: INCOME_TYPES.has(r.category) ? HOME_INCOME : HOME_EXPENSE,
                         backgroundColor: INCOME_TYPES.has(r.category)
-                          ? "color-mix(in srgb, var(--category-income) 18%, transparent)"
-                          : "color-mix(in srgb, var(--category-expense) 18%, transparent)",
+                          ? `color-mix(in srgb, ${HOME_INCOME} 18%, transparent)`
+                          : `color-mix(in srgb, ${HOME_EXPENSE} 18%, transparent)`,
                       }}
                     >
                       <span style={{ transform: INCOME_TYPES.has(r.category) ? "none" : "translateY(-1px)" }}>
@@ -544,7 +541,7 @@ export default function ImportPanel({ active, onSaveStateChange, onSaved, onCanc
                             color: muted, fontSize: 14, borderRadius: 6,
                             transition: "color 0.15s ease, background-color 0.15s ease",
                           }}
-                          onMouseEnter={e => { e.currentTarget.style.color = "var(--category-expense)"; e.currentTarget.style.backgroundColor = "color-mix(in srgb, var(--category-expense) 12%, transparent)"; }}
+                          onMouseEnter={e => { e.currentTarget.style.color = HOME_EXPENSE; e.currentTarget.style.backgroundColor = `color-mix(in srgb, ${HOME_EXPENSE} 12%, transparent)`; }}
                           onMouseLeave={e => { e.currentTarget.style.color = muted; e.currentTarget.style.backgroundColor = "transparent"; }}
                         >
                           ×
@@ -555,10 +552,10 @@ export default function ImportPanel({ active, onSaveStateChange, onSaved, onCanc
                         type="button" onClick={() => confirmRename(r)} aria-label="Confirm rename"
                         style={{
                           display: "flex", alignItems: "center", justifyContent: "center", width: 22, height: 22,
-                          fontSize: 14, color: "var(--category-income)", background: "none", border: "none", cursor: "pointer",
+                          fontSize: 14, color: HOME_INCOME, background: "none", border: "none", cursor: "pointer",
                           fontWeight: 700, borderRadius: 6, transition: "background-color 0.15s ease",
                         }}
-                        onMouseEnter={e => { e.currentTarget.style.backgroundColor = "color-mix(in srgb, var(--category-income) 15%, transparent)"; }}
+                        onMouseEnter={e => { e.currentTarget.style.backgroundColor = `color-mix(in srgb, ${HOME_INCOME} 15%, transparent)`; }}
                         onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; }}
                       >
                         ✓
@@ -585,7 +582,7 @@ export default function ImportPanel({ active, onSaveStateChange, onSaved, onCanc
                         style={{ width: "100%", boxSizing: "border-box", background: "transparent", color: text, border: `1px solid ${border}`, borderRadius: 6, outline: "none", fontSize: 13, fontFamily: "inherit", padding: "3px 6px" }} />
                     </div>
                     {r.is_tip_deposit ? (
-                      <span style={{ width: 132, boxSizing: "border-box", textAlign: "center", flexShrink: 0, padding: "3px 8px", borderRadius: 999, fontSize: 11, fontWeight: 600, color: "var(--category-tips)", backgroundColor: "color-mix(in srgb, var(--category-tips) 15%, transparent)", border: "1px solid color-mix(in srgb, var(--category-tips) 35%, transparent)" }}>
+                      <span style={{ width: 132, boxSizing: "border-box", textAlign: "center", flexShrink: 0, padding: "3px 8px", borderRadius: 999, fontSize: 11, fontWeight: 600, color: CATEGORY_ACCENT.TIPS, backgroundColor: `color-mix(in srgb, ${CATEGORY_ACCENT.TIPS} 15%, transparent)`, border: `1px solid color-mix(in srgb, ${CATEGORY_ACCENT.TIPS} 35%, transparent)` }}>
                         Tips Deposit
                       </span>
                     ) : (
@@ -618,7 +615,7 @@ export default function ImportPanel({ active, onSaveStateChange, onSaved, onCanc
                           const mismatch = Math.abs(allocated - original) > 0.005;
                           return (
                             <div style={{
-                              flexShrink: 0, fontSize: 11, fontWeight: 600, color: mismatch ? "var(--category-expense)" : muted,
+                              flexShrink: 0, fontSize: 11, fontWeight: 600, color: mismatch ? HOME_EXPENSE : muted,
                               paddingBottom: 6, borderBottom: `1px solid ${border}`, marginBottom: 6,
                             }}>
                               Allocation: ${allocated.toFixed(2)} / ${original.toFixed(2)}
@@ -664,7 +661,7 @@ export default function ImportPanel({ active, onSaveStateChange, onSaved, onCanc
                                     background: "none", border: "none", color: muted, cursor: "pointer", fontSize: 15, borderRadius: 6,
                                     transition: "color 0.15s ease, background-color 0.15s ease",
                                   }}
-                                  onMouseEnter={e => { e.currentTarget.style.color = "var(--category-expense)"; e.currentTarget.style.backgroundColor = "color-mix(in srgb, var(--category-expense) 12%, transparent)"; }}
+                                  onMouseEnter={e => { e.currentTarget.style.color = HOME_EXPENSE; e.currentTarget.style.backgroundColor = `color-mix(in srgb, ${HOME_EXPENSE} 12%, transparent)`; }}
                                   onMouseLeave={e => { e.currentTarget.style.color = muted; e.currentTarget.style.backgroundColor = "transparent"; }}
                                 >
                                   ×
@@ -692,28 +689,28 @@ export default function ImportPanel({ active, onSaveStateChange, onSaved, onCanc
                   )}
 
                   {!r.is_duplicate && hasError && (
-                    <p style={{ fontSize: 11, color: "var(--category-expense)", marginTop: 8, marginBottom: 0 }}>{r.errors.join(", ")}</p>
+                    <p style={{ fontSize: 11, color: HOME_EXPENSE, marginTop: 8, marginBottom: 0 }}>{r.errors.join(", ")}</p>
                   )}
 
                   {r.is_duplicate && r.duplicate_transaction && (
                     <div style={{
-                      marginTop: 8, fontSize: 11, color: "var(--duplicate-alert)",
-                      backgroundColor: "color-mix(in srgb, var(--duplicate-alert) 15%, transparent)",
-                      border: "1px solid color-mix(in srgb, var(--duplicate-alert) 40%, transparent)",
+                      marginTop: 8, fontSize: 11, color: DUPLICATE_ALERT,
+                      backgroundColor: `color-mix(in srgb, ${DUPLICATE_ALERT} 15%, transparent)`,
+                      border: `1px solid color-mix(in srgb, ${DUPLICATE_ALERT} 40%, transparent)`,
                       borderRadius: 6, padding: "6px 8px",
                       display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap",
                     }}>
                       <span>
                         Matches existing: {r.duplicate_transaction.name} · ${r.duplicate_transaction.amount} · {formatShortDate(r.duplicate_transaction.transaction_date)}
                       </span>
-                      <div style={{ display: "flex", borderRadius: 999, overflow: "hidden", border: "1px solid color-mix(in srgb, var(--duplicate-alert) 40%, transparent)", flexShrink: 0 }}>
+                      <div style={{ display: "flex", borderRadius: 999, overflow: "hidden", border: `1px solid color-mix(in srgb, ${DUPLICATE_ALERT} 40%, transparent)`, flexShrink: 0 }}>
                         <button
                           type="button"
                           onClick={() => update({ skip: true })}
                           style={{
                             fontSize: 10, fontWeight: 600, padding: "3px 9px", cursor: "pointer", border: "none", fontFamily: "inherit",
-                            backgroundColor: r.skip ? "color-mix(in srgb, var(--duplicate-alert) 35%, transparent)" : "transparent",
-                            color: r.skip ? text : "var(--duplicate-alert)",
+                            backgroundColor: r.skip ? `color-mix(in srgb, ${DUPLICATE_ALERT} 35%, transparent)` : "transparent",
+                            color: r.skip ? text : DUPLICATE_ALERT,
                           }}
                         >
                           Skip
@@ -723,9 +720,9 @@ export default function ImportPanel({ active, onSaveStateChange, onSaved, onCanc
                           onClick={() => update({ skip: false })}
                           style={{
                             fontSize: 10, fontWeight: 600, padding: "3px 9px", cursor: "pointer", fontFamily: "inherit",
-                            border: "none", borderLeft: "1px solid color-mix(in srgb, var(--duplicate-alert) 40%, transparent)",
-                            backgroundColor: !r.skip ? "color-mix(in srgb, var(--category-income) 25%, transparent)" : "transparent",
-                            color: !r.skip ? "var(--category-income)" : "var(--duplicate-alert)",
+                            border: "none", borderLeft: `1px solid color-mix(in srgb, ${DUPLICATE_ALERT} 40%, transparent)`,
+                            backgroundColor: !r.skip ? `color-mix(in srgb, ${HOME_INCOME} 25%, transparent)` : "transparent",
+                            color: !r.skip ? HOME_INCOME : DUPLICATE_ALERT,
                           }}
                         >
                           Keep
@@ -743,9 +740,9 @@ export default function ImportPanel({ active, onSaveStateChange, onSaved, onCanc
                           title="Looks like a payment to a credit card — often bundles several purchases into one line."
                           style={{
                             fontSize: 11, fontWeight: 600, borderRadius: 999, padding: "4px 12px", cursor: "pointer",
-                            color: "var(--category-debt)", fontFamily: "inherit",
-                            backgroundColor: r.is_split ? "color-mix(in srgb, var(--category-debt) 25%, transparent)" : "transparent",
-                            border: "1px solid color-mix(in srgb, var(--category-debt) 45%, transparent)",
+                            color: CATEGORY_ACCENT.DEBT, fontFamily: "inherit",
+                            backgroundColor: r.is_split ? `color-mix(in srgb, ${CATEGORY_ACCENT.DEBT} 25%, transparent)` : "transparent",
+                            border: `1px solid color-mix(in srgb, ${CATEGORY_ACCENT.DEBT} 45%, transparent)`,
                           }}
                         >
                           {r.is_split ? "Splitting…" : "Split"}

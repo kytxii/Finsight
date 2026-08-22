@@ -58,6 +58,23 @@ export const TILE_COLOR = {
   TIPS: "#26a69a",
 };
 
+// Fixed per-category accent color for desktop surfaces (table, sidebar tabs,
+// charts, stat cards, pills) — replaces the old --category-* CSS custom
+// properties, which resolved differently depending on the app's light/dark
+// toggle. Desktop is pinned dark now (matches mobile), so this is just
+// TILE_COLOR plus a neutral entry for the "ALL" tab, which isn't a real
+// category and never had a tile color of its own.
+export const CATEGORY_ACCENT = {
+  ALL: HOME_MUTED,
+  ...TILE_COLOR,
+};
+
+// System alert color that must read as distinct from any category color —
+// used for "possible duplicate" flags in the import review UI. Was
+// --duplicate-alert in index.css; fixed to the (former) dark-mode shade now
+// that the app no longer branches on the toggle.
+export const DUPLICATE_ALERT = "#90a4ae";
+
 // Tip deposits aren't a category (TipDeposit is its own model, not a
 // Transaction) - this is the lighter teal MobileTips uses to distinguish a
 // deposit row from a TIPS-category tip in the same list.

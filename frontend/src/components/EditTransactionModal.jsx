@@ -2,18 +2,24 @@ import { useState } from "react";
 import { CATEGORY_CONFIG, lockedNameFor } from "../utils/finance";
 import { updateTransaction } from "../api/transactions";
 import { updateRecurringPayment } from "../api/recurringPayments";
-import { useTheme } from "../hooks/useTheme";
+import { HOME_SURFACE, HOME_DIVIDER, HOME_TEXT, HOME_MUTED, HOME_EXPENSE, FIELD, CATEGORY_ACCENT } from "./categoryVisuals";
 import CurrencyInput from "./CurrencyInput";
 
 const CATEGORY_OPTIONS = Object.entries(CATEGORY_CONFIG).map(([key, { label }]) => ({ value: key, label }));
 
-export default function EditTransactionModal({ transaction, onClose, onSaved }) {
-  const dark = useTheme();
-
-  const bg     = dark ? "var(--dark-surface)" : "var(--light-surface)";
-  const border = dark ? "var(--dark-border)"  : "var(--light-border)";
-  const text   = dark ? "var(--dark-text)"    : "var(--light-text)";
-  const input  = dark ? "var(--dark-bg)"      : "var(--light-bg)";
+// Desktop's transaction detail surface — view/edit/delete inline. Mobile
+// moved off this component to its own bottom-sheet (MobileTransactionModal)
+// back in #27, freeing this one up to be desktop-only. #81 added Delete and
+// a "Locate" action here: selecting a search result now opens this modal
+// instead of scrolling the table into view, and Locate (only shown when
+// opened from search — see Dashboard.jsx) hands off to that old
+// scroll/paginate/highlight behavior rather than deleting it outright.
+export default function EditTransactionModal({ transaction, onClose, onSaved, onDelete, onLocate }) {
+  const bg     = HOME_SURFACE;
+  const border = HOME_DIVIDER;
+  const text   = HOME_TEXT;
+  const muted  = HOME_MUTED;
+  const input  = FIELD;
 
   const [form, setForm] = useState({
     name: transaction.name,
@@ -26,6 +32,11 @@ export default function EditTransactionModal({ transaction, onClose, onSaved }) 
   const [loading, setLoading] = useState(false);
   const [cancelHovered, setCancelHovered] = useState(false);
   const [submitHovered, setSubmitHovered] = useState(false);
+  const [locateHovered, setLocateHovered] = useState(false);
+
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -59,7 +70,28 @@ export default function EditTransactionModal({ transaction, onClose, onSaved }) 
     }
   };
 
-  const catColor = `var(--category-${form.category.toLowerCase()})`;
+  // Tap-again-to-confirm, same shape as RecurringPaymentsModal's schedule
+  // delete and PaychecksPanel's schedule delete — no dialog, the button's own
+  // label swaps for 3s instead.
+  async function handleDeleteClick() {
+    if (!deleteConfirm) {
+      setDeleteConfirm(true);
+      setTimeout(() => setDeleteConfirm(false), 3000);
+      return;
+    }
+    setDeleteError("");
+    setDeleting(true);
+    try {
+      await onDelete(transaction);
+      onClose();
+    } catch (err) {
+      setDeleteError(err.response?.data?.detail ?? "Couldn't delete — try again");
+      setDeleting(false);
+      setDeleteConfirm(false);
+    }
+  }
+
+  const catColor = CATEGORY_ACCENT[form.category];
   const inputStyle = { backgroundColor: input, borderColor: border, color: text };
 
   return (
@@ -69,17 +101,37 @@ export default function EditTransactionModal({ transaction, onClose, onSaved }) 
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
-        className="w-full max-w-md rounded-2xl border shadow-2xl"
-        style={{ backgroundColor: bg, borderColor: catColor, color: text }}
+        className="w-full max-w-md rounded-2xl shadow-2xl"
+        style={{ backgroundColor: bg, color: text }}
       >
-        <div className="px-4 sm:px-6 py-4 border-b flex items-center justify-between" style={{ borderColor: border }}>
-          <h2 className="text-base font-semibold">Edit Transaction</h2>
-          <button onClick={onClose} className="transition-colors cursor-pointer">
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
-              fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M18 6 6 18M6 6l12 12" />
-            </svg>
-          </button>
+        <div className="px-4 sm:px-6 py-4 flex items-center justify-between" style={{ borderBottom: `1px solid ${border}` }}>
+          <h2 className="text-base font-semibold">Transaction</h2>
+          <div className="flex items-center gap-1">
+            {onLocate && (
+              <button
+                type="button"
+                onClick={() => onLocate(transaction)}
+                onMouseEnter={() => setLocateHovered(true)}
+                onMouseLeave={() => setLocateHovered(false)}
+                title="Locate in table"
+                aria-label="Locate in table"
+                className="p-1.5 rounded-lg cursor-pointer transition-colors"
+                style={{ color: locateHovered ? text : muted }}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
+                  fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
+                  <circle cx="12" cy="10" r="3" />
+                </svg>
+              </button>
+            )}
+            <button onClick={onClose} className="p-1.5 rounded-lg cursor-pointer transition-colors" style={{ color: muted }}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
+                fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M18 6 6 18M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
         </div>
 
         <form onSubmit={handleSubmit} className="px-4 sm:px-6 py-5 space-y-4">
@@ -193,6 +245,21 @@ export default function EditTransactionModal({ transaction, onClose, onSaved }) 
             </button>
           </div>
         </form>
+
+        <div className="px-4 sm:px-6 pb-4" style={{ borderTop: `1px solid ${border}`, paddingTop: 12 }}>
+          <button
+            type="button"
+            onClick={handleDeleteClick}
+            disabled={deleting}
+            className="w-full text-center cursor-pointer"
+            style={{ background: "none", border: "none", padding: 0, fontSize: 13, fontWeight: 600, color: HOME_EXPENSE, opacity: deleting ? 0.6 : 1 }}
+          >
+            {deleting ? "Deleting…" : deleteConfirm ? "Tap again to confirm delete" : "Delete transaction"}
+          </button>
+          {deleteError && (
+            <p style={{ fontSize: 11, color: HOME_EXPENSE, textAlign: "center", marginTop: 6 }}>{deleteError}</p>
+          )}
+        </div>
       </div>
     </div>
   );
