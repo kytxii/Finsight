@@ -350,6 +350,13 @@ const SEED_RECURRING = [
   { id: "demo-r-5", name: "Netflix",        amount: "15.99",   day_of_month: 15,   category: "SUBSCRIPTION" },
   { id: "demo-r-6", name: "Electric",       amount: "88.00",   day_of_month: 20,   category: "BILL"         },
   { id: "demo-r-7", name: "Groceries",      amount: "400.00",  day_of_month: null, category: "EXPENSE", is_estimate: true },
+  // Every other dated recurring item above already has a matching transaction
+  // seeded for the current demo month (2026-04), so they're always "paid" by
+  // DEMO_TODAY regardless of day_of_month - none of them can ever show
+  // "upcoming". This one is deliberately due after DEMO_TODAY's day (28) with
+  // no April transaction seeded for it, so the per-category Upcoming panel
+  // has something real to show.
+  { id: "demo-r-8", name: "Water Bill",     amount: "35.00",   day_of_month: 29,   category: "BILL"         },
 ];
 
 const SEED_PAYCHECK_SCHEDULES = [
@@ -900,7 +907,12 @@ function nextOccurrence(dayOfMonth, fromDate) {
 function backfillPaychecks(through) {
   const schedules = getAll(PS_KEY);
   const paychecks = getAll(PC_KEY);
-  const horizon = through ?? new Date(DEMO_TODAY + "T00:00:00");
+  // Defaulting this to DEMO_TODAY itself meant backfill only ever filled in
+  // paychecks up to today, never past it - the "next payday" SEED_PAYCHECKS'
+  // own comment says backfill would add was never actually generated. A
+  // month-out horizon comfortably covers the next occurrence for any of the
+  // supported frequencies (weekly/biweekly/monthly/semi-monthly).
+  const horizon = through ?? new Date(new Date(DEMO_TODAY + "T00:00:00").getTime() + 30 * 24 * 60 * 60 * 1000);
   let changed = false;
 
   schedules.filter((schedule) => schedule.active !== false).forEach((schedule) => {
