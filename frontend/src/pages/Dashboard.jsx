@@ -227,7 +227,7 @@ const DRAWER_TRANSITION_MS = 380;
 // moving), not the full open/close duration.
 const SWITCH_TRANSITION_MS = 180;
 const TREND_CATEGORIES_KEY = "dashboardTrendCategories";
-const DEFAULT_TREND_CATEGORIES = ["INCOME", "EXPENSE"];
+const DEFAULT_TREND_CATEGORIES = TREND_CATEGORIES;
 
 function loadTrendCategories() {
   try {
