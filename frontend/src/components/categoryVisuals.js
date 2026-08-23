@@ -90,3 +90,22 @@ export const CATEGORY_ICON = {
   SAVINGS: IconSavingsTile,
   TIPS: IconTipsTile,
 };
+
+// Vertical padding on a row in the side panels (CategoryTrendPanel's category
+// list, CategoryDetailPanel's month list), tuned rather than taken off
+// Tailwind's scale - there's no step between py-3 (12px) and py-3.5 (14px).
+//
+// Those panels share a grid row with the transactions table and the two cards
+// stretch to a common height, so whichever card is shorter shows the
+// difference as dead space under its last row. The table's height is fixed by
+// its 10-row minimum, so the panel is the side that gets tuned to sit just
+// under it. At the worst case - all eight categories active - each 1px here
+// moves the column by 16px (8 rows x top and bottom):
+//
+//   table = 61 header + 48 thead + 10x61 rows          = 719
+//   panel = 61 header + 213 donut block + 8x54 rows+7  = 713
+//
+// Shared between the two panels on purpose: they swap places when you move
+// between the dashboard and a category page, so a row height that differed
+// between them would read as the page shifting underfoot.
+export const PANEL_ROW_PAD_Y = 13;

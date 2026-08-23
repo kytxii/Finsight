@@ -27,6 +27,18 @@ function SortIcon({ active, dir, activeColor, muted }) {
   );
 }
 
+// The card holds its full-page height even when the page isn't full, so the
+// panel beside it and everything below stop jumping as you page through a
+// short last page or filter down to a couple of rows. Padded with inert
+// filler rows rather than a min-height on the wrapper: the row box is the
+// unit that has to match, and letting real rows define it keeps this exact
+// however the row's own padding/type size changes later.
+const MIN_TABLE_ROWS = 10;
+// Matches a real row - px-6 py-4 (16px each side) around text-lg's 28px
+// line box - and is the same 60px the delete-sweep cell already pins itself
+// to for the same reason.
+const ROW_HEIGHT = 60;
+
 export default function TransactionTable({ rows, onAdd, onEdit, onDelete, activeColor, page, perPage, total, onPageChange, onPerPageChange, highlightId, typeFilter, onTypeFilterChange, sortColumn, sortDir, onSort }) {
   const [addHovered, setAddHovered] = useState(false);
   const [hoveredBtn, setHoveredBtn] = useState(null);
@@ -150,7 +162,12 @@ export default function TransactionTable({ rows, onAdd, onEdit, onDelete, active
   };
 
   return (
-    <div className="rounded-2xl" style={{ backgroundColor: bg, color: text }}>
+    // h-full so the card fills its grid track rather than stopping at its
+    // content: the panel beside it is a different natural height on every
+    // view (8-ish category rows on the dashboard, exactly 6 month rows on a
+    // category page), and whichever card is shorter should pad to match
+    // instead of leaving the row visibly ragged.
+    <div className="rounded-2xl h-full" style={{ backgroundColor: bg, color: text }}>
       <style>{`
         @keyframes tx-bar-sweep {
           0%   { transform: scaleX(0); opacity: 0.9; }
@@ -341,7 +358,11 @@ export default function TransactionTable({ rows, onAdd, onEdit, onDelete, active
         <tbody ref={tbodyRef}>
           {rows.length === 0 ? (
             <tr>
-              <td colSpan={4} className="px-6 py-14 text-center text-base" style={{ color: muted }}>
+              <td
+                colSpan={4}
+                className="px-6 text-center text-base"
+                style={{ color: muted, height: MIN_TABLE_ROWS * ROW_HEIGHT }}
+              >
                 No transactions
               </td>
             </tr>
@@ -456,6 +477,16 @@ export default function TransactionTable({ rows, onAdd, onEdit, onDelete, active
                     </div>
                   </td>
                 </>)}
+              </tr>
+            ))
+          )}
+          {rows.length > 0 && rows.length < MIN_TABLE_ROWS && (
+            Array.from({ length: MIN_TABLE_ROWS - rows.length }, (_, i) => (
+              // Borderless on purpose - a filler carrying the same border-t as
+              // a real row would read as an empty transaction rather than as
+              // the card simply not being full.
+              <tr key={`filler-${i}`} aria-hidden="true">
+                <td colSpan={4} style={{ height: ROW_HEIGHT }} />
               </tr>
             ))
           )}

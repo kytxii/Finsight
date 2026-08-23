@@ -37,6 +37,7 @@ import SummaryCard from "../components/SummaryCard";
 import ChartCard from "../components/ChartCard";
 import TransactionTable from "../components/TransactionTable";
 import CategoryTrendPanel from "../components/CategoryTrendPanel";
+import CategoryDetailPanel from "../components/CategoryDetailPanel";
 import EditTransactionModal from "../components/EditTransactionModal";
 import { BalanceBody, BillsBody, CashBody, SavingsBody } from "../components/OverviewBreakdownSheet";
 import Footer from "../components/Footer";
@@ -53,16 +54,6 @@ function isSingleMonthRange(range) {
   return to.getFullYear() === expectedTo.getFullYear()
     && to.getMonth() === expectedTo.getMonth()
     && to.getDate() === expectedTo.getDate();
-}
-
-// "All" isn't a real category, so it has no entry in CATEGORY_ICON - same
-// four-square glyph the sidebar's own Batch mode button already uses.
-function IconAllTile() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" />
-    </svg>
-  );
 }
 
 // Sidebar Tools icon - the exact tile mobile uses: #c7c7cc glyph on a fixed
@@ -86,12 +77,17 @@ function IconToolTile({ children }) {
 // A floating stat chip for the borderless trend section - a subtle glass
 // tint is enough to read as "a card" without the section itself needing a
 // background of its own.
+//
+// Dot, name and amount on one line. Never shrinks and never truncates - a
+// legend whose labels are clipped to "Subscri..." has stopped doing the one
+// job it has - so the strip it sits in wraps instead when the categories
+// won't fit on a line.
 function TrendPill({ label, value, color }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 16px", borderRadius: 999, backgroundColor: "rgba(255,255,255,0.05)" }}>
-      <span style={{ width: 9, height: 9, borderRadius: "50%", backgroundColor: color, flexShrink: 0 }} />
-      <span style={{ fontSize: 14, fontWeight: 600, color: HOME_MUTED }}>{label}</span>
-      <span style={{ fontSize: 14, fontWeight: 700, color: HOME_TEXT, fontVariantNumeric: "tabular-nums" }}>{value}</span>
+    <div style={{ flex: "0 0 auto", display: "flex", alignItems: "center", gap: 6, padding: "6px 11px", borderRadius: 999, backgroundColor: "rgba(255,255,255,0.05)" }}>
+      <span style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: color, flexShrink: 0 }} />
+      <span style={{ whiteSpace: "nowrap", fontSize: 13, fontWeight: 600, color: HOME_MUTED }}>{label}</span>
+      <span style={{ whiteSpace: "nowrap", fontSize: 13, fontWeight: 700, color: HOME_TEXT, fontVariantNumeric: "tabular-nums" }}>{value}</span>
     </div>
   );
 }
@@ -117,13 +113,19 @@ function StackedFraction({ num, den, color }) {
 function OverviewColumn({ label, value, valueNode, color, caption, onClick, active, first }) {
   const [hovered, setHovered] = useState(false);
   const tint = color ?? HOME_TEXT;
+  // Category pages reuse this same column for read-only stats. With nothing
+  // to open there's no chevron to point at a drawer and no hover tint to
+  // promise one, and it renders as a div so it isn't a tab stop that does
+  // nothing when you activate it.
+  const interactive = onClick != null;
+  const Tag = interactive ? "button" : "div";
   return (
-    <button
-      type="button"
+    <Tag
+      type={interactive ? "button" : undefined}
       onClick={onClick}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      className="text-left cursor-pointer transition-all duration-150 active:scale-[0.98]"
+      onMouseEnter={interactive ? () => setHovered(true) : undefined}
+      onMouseLeave={interactive ? () => setHovered(false) : undefined}
+      className={`text-left transition-all duration-150 ${interactive ? "cursor-pointer active:scale-[0.98]" : ""}`}
       style={{
         flex: 1, minWidth: 0, padding: "16px 20px", border: "none", borderRadius: 0,
         borderLeft: first ? "none" : `1px solid ${HOME_DIVIDER}`,
@@ -137,20 +139,22 @@ function OverviewColumn({ label, value, valueNode, color, caption, onClick, acti
     >
       <div className="flex items-center justify-between gap-2">
         <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: HOME_MUTED, margin: 0 }}>{label}</p>
-        <svg
-          xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none"
-          stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-          style={{
-            color: active || hovered ? tint : HOME_MUTED, flexShrink: 0,
-            transform: active ? "rotate(180deg)" : "none", transition: "transform 200ms ease, color 150ms ease",
-          }}
-        >
-          <path d="M6 9l6 6 6-6" />
-        </svg>
+        {interactive && (
+          <svg
+            xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+            style={{
+              color: active || hovered ? tint : HOME_MUTED, flexShrink: 0,
+              transform: active ? "rotate(180deg)" : "none", transition: "transform 200ms ease, color 150ms ease",
+            }}
+          >
+            <path d="M6 9l6 6 6-6" />
+          </svg>
+        )}
       </div>
       {valueNode ?? <p style={{ fontSize: 22, fontWeight: 700, color, margin: "6px 0 0", fontVariantNumeric: "tabular-nums" }}>{value}</p>}
       {caption != null && <p style={{ fontSize: 11, fontWeight: 600, color: HOME_MUTED, margin: "5px 0 0" }}>{caption}</p>}
-    </button>
+    </Tag>
   );
 }
 
@@ -176,14 +180,26 @@ function monthRangeFor(year, month) {
 
 const MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-// Real categories only - "ALL" isn't a per-line series, it's the tab that
-// gets you to this chart in the first place.
-const TREND_CATEGORIES = CATEGORIES.filter((c) => c !== "ALL");
+// "ALL" is no longer a destination of its own - the dashboard *is* the
+// all-categories view, and picking a category opens that category's own page
+// over it (the same takeover the sidebar Tools use). It survives only as the
+// internal "no category page open" value of `activeTab`, so every list the
+// user actually sees is built from the real categories.
+//
+// CATEGORIES itself still carries "ALL" because mobile's MobileActivity
+// cycles through it as a filter; that's a separate surface with a separate
+// interaction, so it isn't touched here.
+const REAL_CATEGORIES = CATEGORIES.filter((c) => c !== "ALL");
+// Same list, named for how the trend chart reads it - one series per category.
+const TREND_CATEGORIES = REAL_CATEGORIES;
 // Target point count for the full-bleed trend chart's day buckets - stays
 // daily up to ~45 days (covers every 1M view, even a 31-day month) and
 // widens the bucket for longer ranges so the chart doesn't get noisier as
 // the window grows.
 const TREND_TARGET_POINTS = 45;
+// Legend pills per row before breaking to the next one. Eight categories -
+// the maximum - lands as 4x2.
+const TREND_LEGEND_PER_ROW = 4;
 // Scales with viewport height instead of a fixed 560px, which looked right
 // on the screen it was tuned on but way oversized on shorter displays (a
 // 1366x768 laptop, a browser window that isn't maximized) - 45vh keeps it
@@ -293,9 +309,39 @@ export default function Dashboard() {
   const [devForceError, setDevForceError] = useState(false);
   const [devLastFetch, setDevLastFetch] = useState(null);
   const devForceErrorRef = useRef(false);
-  const [activeTab, setActiveTab] = useState("ALL");
+  const [activeTab, setActiveTab] = useState("ALL"); // "ALL" = dashboard; any category = that category's page
+  const [categoryClosing, setCategoryClosing] = useState(false);
+  const categoryCloseTimer = useRef(null);
   const [trendMonths, setTrendMonths] = useState(1); // 1 | 3 | 6 | 12 | "all" - full-bleed trend chart's own window
+  // The range toggle's selected pill is one shared element that slides between
+  // options rather than a background colour switching on each button, so the
+  // selection reads as moving instead of teleporting. The options are
+  // different widths ("1M" vs "Lifetime"), so the target has to be measured
+  // off the real DOM rather than computed from an index.
+  //
+  // Null until measured: mounting the indicator already at the right place
+  // means the browser has nothing to animate from on first paint, which is
+  // what stops it sliding in from the left edge on load.
+  const trendRangeRef = useRef(null);
+  const [rangeIndicator, setRangeIndicator] = useState(null);
   const [visibleCategories, setVisibleCategories] = useState(() => loadTrendCategories());
+
+  // Layout effect, not a plain one, so the measurement lands before paint and
+  // the pill never shows at a stale position for a frame. The observer covers
+  // the cases that change a button's width without changing the selection -
+  // a webfont finishing load, browser zoom.
+  useLayoutEffect(() => {
+    const wrap = trendRangeRef.current;
+    if (!wrap) return;
+    const measure = () => {
+      const active = wrap.querySelector('[data-range-active="true"]');
+      if (active) setRangeIndicator({ left: active.offsetLeft, width: active.offsetWidth });
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(wrap);
+    return () => ro.disconnect();
+  }, [trendMonths, loading, activeTab]);
   const [categoriesOpen, setCategoriesOpen] = useState(false);
   const [categoriesSaved, setCategoriesSaved] = useState(false);
   const categoriesPanelRef = useRef(null);
@@ -452,6 +498,12 @@ export default function Dashboard() {
     setAddMode(null);
   }
   function closeTool() {
+    // No tool open means there's nothing to slide out - and setting
+    // toolClosing anyway would flip `(toolMode || toolClosing)` below true
+    // for a full TOOL_TRANSITION_MS, unmounting the whole dashboard <main>
+    // and remounting it when the timer clears. That read as the entire page
+    // refreshing every time openAddMode() called through to here.
+    if (toolMode == null) return;
     clearTimeout(toolCloseTimer.current);
     setToolClosing(true);
     toolCloseTimer.current = setTimeout(() => {
@@ -460,6 +512,34 @@ export default function Dashboard() {
     }, TOOL_TRANSITION_MS);
   }
   function openAddMode(mode) { setAddMode(mode); closeTool(); }
+
+  // Category pages are the same takeover the Tools use, just driven by
+  // `activeTab` instead of `toolMode` - "ALL" is the closed state (the
+  // dashboard), any real category is an open page with a back button.
+  // categoryClosing mirrors toolClosing: activeTab stays on the category
+  // through the slide-out so the page is still rendering its own content
+  // while it animates, and only drops back to "ALL" once that finishes.
+  function openCategory(cat) {
+    clearTimeout(categoryCloseTimer.current);
+    clearTimeout(toolCloseTimer.current);
+    setCategoryClosing(false);
+    // A category and a tool occupy the same slot, so this is a swap, not an
+    // exit - same reasoning as tool-to-tool switching, which also skips the
+    // close animation rather than playing it into the incoming page.
+    setToolClosing(false);
+    setToolMode(null);
+    setActiveTab(cat);
+    setAddMode(null);
+  }
+  function closeCategory() {
+    if (activeTab === "ALL") return;
+    clearTimeout(categoryCloseTimer.current);
+    setCategoryClosing(true);
+    categoryCloseTimer.current = setTimeout(() => {
+      setActiveTab("ALL");
+      setCategoryClosing(false);
+    }, TOOL_TRANSITION_MS);
+  }
   const [editingTransaction, setEditingTransaction] = useState(null);
   // Tracks whether the detail modal was opened from a search result (in
   // which case it offers a Locate action) vs. from the table's own edit
@@ -573,7 +653,7 @@ export default function Dashboard() {
   }
 
   useEffect(() => { loadSafeToSpend(); loadSavings(); }, []);
-  useEffect(() => () => { clearTimeout(breakdownCloseTimer.current); clearTimeout(outgoingTimer.current); clearTimeout(toolCloseTimer.current); }, []);
+  useEffect(() => () => { clearTimeout(breakdownCloseTimer.current); clearTimeout(outgoingTimer.current); clearTimeout(toolCloseTimer.current); clearTimeout(categoryCloseTimer.current); }, []);
 
   function refreshTransactions() {
     devFetch().then((res) => {
@@ -610,6 +690,10 @@ export default function Dashboard() {
     (t) => {
       setEditingTransaction(null);
       setEditingFromSearch(false);
+      // Jump straight to the dashboard - no slide-out, since this is a
+      // "take me to that row" action, not a back-navigation.
+      clearTimeout(categoryCloseTimer.current);
+      setCategoryClosing(false);
       setActiveTab("ALL");
       setDateRange({ from: null, to: null });
       const allSorted = [...transactions].sort(
@@ -814,6 +898,25 @@ export default function Dashboard() {
     return totals;
   }, [trendData]);
 
+  // Ordered list of the series actually on the chart - the legend needs both
+  // the items and the count (to pick its column count), so it's derived once
+  // rather than filtered twice inline.
+  const visibleTrendCategories = useMemo(
+    () => TREND_CATEGORIES.filter((cat) => visibleCategories.has(cat)),
+    [visibleCategories],
+  );
+
+  // Chunked into rows of TREND_LEGEND_PER_ROW for the legend strip - see the
+  // note at the render site for why the break is explicit rather than left to
+  // flex-wrap.
+  const trendLegendRows = useMemo(() => {
+    const rows = [];
+    for (let i = 0; i < visibleTrendCategories.length; i += TREND_LEGEND_PER_ROW) {
+      rows.push(visibleTrendCategories.slice(i, i + TREND_LEGEND_PER_ROW));
+    }
+    return rows;
+  }, [visibleTrendCategories]);
+
   const trendHasData = useMemo(
     () => trendData.some((d) => TREND_CATEGORIES.some((cat) => d[cat] > 0)),
     [trendData],
@@ -928,6 +1031,15 @@ export default function Dashboard() {
   }
 
   const activeColor = CATEGORY_ACCENT[activeTab];
+  // Whether this category's move against the previous period is the direction
+  // you'd want: up is good for the income-side categories, down for spending.
+  // null when there's no previous period to compare against, which the column
+  // renders muted rather than picking a colour that would imply a judgement.
+  const categoryDeltaGood = summary.categoryDelta == null
+    ? null
+    : INCOME_TYPES.has(activeTab)
+      ? summary.categoryDelta >= 0
+      : summary.categoryDelta <= 0;
   const catColor = CATEGORY_ACCENT[addForm.category];
   const text    = HOME_TEXT;
   const muted   = HOME_MUTED;
@@ -1239,13 +1351,13 @@ export default function Dashboard() {
           <div>
             <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", color: muted, marginBottom: 6, paddingLeft: 10 }}>CATEGORY</p>
             <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-            {CATEGORIES.map(cat => {
+            {REAL_CATEGORIES.map(cat => {
               const catColor = CATEGORY_ACCENT[cat];
               const isActive = activeTab === cat;
               const isHov = catHov === cat;
-              const Icon = cat === "ALL" ? IconAllTile : CATEGORY_ICON[cat];
+              const Icon = CATEGORY_ICON[cat];
               return (
-                <button key={cat} onClick={() => setActiveTab(cat)}
+                <button key={cat} onClick={() => openCategory(cat)}
                   onMouseEnter={() => setCatHov(cat)} onMouseLeave={() => setCatHov(null)}
                   style={{
                     display: "flex", alignItems: "center", gap: 11, width: "100%", textAlign: "left",
@@ -1264,7 +1376,7 @@ export default function Dashboard() {
                   }}>
                     <Icon />
                   </span>
-                  {cat === "ALL" ? "All" : CATEGORY_CONFIG[cat].label}
+                  {CATEGORY_CONFIG[cat].label}
                 </button>
               );
             })}
@@ -1453,14 +1565,65 @@ export default function Dashboard() {
             )}
           </div>
         ) : (
-        <main className="px-6 py-6 space-y-5 flex-1">
+        <main className="px-6 py-6 flex-1">
+        {/* Keyed on which page is showing so opening or leaving a category
+            remounts this subtree and replays tool-page-in - the same entrance
+            the Tools takeover gets. transform stays `none` when idle rather
+            than translateX(0): a non-none transform makes this a containing
+            block for every descendant, and the entrance is the keyframe's job
+            anyway, so the transition here only ever needs to drive the
+            slide-out. */}
+        <div
+          key={activeTab === "ALL" ? "dashboard" : activeTab}
+          className="space-y-5"
+          style={{
+            opacity: categoryClosing ? 0 : 1,
+            transform: categoryClosing ? "translateX(-32px)" : "none",
+            transition: `opacity ${TOOL_TRANSITION_MS}ms ease, transform ${TOOL_TRANSITION_MS}ms ease`,
+            animation: categoryClosing ? undefined : `tool-page-in ${TOOL_TRANSITION_MS}ms ease`,
+          }}
+        >
 
         {/* Period header - a big month title with prev/next arrows when the
             current range is exactly one calendar month (the common case:
             "Current Month"/"Last Month" presets and the arrows themselves
             all produce this shape), otherwise the active multi-month/all-time
             preset's own label, since stepping doesn't make sense for those. */}
+        {/* On the dashboard the navigator is the only thing in this row and
+            simply sits at the left, where a page title belongs. A category
+            page adds two flex:1 side zones around it instead - equal shares of
+            whatever the navigator doesn't take - which centres it between the
+            back arrow and the right edge, and keeps it centred *while* the
+            month/year strip expands, since the growth comes out of both sides
+            evenly. */}
         <div className="flex items-center gap-3">
+          {/* Left zone - the back arrow and the category's own name, same
+              shape as the Tools takeover. min-width:0 plus an ellipsis on the
+              title so a long name gives way instead of shoving the navigator
+              off centre. */}
+          {activeTab !== "ALL" && (
+            <div className="flex items-center gap-3" style={{ flex: 1, minWidth: 0 }}>
+              <button
+                onClick={closeCategory}
+                aria-label="Back to dashboard"
+                className="rounded-lg cursor-pointer transition-colors"
+                style={{ padding: 6, color: muted, flexShrink: 0 }}
+                onMouseEnter={e => e.currentTarget.style.color = text}
+                onMouseLeave={e => e.currentTarget.style.color = muted}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
+              </button>
+              <h1
+                className="text-3xl font-bold tracking-tight"
+                style={{ color: activeColor, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+              >
+                {CATEGORY_CONFIG[activeTab].label}
+              </h1>
+            </div>
+          )}
+
+          {/* The navigator itself. */}
+          <div className="flex items-center gap-3" style={{ flexShrink: 0 }}>
           {isSingleMonthRange(dateRange) ? (
             <>
               <button
@@ -1595,6 +1758,13 @@ export default function Dashboard() {
               {activePreset === "All" ? "All Time" : activePreset ?? "Custom Range"}
             </h1>
           )}
+          </div>
+
+          {/* Right zone - empty, and that's its whole job: it mirrors the left
+              zone's flex:1 so the navigator lands on the row's midpoint. Both
+              side zones are absent on the dashboard, which is what leaves the
+              navigator left-aligned there. */}
+          {activeTab !== "ALL" && <div style={{ flex: 1, minWidth: 0 }} />}
         </div>
 
         {loading ? (
@@ -1618,12 +1788,16 @@ export default function Dashboard() {
               </div>
             </div>
           ) : (
-            <div className="grid grid-cols-4 gap-4">
+            /* Mirrors the unified panel this stands in for - one surface with
+               internal dividers, and OverviewColumn's own 16px/20px padding
+               and 11/22/11 type sizes - so the skeleton doesn't resolve into a
+               differently-shaped block. */
+            <div className="grid grid-cols-4 rounded-2xl overflow-hidden" style={{ backgroundColor: surface }}>
               {[...Array(4)].map((_, i) => (
-                <div key={i} className="rounded-2xl px-5 py-5" style={{ backgroundColor: surface }}>
-                  <Skel h={16} w="45%" />
-                  <Skel h={34} w="62%" style={{ marginTop: 8 }} />
-                  <Skel h={18} w="72px" style={{ marginTop: 10, borderRadius: 999 }} />
+                <div key={i} style={{ padding: "16px 20px", borderLeft: i === 0 ? "none" : `1px solid ${border}` }}>
+                  <Skel h={14} w="55%" />
+                  <Skel h={28} w="70%" style={{ marginTop: 8 }} />
+                  <Skel h={12} w="62%" style={{ marginTop: 7 }} />
                 </div>
               ))}
             </div>
@@ -1770,64 +1944,55 @@ export default function Dashboard() {
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-4 gap-4">
-            <SummaryCard
+          /* Same unified panel the dashboard's overview uses - one surface with
+             internal dividers rather than four separate card shells - so the
+             two pages read as the same app. These columns are read-only
+             (nothing to expand), which OverviewColumn handles by dropping the
+             chevron and the hover tint when no onClick is given. */
+          <div className="grid grid-cols-4 rounded-2xl overflow-hidden" style={{ backgroundColor: surface }}>
+            <OverviewColumn
+              first
               label={`${CATEGORY_CONFIG[activeTab].label.toUpperCase()} TOTAL`}
               value={fmt(summary.categoryTotal)}
-              activeColor={activeColor}
+              color={activeColor}
             />
             {INCOME_TYPES.has(activeTab) ? (
-              <SummaryCard
+              <OverviewColumn
                 label="PAYMENTS"
                 value={String(summary.txCount)}
-                activeColor={activeColor}
-                deltaLabel={
-                  summary.txCount > 0
-                    ? `avg ${fmt(summary.avgTx)} each`
-                    : null
-                }
-                deltaUp={true}
+                color={activeColor}
+                caption={summary.txCount > 0 ? `avg ${fmt(summary.avgTx)} each` : null}
               />
             ) : (
-              <SummaryCard
+              <OverviewColumn
                 label="AVG TRANSACTION"
                 value={fmt(summary.avgTx)}
-                activeColor={activeColor}
+                color={activeColor}
               />
             )}
-            <SummaryCard
+            <OverviewColumn
               label="VS LAST MONTH"
               value={
                 summary.categoryDelta != null
                   ? `${summary.categoryDelta >= 0 ? "+" : ""}${summary.categoryDelta.toFixed(1)}%`
                   : "—"
               }
-              activeColor={activeColor}
-              deltaLabel={
+              color={
+                categoryDeltaGood == null
+                  ? muted
+                  : categoryDeltaGood
+                    ? HOME_INCOME
+                    : HOME_EXPENSE
+              }
+              caption={
                 summary.categoryDelta != null
                   ? summary.categoryDelta >= 0
                     ? "↑ higher than last month"
                     : "↓ lower than last month"
                   : null
               }
-              deltaUp={
-                INCOME_TYPES.has(activeTab)
-                  ? summary.categoryDelta >= 0
-                  : summary.categoryDelta <= 0
-              }
-              valueColor={
-                summary.categoryDelta != null
-                  ? (
-                      INCOME_TYPES.has(activeTab)
-                        ? summary.categoryDelta >= 0
-                        : summary.categoryDelta <= 0
-                    )
-                    ? HOME_INCOME
-                    : HOME_EXPENSE
-                  : undefined
-              }
             />
-            <SummaryCard
+            <OverviewColumn
               label={
                 INCOME_TYPES.has(activeTab) ? "% OF TOTAL INCOME" : "% OF TOTAL EXPENSES"
               }
@@ -1836,20 +2001,25 @@ export default function Dashboard() {
                   ? `${summary.pctOfTotal.toFixed(1)}%`
                   : "—"
               }
-              activeColor={activeColor}
+              color={activeColor}
             />
           </div>
         )}
 
         {loading ? (
           activeTab === "ALL" ? (
+            /* Mirrors the trend block's real layout - controls at either end,
+               then the legend strip, then the chart - so the skeleton doesn't
+               resolve into a differently-shaped block. */
             <div>
-              <div className="flex flex-wrap items-center justify-between gap-3" style={{ marginBottom: 12 }}>
-                <div className="flex items-center gap-3 flex-wrap">
-                  <Skel h={34} w="130px" style={{ borderRadius: 999 }} />
-                  <Skel h={34} w="130px" style={{ borderRadius: 999 }} />
+              <div className="flex items-center gap-3" style={{ marginBottom: 20 }}>
+                <Skel h={34} w="130px" style={{ borderRadius: 999 }} />
+                <div className="flex items-center justify-center" style={{ flex: 1, minWidth: 0, gap: 6, flexWrap: "wrap" }}>
+                  {[...Array(5)].map((_, i) => (
+                    <Skel key={i} h={29} w={`${110 + i * 14}px`} style={{ borderRadius: 999 }} />
+                  ))}
                 </div>
-                <Skel h={30} w="120px" style={{ borderRadius: 999 }} />
+                <Skel h={38} w="360px" style={{ borderRadius: 999 }} />
               </div>
               <Skel h={TREND_CHART_HEIGHT} style={{ borderRadius: 16 }} />
             </div>
@@ -1866,11 +2036,11 @@ export default function Dashboard() {
             </div>
           )
         ) : activeTab === "ALL" ? (
-          /* Full-bleed trend — no card chrome, floating pills + a month-range
-             toggle sit directly over the chart instead of being boxed
-             alongside it. Replaces the old donut + boxed income/expense pair. */
+          /* Full-bleed trend — no card chrome, controls and a legend sit
+             directly around the chart instead of being boxed alongside it.
+             Replaces the old donut + boxed income/expense pair. */
           <div>
-            <div className="flex flex-wrap items-center gap-3" style={{ marginBottom: 20 }}>
+            <div className="flex items-center gap-3" style={{ marginBottom: 20 }}>
                 <div ref={categoriesPanelRef} style={{ position: "relative", flexShrink: 0 }}>
                   <button
                     onClick={() => setCategoriesOpen((v) => !v)}
@@ -1932,22 +2102,58 @@ export default function Dashboard() {
                     </div>
                   )}
                 </div>
-                <div className="flex-1 flex items-center justify-center gap-2 flex-wrap">
-                  {TREND_CATEGORIES.filter((cat) => visibleCategories.has(cat)).map((cat) => (
-                    <TrendPill key={cat} label={CATEGORY_CONFIG[cat].label} value={fmt(trendTotals[cat])} color={CATEGORY_ACCENT[cat]} />
+                {/* Explicit rows of four rather than a grid or a free wrap. A
+                    grid aligns columns, which forced slack around the short
+                    pills; a free wrap packs tight but breaks wherever the
+                    width runs out. Chunking gives both - each pill keeps its
+                    own natural width and they pack against each other, but
+                    the break always lands after the fourth.
+
+                    Each row still carries flexWrap as a safety valve: on a
+                    narrow enough viewport four pills won't fit, and wrapping
+                    is a better failure than overflowing the band.
+
+                    The outer row's items-center is what makes the multi-line
+                    case read right - the Categories button and the range
+                    toggle sit on the strip's own centre line, so it stays a
+                    single band rather than leaving the controls stranded at
+                    the top. */}
+                <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+                  {trendLegendRows.map((row, i) => (
+                    <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, flexWrap: "wrap" }}>
+                      {row.map((cat) => (
+                        <TrendPill key={cat} label={CATEGORY_CONFIG[cat].label} value={fmt(trendTotals[cat])} color={CATEGORY_ACCENT[cat]} />
+                      ))}
+                    </div>
                   ))}
                 </div>
-              <div className="flex items-center gap-1" style={{ padding: 2, borderRadius: 999, backgroundColor: "rgba(255,255,255,0.05)", flexShrink: 0 }}>
+              <div ref={trendRangeRef} className="flex items-center gap-1" style={{ position: "relative", padding: 2, borderRadius: 999, backgroundColor: "rgba(255,255,255,0.05)", flexShrink: 0 }}>
+                {/* The sliding selection itself - one element behind the row,
+                    not a background on each button. top/bottom 2 matches the
+                    container's own padding, so it spans exactly a button. */}
+                {rangeIndicator && (
+                  <div
+                    aria-hidden="true"
+                    style={{
+                      position: "absolute", top: 2, bottom: 2,
+                      left: rangeIndicator.left, width: rangeIndicator.width,
+                      borderRadius: 999, backgroundColor: ACCENT, pointerEvents: "none",
+                      transition: "left 280ms cubic-bezier(0.4, 0, 0.2, 1), width 280ms cubic-bezier(0.4, 0, 0.2, 1)",
+                    }}
+                  />
+                )}
                 {[[1, "1M"], [3, "3M"], [6, "6M"], [12, "1Y"], ["all", "Lifetime"]].map(([n, label]) => (
                   <button
                     key={n}
+                    data-range-active={trendMonths === n}
                     onClick={() => setTrendMonths(n)}
                     style={{
+                      position: "relative", zIndex: 1,
                       padding: "8px 16px", borderRadius: 999, border: "none", cursor: "pointer",
                       fontSize: 14, fontWeight: 700,
                       color: trendMonths === n ? ACCENT_TEXT : muted,
-                      backgroundColor: trendMonths === n ? ACCENT : "transparent",
-                      transition: "background-color 150ms ease, color 150ms ease",
+                      backgroundColor: "transparent",
+                      transition: "color 150ms ease",
                     }}
                   >
                     {label}
@@ -1985,7 +2191,7 @@ export default function Dashboard() {
                   />
                   <YAxis axisLine={false} tickLine={false} tickFormatter={(v) => `$${v}`} tick={{ fontSize: 12, fill: text }} />
                   <Tooltip {...tooltipProps} formatter={(v) => fmt(v)} />
-                  {TREND_CATEGORIES.filter((cat) => visibleCategories.has(cat)).map((cat) => (
+                  {visibleTrendCategories.map((cat) => (
                     <Area
                       key={cat}
                       type="linear"
@@ -2146,7 +2352,7 @@ export default function Dashboard() {
         )}
 
         {loading ? (
-          <div className="grid gap-4 items-start" style={{ gridTemplateColumns: "2fr 1fr" }}>
+          <div className="grid gap-4" style={{ gridTemplateColumns: "2fr 1fr" }}>
             <div className="rounded-2xl" style={{ backgroundColor: surface }}>
               {/* card header — title + pagination pills all live in one row
                   now (#127), matches px-6 py-4 */}
@@ -2191,7 +2397,7 @@ export default function Dashboard() {
             </div>
           </div>
         ) : (
-        <div className="grid gap-4 items-start" style={{ gridTemplateColumns: "2fr 1fr" }}>
+        <div className="grid gap-4" style={{ gridTemplateColumns: "2fr 1fr" }}>
           <div ref={tableRef}>
             <TransactionTable
               rows={paginated}
@@ -2209,9 +2415,14 @@ export default function Dashboard() {
               onSort={handleSort}
             />
           </div>
-          <CategoryTrendPanel transactions={transactions} dateRange={dateRange} />
+          {activeTab === "ALL" ? (
+            <CategoryTrendPanel transactions={transactions} dateRange={dateRange} />
+          ) : (
+            <CategoryDetailPanel category={activeTab} transactions={transactions} dateRange={dateRange} />
+          )}
         </div>
         )}
+        </div>
       </main>
         )}
         <Footer />
