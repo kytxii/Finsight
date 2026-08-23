@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { CATEGORY_CONFIG, INCOME_TYPES } from "../utils/finance";
 import { previewImport, commitImport, aiCleanupNames } from "../api/imports";
 import { LOADING_SYMBOLS, IMPORT_LOADING_PHRASES } from "../utils/authFlavor";
-import { HOME_SURFACE, HOME_DIVIDER, HOME_TEXT, HOME_MUTED, HOME_INCOME, HOME_EXPENSE, CATEGORY_ACCENT, DUPLICATE_ALERT } from "./categoryVisuals";
+import { HOME_SURFACE, HOME_DIVIDER, HOME_TEXT, HOME_MUTED, HOME_INCOME, HOME_EXPENSE, HOME_ACCENT, CATEGORY_ACCENT, DUPLICATE_ALERT } from "./categoryVisuals";
 
 const isDemo = () => localStorage.getItem("demo") === "true";
 
@@ -104,7 +104,6 @@ export default function ImportPanel({ active, onSaveStateChange, onSaved, onCanc
   const [renamingLid, setRenamingLid] = useState(null);
   const [renameValue, setRenameValue] = useState("");
   const [showDuplicatesMenu, setShowDuplicatesMenu] = useState(false);
-  const [loadingSymbolIdx, setLoadingSymbolIdx] = useState(0);
   const [loadingPhraseIdx, setLoadingPhraseIdx] = useState(0);
 
   const reset = () => {
@@ -250,13 +249,6 @@ export default function ImportPanel({ active, onSaveStateChange, onSaved, onCanc
     return () => clearInterval(interval);
   }, [aiCleanupLoading]);
 
-  // Same treatment while the uploaded file is being read/parsed.
-  useEffect(() => {
-    if (!loading) return;
-    const interval = setInterval(() => setLoadingSymbolIdx((i) => (i + 1) % LOADING_SYMBOLS.length), 100);
-    return () => clearInterval(interval);
-  }, [loading]);
-
   if (!file) {
     return (
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flex: 1, gap: 12, padding: 32, borderTop: `1px solid ${border}` }}>
@@ -267,9 +259,11 @@ export default function ImportPanel({ active, onSaveStateChange, onSaved, onCanc
         >
           Choose a CSV or PDF file…
         </button>
-        <p style={{ fontSize: 12, color: muted, textAlign: "center", maxWidth: 280 }}>
-          Export a statement from your bank as CSV or PDF and drop it here. We'll auto-detect the columns (CSV) or parse the statement directly (PDF, Bank of America format).
-        </p>
+        <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "center" }}>
+          <p style={{ fontSize: 12, color: muted, margin: 0 }}>Export a statement from your bank as CSV or PDF.</p>
+          <p style={{ fontSize: 12, color: muted, margin: 0 }}>CSV — columns are auto-detected.</p>
+          <p style={{ fontSize: 12, color: muted, margin: 0 }}>PDF — parsed directly (Bank of America format).</p>
+        </div>
         {onCancel && (
           <button onClick={onCancel} style={{ fontSize: 12, color: muted, background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>Cancel</button>
         )}
@@ -280,11 +274,45 @@ export default function ImportPanel({ active, onSaveStateChange, onSaved, onCanc
   return (
     <div style={{ display: "flex", flexDirection: "column", flex: 1, overflow: "hidden", color: text, borderTop: `1px solid ${border}` }}>
       {loading && (
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: 24 }}>
-          <span style={{ fontSize: 15, color: muted, width: 16, textAlign: "center", flexShrink: 0, fontFamily: "monospace", lineHeight: 1 }}>
-            {LOADING_SYMBOLS[loadingSymbolIdx]}
+        <div style={{ position: "relative", padding: "36px 20px 44px" }}>
+          <style>{`
+            @keyframes import-doc-rise {
+              0%   { transform: translateY(34px) scale(0.85); opacity: 0; }
+              18%  { opacity: 1; }
+              62%  { opacity: 1; }
+              100% { transform: translateY(-46px) scale(0.55); opacity: 0; }
+            }
+            @keyframes import-tray-pulse {
+              0%, 100% { opacity: 0.8; transform: scale(1); }
+              50%      { opacity: 1;   transform: scale(1.08); }
+            }
+          `}</style>
+          {/* Center stage: small "documents" rise up and fade into the
+              upload tray on a loop - purely decorative (the real progress
+              signal is the phrase in the corner), just something nicer to
+              look at than a bare spinner while previewImport is in flight. */}
+          <div style={{ position: "relative", height: 108, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+            <div style={{ position: "absolute", top: 0, color: HOME_ACCENT, animation: "import-tray-pulse 1.6s ease-in-out infinite" }}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
+              </svg>
+            </div>
+            {[0, 1, 2].map((i) => (
+              <div
+                key={i}
+                style={{
+                  position: "absolute", bottom: 0, left: `calc(50% + ${(i - 1) * 22}px - 9px)`,
+                  width: 18, height: 24, borderRadius: 3,
+                  backgroundColor: `color-mix(in srgb, ${HOME_ACCENT} 25%, transparent)`,
+                  border: `1.5px solid ${HOME_ACCENT}`,
+                  animation: `import-doc-rise 1.8s ease-in-out ${i * 0.5}s infinite`,
+                }}
+              />
+            ))}
+          </div>
+          <span style={{ position: "absolute", right: 16, bottom: 10, fontSize: 11, color: muted }}>
+            {IMPORT_LOADING_PHRASES[loadingPhraseIdx]}
           </span>
-          <span style={{ fontSize: 13, color: muted }}>{IMPORT_LOADING_PHRASES[loadingPhraseIdx]}</span>
         </div>
       )}
 
@@ -422,7 +450,7 @@ export default function ImportPanel({ active, onSaveStateChange, onSaved, onCanc
 
           {/* Review cards — rows needing a decision (duplicate, credit card
               payment, tips deposit, errors) surface above a divider first */}
-          <div style={{ overflowY: "auto", flex: 1, padding: "10px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ overflowY: "auto", flex: 1, padding: "10px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
             {(() => {
             const renderRow = (r) => {
               const catColor = CATEGORY_ACCENT[r.category];
@@ -434,9 +462,9 @@ export default function ImportPanel({ active, onSaveStateChange, onSaved, onCanc
                   borderRadius: 12,
                   border: `1px solid ${border}`,
                   backgroundColor: hasError ? `color-mix(in srgb, ${HOME_EXPENSE} 8%, transparent)` : faint,
-                  padding: 12,
+                  padding: "9px 12px",
                 }}>
-                  <div style={{ position: "relative", marginBottom: 4, display: "flex", alignItems: "center", gap: 6 }}>
+                  <div style={{ position: "relative", marginBottom: 2, display: "flex", alignItems: "center", gap: 6 }}>
                     <span
                       role="img"
                       aria-label={INCOME_TYPES.has(r.category) ? "Income" : "Expense"}
@@ -483,7 +511,7 @@ export default function ImportPanel({ active, onSaveStateChange, onSaved, onCanc
                           setRows(prev => prev.map(x => (x._lid !== r._lid && x.name === original) ? { ...x, name: r.name } : x));
                         }
                       }}
-                      rows={2}
+                      rows={r.name.length > 28 ? 2 : 1}
                       style={{
                         width: "100%", background: "transparent", color: text, border: "none", outline: "none",
                         fontSize: 14, fontWeight: 600, fontFamily: "inherit", resize: "none", overflowWrap: "break-word",
@@ -575,24 +603,36 @@ export default function ImportPanel({ active, onSaveStateChange, onSaved, onCanc
                     </div>
                   )}
 
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 4, width: 96, flexShrink: 0 }}>
-                      <span style={{ fontSize: 11, color: muted }}>$</span>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 4, width: 90, flexShrink: 0, borderBottom: `1px solid ${border}`, paddingBottom: 3 }}>
+                      <span style={{ fontSize: 12, color: muted }}>$</span>
                       <input type="number" value={r.amount} min="0.01" step="0.01" onChange={e => update({ amount: e.target.value })}
-                        style={{ width: "100%", boxSizing: "border-box", background: "transparent", color: text, border: `1px solid ${border}`, borderRadius: 6, outline: "none", fontSize: 13, fontFamily: "inherit", padding: "3px 6px" }} />
+                        style={{ width: "100%", boxSizing: "border-box", background: "transparent", color: text, border: "none", outline: "none", fontSize: 13, fontWeight: 600, fontFamily: "inherit", padding: 0 }} />
                     </div>
                     {r.is_tip_deposit ? (
-                      <span style={{ width: 132, boxSizing: "border-box", textAlign: "center", flexShrink: 0, padding: "3px 8px", borderRadius: 999, fontSize: 11, fontWeight: 600, color: CATEGORY_ACCENT.TIPS, backgroundColor: `color-mix(in srgb, ${CATEGORY_ACCENT.TIPS} 15%, transparent)`, border: `1px solid color-mix(in srgb, ${CATEGORY_ACCENT.TIPS} 35%, transparent)` }}>
+                      <span style={{ width: 132, boxSizing: "border-box", textAlign: "center", flexShrink: 0, padding: "4px 10px", borderRadius: 999, fontSize: 11, fontWeight: 700, color: "#fff", backgroundColor: CATEGORY_ACCENT.TIPS }}>
                         Tips Deposit
                       </span>
                     ) : (
                       <select value={r.category} onChange={e => update({ category: e.target.value })}
-                        style={{ width: 132, boxSizing: "border-box", flexShrink: 0, padding: "3px 8px", borderRadius: 999, fontSize: 11, fontWeight: 600, color: catColor, backgroundColor: `color-mix(in srgb, ${catColor} 15%, transparent)`, border: `1px solid color-mix(in srgb, ${catColor} 35%, transparent)`, outline: "none", cursor: "pointer", fontFamily: "inherit", colorScheme }}>
+                        style={{ width: 132, boxSizing: "border-box", flexShrink: 0, padding: "4px 10px", borderRadius: 999, fontSize: 11, fontWeight: 700, color: "#fff", backgroundColor: catColor, border: "none", outline: "none", cursor: "pointer", fontFamily: "inherit", colorScheme }}>
                         {Object.entries(CATEGORY_CONFIG).map(([key, cfg]) => <option key={key} value={key} style={{ backgroundColor: bg, color: text }}>{cfg.label}</option>)}
                       </select>
                     )}
                     <input type="date" value={r.transaction_date} onChange={e => update({ transaction_date: e.target.value })}
-                      style={{ width: 132, boxSizing: "border-box", flexShrink: 0, background: "transparent", color: text, border: `1px solid ${border}`, borderRadius: 6, outline: "none", fontSize: 13, fontFamily: "inherit", padding: "3px 6px", colorScheme }} />
+                      style={{ width: 132, boxSizing: "border-box", flexShrink: 0, background: "transparent", color: muted, border: "none", borderBottom: `1px solid ${border}`, outline: "none", fontSize: 13, fontFamily: "inherit", padding: "0 0 3px", colorScheme }} />
+                    {/* Exclude rides along on the fields row for the common
+                        (non-credit-card) case, instead of getting its own
+                        footer row - one less row of height on most cards. */}
+                    {!r.is_credit_card_payment_candidate && (
+                      <label
+                        title="Leave this checked to keep this row out of the import — it stays here so you can uncheck it later."
+                        style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: muted, cursor: "pointer", marginLeft: "auto" }}
+                      >
+                        <input type="checkbox" checked={r.is_excluded} onChange={e => update({ is_excluded: e.target.checked })} />
+                        Exclude
+                      </label>
+                    )}
                   </div>
 
                   {/* Split menu — animates open/closed; fixed height with its own
@@ -731,32 +771,30 @@ export default function ImportPanel({ active, onSaveStateChange, onSaved, onCanc
                     </div>
                   )}
 
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 8 }}>
-                    <div>
-                      {r.is_credit_card_payment_candidate && (
-                        <button
-                          type="button"
-                          onClick={() => toggleSplit(r)}
-                          title="Looks like a payment to a credit card — often bundles several purchases into one line."
-                          style={{
-                            fontSize: 11, fontWeight: 600, borderRadius: 999, padding: "4px 12px", cursor: "pointer",
-                            color: CATEGORY_ACCENT.DEBT, fontFamily: "inherit",
-                            backgroundColor: r.is_split ? `color-mix(in srgb, ${CATEGORY_ACCENT.DEBT} 25%, transparent)` : "transparent",
-                            border: `1px solid color-mix(in srgb, ${CATEGORY_ACCENT.DEBT} 45%, transparent)`,
-                          }}
-                        >
-                          {r.is_split ? "Splitting…" : "Split"}
-                        </button>
-                      )}
+                  {r.is_credit_card_payment_candidate && (
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 6 }}>
+                      <button
+                        type="button"
+                        onClick={() => toggleSplit(r)}
+                        title="Looks like a payment to a credit card — often bundles several purchases into one line."
+                        style={{
+                          fontSize: 11, fontWeight: 600, borderRadius: 999, padding: "4px 12px", cursor: "pointer",
+                          color: CATEGORY_ACCENT.DEBT, fontFamily: "inherit",
+                          backgroundColor: r.is_split ? `color-mix(in srgb, ${CATEGORY_ACCENT.DEBT} 25%, transparent)` : "transparent",
+                          border: `1px solid color-mix(in srgb, ${CATEGORY_ACCENT.DEBT} 45%, transparent)`,
+                        }}
+                      >
+                        {r.is_split ? "Splitting…" : "Split"}
+                      </button>
+                      <label
+                        title="Leave this checked to keep this row out of the import — it stays here so you can uncheck it later."
+                        style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: muted, cursor: "pointer" }}
+                      >
+                        <input type="checkbox" checked={r.is_excluded} onChange={e => update({ is_excluded: e.target.checked })} />
+                        Exclude
+                      </label>
                     </div>
-                    <label
-                      title="Leave this checked to keep this row out of the import — it stays here so you can uncheck it later."
-                      style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: muted, cursor: "pointer" }}
-                    >
-                      <input type="checkbox" checked={r.is_excluded} onChange={e => update({ is_excluded: e.target.checked })} />
-                      Exclude
-                    </label>
-                  </div>
+                  )}
                 </div>
               );
             };

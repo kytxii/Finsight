@@ -1,6 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { CATEGORY_CONFIG, INCOME_TYPES, fmt } from "../utils/finance";
-import { HOME_SURFACE, HOME_DIVIDER, HOME_TEXT, HOME_MUTED, HOME_INCOME, HOME_EXPENSE, CATEGORY_ACCENT } from "./categoryVisuals";
+import { HOME_SURFACE, HOME_DIVIDER, HOME_TEXT, HOME_MUTED, HOME_INCOME, HOME_EXPENSE, CATEGORY_ACCENT, ACCENT, ACCENT_TEXT } from "./categoryVisuals";
 
 function SortIcon({ active, dir, activeColor, muted }) {
   if (active && dir === "asc") {
@@ -201,10 +201,11 @@ export default function TransactionTable({ rows, onAdd, onEdit, onDelete, active
                     className="rounded-full text-xs font-bold cursor-pointer transition-colors"
                     style={{
                       padding: "5px 12px",
-                      color: active ? "#000" : hov ? activeColor : muted,
+                      color: active ? ACCENT_TEXT : hov ? ACCENT : muted,
                       backgroundColor: active
-                        ? (hov ? `color-mix(in srgb, ${activeColor} 85%, black)` : activeColor)
-                        : hov ? `color-mix(in srgb, ${activeColor} 16%, transparent)` : "transparent",
+                        ? (hov ? `color-mix(in srgb, ${ACCENT} 85%, black)` : ACCENT)
+                        : hov ? `color-mix(in srgb, ${ACCENT} 16%, transparent)` : "transparent",
+                      transition: "color 150ms ease, background-color 150ms ease",
                     }}
                   >
                     {n}

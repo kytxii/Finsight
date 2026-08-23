@@ -111,27 +111,38 @@ export default function Navbar({ transactions = [], onSelectTransaction, onDelet
           <Wordmark size={32} textSize={26} />
 
           {/* Search — no box, just a subtle underline that grows into the
-              accent color on focus, and a suggestions panel that slides
-              down the first time it opens per search session (mount-once
-              CSS animation) but updates in place after that, since results
-              re-filtering as you type more isn't a fresh "open". */}
+              accent color on focus, a leading icon that tints along with
+              it, and a suggestions panel that slides down the first time
+              it opens per search session (mount-once CSS animation) but
+              updates in place after that, since results re-filtering as
+              you type more isn't a fresh "open". */}
           <div className="flex-1 flex justify-center" ref={containerRef}>
             <style>{`@keyframes navSearchSlide { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }`}</style>
             <div className="relative w-full max-w-lg">
+              <svg
+                xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"
+                fill="none" stroke={searchFocused ? ACCENT : HOME_MUTED} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                style={{ position: "absolute", left: 1, top: "50%", transform: "translateY(-50%)", pointerEvents: "none", transition: "stroke 150ms ease" }}
+              >
+                <circle cx="11" cy="11" r="8" />
+                <path d="m21 21-4.3-4.3" />
+              </svg>
               <input
                 value={query}
                 onChange={handleQueryChange}
                 onKeyDown={handleKeyDown}
                 onFocus={() => { setSearchFocused(true); if (query) setOpen(true); }}
                 onBlur={() => setSearchFocused(false)}
-                placeholder="Search transactions..."
-                className="w-full px-1 py-2 text-sm"
+                placeholder={searchFocused ? "" : "Search transactions"}
+                className="w-full py-2 text-sm"
                 style={{
                   backgroundColor: "transparent",
                   border: "none",
                   borderBottom: `1px solid ${border}`,
                   color: text,
                   outline: "none",
+                  paddingLeft: 24,
+                  paddingRight: 4,
                   transition: "border-color 200ms ease",
                 }}
               />

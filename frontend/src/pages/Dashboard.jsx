@@ -14,22 +14,19 @@ import {
   Area,
 } from "recharts";
 import { useAuth } from "../context/AuthContext";
-import { getTransactions, createTransaction, deleteTransaction } from "../api/transactions";
+import { getTransactions, deleteTransaction } from "../api/transactions";
 import { deleteRecurringPayment } from "../api/recurringPayments";
 import { getSpendableSurplus, getEstimatedSavings } from "../api/paychecks";
-import CurrencyInput from "../components/CurrencyInput";
 import {
   CATEGORIES,
   CATEGORY_CONFIG,
   INCOME_TYPES,
   fmt,
   fmtWhole,
-  lockedNameFor,
 } from "../utils/finance";
-import { getNow, getToday } from "../utils/time";
+import { getNow } from "../utils/time";
 import Navbar from "../components/Navbar";
-import BatchAddPanel from "../components/BatchAddPanel";
-import ImportPanel from "../components/ImportPanel";
+import AddTransactionPage from "../components/AddTransactionPage";
 import PaychecksPanel from "../components/PaychecksPanel";
 import RecurringPaymentsModal from "../components/RecurringPaymentsModal";
 import InstallmentsPanel from "../components/InstallmentsPanel";
@@ -221,6 +218,7 @@ const TOOL_TITLES = {
   paychecks: "Paychecks",
   recurring: "Recurring Payments",
   installments: "Installments",
+  add: "Add Transaction",
 };
 const TOOL_TRANSITION_MS = 280;
 const DRAWER_TRANSITION_MS = 380;
@@ -324,6 +322,7 @@ export default function Dashboard() {
   // what stops it sliding in from the left edge on load.
   const trendRangeRef = useRef(null);
   const [rangeIndicator, setRangeIndicator] = useState(null);
+  const [rangeHovered, setRangeHovered] = useState(null); // which range pill (1|3|6|12|"all") is hovered, or null
   const [visibleCategories, setVisibleCategories] = useState(() => loadTrendCategories());
 
   // Layout effect, not a plain one, so the measurement lands before paint and
@@ -343,6 +342,7 @@ export default function Dashboard() {
     return () => ro.disconnect();
   }, [trendMonths, loading, activeTab]);
   const [categoriesOpen, setCategoriesOpen] = useState(false);
+  const [categoriesHovered, setCategoriesHovered] = useState(false);
   const [categoriesSaved, setCategoriesSaved] = useState(false);
   const categoriesPanelRef = useRef(null);
   // Header's month/year picker (#124) - null | "month" | "year". The strip
@@ -458,19 +458,10 @@ export default function Dashboard() {
       setPickerOpen(true);
     }
   }, [renderPicker, datePicker, pickerWidth]);
-  const [addMode, setAddMode] = useState(null); // null | "menu" | "single" | "batch" | "import"
-  const addOpen = addMode !== null;
-  const addToday = getToday();
-  const [addForm, setAddForm] = useState({ name: "", amount: "", category: "EXPENSE", transaction_date: addToday, note: "" });
-  const [addLoading, setAddLoading] = useState(false);
-  const [addError, setAddError] = useState("");
-  const [batchSaveState, setBatchSaveState] = useState({ isDirty: false, isSaving: false, saveStatus: "idle", onSave: null });
-  const [importSaveState, setImportSaveState] = useState({ isDirty: false, isSaving: false, saveStatus: "idle", validCount: 0, onSave: null });
   // Sidebar tools (replaces the old PERIOD section) - Paychecks/Recurring/
-  // Installments take over the main content pane instead of opening
-  // Navbar's separate drawer or ballooning the sidebar. Mutually exclusive
-  // with addMode - opening one closes the other.
-  const [toolMode, setToolMode] = useState(null); // null | "paychecks" | "recurring" | "installments"
+  // Installments/Add take over the main content pane instead of opening
+  // Navbar's separate drawer or ballooning the sidebar.
+  const [toolMode, setToolMode] = useState(null); // null | "paychecks" | "recurring" | "installments" | "add"
   // Staged close so the page can slide back out instead of just vanishing -
   // toolMode stays set (still rendering the same page) through the slide,
   // and only clears once the transition finishes. Switching directly from
@@ -495,14 +486,13 @@ export default function Dashboard() {
     setToolClosing(false);
     setToolMode(mode);
     setOpenedTools(prev => prev.has(mode) ? prev : new Set(prev).add(mode));
-    setAddMode(null);
   }
   function closeTool() {
     // No tool open means there's nothing to slide out - and setting
     // toolClosing anyway would flip `(toolMode || toolClosing)` below true
     // for a full TOOL_TRANSITION_MS, unmounting the whole dashboard <main>
     // and remounting it when the timer clears. That read as the entire page
-    // refreshing every time openAddMode() called through to here.
+    // refreshing every time a tool switch called through to here.
     if (toolMode == null) return;
     clearTimeout(toolCloseTimer.current);
     setToolClosing(true);
@@ -511,7 +501,6 @@ export default function Dashboard() {
       setToolClosing(false);
     }, TOOL_TRANSITION_MS);
   }
-  function openAddMode(mode) { setAddMode(mode); closeTool(); }
 
   // Category pages are the same takeover the Tools use, just driven by
   // `activeTab` instead of `toolMode` - "ALL" is the closed state (the
@@ -529,7 +518,6 @@ export default function Dashboard() {
     setToolClosing(false);
     setToolMode(null);
     setActiveTab(cat);
-    setAddMode(null);
   }
   function closeCategory() {
     if (activeTab === "ALL") return;
@@ -583,29 +571,7 @@ export default function Dashboard() {
     setDatePicker(null);
   }
 
-  function handleAddChange(e) {
-    const { name, value } = e.target;
-    setAddForm(f => ({ ...f, [name]: value, ...(name === "category" && lockedNameFor(value) ? { name: lockedNameFor(value) } : {}) }));
-  }
-
-  async function handleAddSubmit(e) {
-    e.preventDefault();
-    setAddError("");
-    setAddLoading(true);
-    try {
-      await createTransaction({ ...addForm, amount: parseFloat(addForm.amount) });
-      setAddForm({ name: "", amount: "", category: "EXPENSE", transaction_date: addToday, note: "" });
-      setAddMode(null);
-      refreshTransactions();
-    } catch (err) {
-      setAddError(err.response?.data?.detail ?? "Something went wrong");
-    } finally {
-      setAddLoading(false);
-    }
-  }
-
   const tableRef = useRef(null);
-  const addFormRef = useRef(null);
 
   async function devFetch() {
     if (devForceErrorRef.current) {
@@ -977,17 +943,6 @@ export default function Dashboard() {
     setPage(1);
   }, [filtered, perPage, typeFilter, sortColumn, sortDir]);
 
-  useEffect(() => {
-    if (!addOpen || addMode === "batch" || addMode === "import") return;
-    function handleOutsideClick(e) {
-      if (addFormRef.current && !addFormRef.current.contains(e.target)) {
-        setAddMode(null);
-        setAddError("");
-      }
-    }
-    document.addEventListener("mousedown", handleOutsideClick);
-    return () => document.removeEventListener("mousedown", handleOutsideClick);
-  }, [addOpen, addMode]);
 
   useEffect(() => {
     if (!categoriesOpen) return;
@@ -1040,7 +995,6 @@ export default function Dashboard() {
     : INCOME_TYPES.has(activeTab)
       ? summary.categoryDelta >= 0
       : summary.categoryDelta <= 0;
-  const catColor = CATEGORY_ACCENT[addForm.category];
   const text    = HOME_TEXT;
   const muted   = HOME_MUTED;
   const bg      = HOME_BG;
@@ -1216,136 +1170,42 @@ export default function Dashboard() {
         <aside style={{
           position: "relative",
           flexShrink: 0,
-          width: addMode === "batch" ? "28.75rem" : addMode === "import" ? "35rem" : "16.5rem",
+          width: "16.5rem",
           borderRight: `1px solid ${border}`,
           backgroundColor: surface,
           overflow: "hidden",
-          transition: "width 250ms ease",
         }}>
-          <div style={{ position: "absolute", inset: 0, overflowY: "auto", padding: "20px 10px", display: "flex", flexDirection: "column", gap: 28, opacity: addMode === "batch" || addMode === "import" ? 0 : 1, pointerEvents: addMode === "batch" || addMode === "import" ? "none" : "auto", transition: "opacity 200ms ease" }}>
+          <div style={{ position: "absolute", inset: 0, overflowY: "auto", padding: "20px 10px", display: "flex", flexDirection: "column", gap: 28 }}>
 
-          {/* Add / inline form */}
-          <div ref={addFormRef}>
-            {/* 1. "Add Transaction" button — visible when no mode active */}
-            <div style={{
-              maxHeight: addMode ? 0 : "42px",
-              opacity: addMode ? 0 : 1,
-              overflow: "hidden",
-              transition: "max-height 220ms ease, opacity 150ms ease",
-              pointerEvents: addMode ? "none" : "auto",
-            }}>
-              <button
-                onClick={() => openAddMode("single")}
-                onMouseEnter={e => {
-                  e.currentTarget.style.backgroundColor = `color-mix(in srgb, ${HOME_INCOME} 80%, black)`;
-                  e.currentTarget.style.boxShadow = "0 2px 6px rgba(0,0,0,0.35)";
-                  e.currentTarget.style.transform = "translateY(-1px)";
-                }}
-                onMouseLeave={e => {
-                  e.currentTarget.style.backgroundColor = HOME_INCOME;
-                  e.currentTarget.style.boxShadow = "none";
-                  e.currentTarget.style.transform = "translateY(0)";
-                }}
-                style={{
-                  width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-                  padding: "9px 0", borderRadius: 10, border: "none", cursor: "pointer",
-                  backgroundColor: HOME_INCOME, color: "#000",
-                  fontSize: 13, fontWeight: 700,
-                  transition: "background-color 150ms ease, box-shadow 150ms ease, transform 150ms ease",
-                }}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M5 12h14M12 5v14" />
-                </svg>
-                Add Transaction
-              </button>
-            </div>
-
-            {/* Single form */}
-            <div style={{
-              maxHeight: addMode === "single" ? "460px" : 0,
-              opacity: addMode === "single" ? 1 : 0,
-              overflow: "hidden",
-              transition: "max-height 250ms cubic-bezier(0.4,0,0.2,1), opacity 200ms ease",
-            }}>
-              <form onSubmit={handleAddSubmit} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                <div style={{ display: "flex", gap: 6 }}>
-                  <button type="button" onClick={() => openAddMode("batch")}
-                    onMouseEnter={e => { e.currentTarget.style.borderColor = `color-mix(in srgb, ${text} 35%, transparent)`; e.currentTarget.style.backgroundColor = `color-mix(in srgb, ${text} 8%, transparent)`; }}
-                    onMouseLeave={e => { e.currentTarget.style.borderColor = `color-mix(in srgb, ${text} 15%, transparent)`; e.currentTarget.style.backgroundColor = "transparent"; }}
-                    style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "6px 0", borderRadius: 8, border: `1px solid color-mix(in srgb, ${text} 15%, transparent)`, backgroundColor: "transparent", color: muted, fontSize: 11, fontWeight: 600, cursor: "pointer", transition: "border-color 150ms ease, background-color 150ms ease" }}>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /><rect x="14" y="14" width="7" height="7" />
-                    </svg>
-                    Batch
-                  </button>
-                  <button type="button" onClick={() => openAddMode("import")}
-                    disabled={isDemo()}
-                    title={isDemo() ? "Unavailable in demo mode" : undefined}
-                    onMouseEnter={e => { if (isDemo()) return; e.currentTarget.style.borderColor = `color-mix(in srgb, ${text} 35%, transparent)`; e.currentTarget.style.backgroundColor = `color-mix(in srgb, ${text} 8%, transparent)`; }}
-                    onMouseLeave={e => { if (isDemo()) return; e.currentTarget.style.borderColor = `color-mix(in srgb, ${text} 15%, transparent)`; e.currentTarget.style.backgroundColor = "transparent"; }}
-                    style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "6px 0", borderRadius: 8, border: `1px solid color-mix(in srgb, ${text} 15%, transparent)`, backgroundColor: "transparent", backgroundImage: isDemo() ? `repeating-linear-gradient(-45deg, transparent, transparent 4px, color-mix(in srgb, ${text} 6%, transparent) 4px, color-mix(in srgb, ${text} 6%, transparent) 6px)` : undefined, color: muted, fontSize: 11, fontWeight: 600, cursor: isDemo() ? "not-allowed" : "pointer", opacity: isDemo() ? 0.45 : 1, transition: "border-color 150ms ease, background-color 150ms ease" }}>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
-                    </svg>
-                    Import
-                  </button>
-                </div>
-                {[
-                  { label: "Name", name: "name", type: "text", placeholder: "e.g. Netflix", required: !lockedNameFor(addForm.category), disabled: !!lockedNameFor(addForm.category) },
-                  { label: "Amount", name: "amount", type: "number", placeholder: "$0.00", required: true },
-                ].map(({ label, ...props }) => (
-                  <div key={props.name}>
-                    <p style={{ fontSize: 10, color: muted, marginBottom: 3, paddingLeft: 2 }}>{label}</p>
-                    {props.name === "amount" ? (
-                      <CurrencyInput value={addForm.amount} onChange={v => setAddForm(f => ({ ...f, amount: v }))} placeholder="$0.00" required
-                        style={{ width: "100%", borderRadius: 7, padding: "6px 8px", fontSize: 12, border: `1px solid ${border}`, backgroundColor: bg, color: text, boxSizing: "border-box", outline: "none" }}
-                      />
-                    ) : (
-                      <input {...props} value={addForm[props.name]} onChange={handleAddChange}
-                        style={{ width: "100%", borderRadius: 7, padding: "6px 8px", fontSize: 12, border: `1px solid ${border}`, backgroundColor: bg, backgroundImage: props.name === "name" && lockedNameFor(addForm.category) ? `repeating-linear-gradient(-45deg, transparent, transparent 4px, color-mix(in srgb, ${text} 6%, transparent) 4px, color-mix(in srgb, ${text} 6%, transparent) 6px)` : undefined, color: text, boxSizing: "border-box", outline: "none", opacity: props.name === "name" && lockedNameFor(addForm.category) ? 0.45 : 1, cursor: props.name === "name" && lockedNameFor(addForm.category) ? "not-allowed" : undefined }}
-                      />
-                    )}
-                  </div>
-                ))}
-                <div>
-                  <p style={{ fontSize: 10, color: muted, marginBottom: 3, paddingLeft: 2 }}>Category</p>
-                  <select name="category" value={addForm.category} onChange={handleAddChange}
-                    style={{ width: "100%", borderRadius: 7, padding: "6px 8px", fontSize: 12, border: `1px solid ${border}`, backgroundColor: bg, color: catColor, boxSizing: "border-box", outline: "none" }}
-                  >
-                    {Object.entries(CATEGORY_CONFIG).map(([key, { label }]) => (
-                      <option key={key} value={key}>{label}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <p style={{ fontSize: 10, color: muted, marginBottom: 3, paddingLeft: 2 }}>Date</p>
-                  <input type="date" name="transaction_date" value={addForm.transaction_date} onChange={handleAddChange} required
-                    style={{ width: "100%", borderRadius: 7, padding: "6px 8px", fontSize: 12, border: `1px solid ${border}`, backgroundColor: bg, color: text, colorScheme: "dark", boxSizing: "border-box", outline: "none" }}
-                  />
-                </div>
-                <div>
-                  <p style={{ fontSize: 10, color: muted, marginBottom: 3, paddingLeft: 2 }}>Note (optional)</p>
-                  <input type="text" name="note" value={addForm.note} onChange={handleAddChange} placeholder="e.g. Refund" maxLength={100}
-                    style={{ width: "100%", borderRadius: 7, padding: "6px 8px", fontSize: 12, border: `1px solid ${border}`, backgroundColor: bg, color: text, boxSizing: "border-box", outline: "none" }}
-                  />
-                </div>
-                {addError && <p style={{ fontSize: 11, color: HOME_EXPENSE }}>{addError}</p>}
-                <div style={{ display: "flex", gap: 6 }}>
-                  <button type="button" onClick={() => { setAddMode(null); setAddError(""); }}
-                    onMouseEnter={e => { e.currentTarget.style.backgroundColor = `color-mix(in srgb, ${text} 10%, transparent)`; }}
-                    onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; }}
-                    style={{ flex: 1, padding: "7px 0", borderRadius: 8, border: `1px solid ${border}`, background: "transparent", color: muted, fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "background-color 150ms ease" }}
-                  >Cancel</button>
-                  <button type="submit" disabled={addLoading}
-                    onMouseEnter={e => { if (!addLoading) e.currentTarget.style.backgroundColor = `color-mix(in srgb, ${catColor} 25%, transparent)`; }}
-                    onMouseLeave={e => { e.currentTarget.style.backgroundColor = `color-mix(in srgb, ${catColor} 15%, transparent)`; }}
-                    style={{ flex: 1, padding: "7px 0", borderRadius: 8, border: `1px solid ${catColor}`, backgroundColor: `color-mix(in srgb, ${catColor} 15%, transparent)`, color: catColor, fontSize: 12, fontWeight: 700, cursor: "pointer", opacity: addLoading ? 0.6 : 1, transition: "background-color 150ms ease" }}
-                  >{addLoading ? "Adding…" : "Add"}</button>
-                </div>
-              </form>
-            </div>
-          </div>
+          {/* Add Transaction - opens the same main-content takeover Tools
+              use below (toolMode "add"), which renders AddTransactionPage's
+              3-card chooser. Single/Batch/Import all live on that page now,
+              not as nested sidebar reveals. */}
+          <button
+            onClick={() => openTool("add")}
+            onMouseEnter={e => {
+              e.currentTarget.style.backgroundColor = `color-mix(in srgb, ${HOME_INCOME} 80%, black)`;
+              e.currentTarget.style.boxShadow = "0 2px 6px rgba(0,0,0,0.35)";
+              e.currentTarget.style.transform = "translateY(-1px)";
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.backgroundColor = HOME_INCOME;
+              e.currentTarget.style.boxShadow = "none";
+              e.currentTarget.style.transform = "translateY(0)";
+            }}
+            style={{
+              width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+              padding: "9px 0", borderRadius: 10, border: "none", cursor: "pointer",
+              backgroundColor: HOME_INCOME, color: "#000",
+              fontSize: 13, fontWeight: 700,
+              transition: "background-color 150ms ease, box-shadow 150ms ease, transform 150ms ease",
+            }}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M5 12h14M12 5v14" />
+            </svg>
+            Add Transaction
+          </button>
 
           {/* Category */}
           <div>
@@ -1430,46 +1290,6 @@ export default function Dashboard() {
             </div>
           </div>
 
-          </div>
-
-          {/* Batch panel */}
-          <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", opacity: addMode === "batch" ? 1 : 0, pointerEvents: addMode === "batch" ? "auto" : "none", transition: "opacity 200ms ease" }}>
-            <div style={{ padding: "12px 16px", borderBottom: `1px solid ${border}`, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
-              <p style={{ fontSize: 16, fontWeight: 700, color: text, margin: 0 }}>Batch Transactions</p>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                {batchSaveState.saveStatus === "saved" && (
-                  <span style={{ fontSize: 11, color: HOME_INCOME }}>Saved</span>
-                )}
-                <button
-                  onClick={batchSaveState.onSave}
-                  disabled={!batchSaveState.isDirty || batchSaveState.isSaving}
-                  style={{ padding: "5px 12px", borderRadius: 8, border: `1px solid ${HOME_INCOME}`, color: HOME_INCOME, backgroundColor: `color-mix(in srgb, ${HOME_INCOME} 12%, transparent)`, fontSize: 12, fontWeight: 600, cursor: batchSaveState.isDirty && !batchSaveState.isSaving ? "pointer" : "default", opacity: !batchSaveState.isDirty || batchSaveState.isSaving ? 0.4 : 1, transition: "opacity 150ms ease" }}
-                >
-                  {batchSaveState.isSaving ? "Adding…" : batchSaveState.validCount ? `Add ${batchSaveState.validCount} transaction${batchSaveState.validCount !== 1 ? "s" : ""}` : "Add transactions"}
-                </button>
-              </div>
-            </div>
-            <BatchAddPanel active={addMode === "batch"} onSaveStateChange={setBatchSaveState} onSaved={() => { refreshTransactions(); setAddMode(null); }} onCancel={() => setAddMode(null)} />
-          </div>
-
-          {/* Import panel */}
-          <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", opacity: addMode === "import" ? 1 : 0, pointerEvents: addMode === "import" ? "auto" : "none", transition: "opacity 200ms ease" }}>
-            <div style={{ padding: "12px 16px", borderBottom: `1px solid ${border}`, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
-              <p style={{ fontSize: 16, fontWeight: 700, color: text, margin: 0 }}>Import Transactions</p>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                {importSaveState.saveStatus === "saved" && (
-                  <span style={{ fontSize: 11, color: HOME_INCOME }}>Saved</span>
-                )}
-                <button
-                  onClick={importSaveState.onSave}
-                  disabled={!importSaveState.isDirty || importSaveState.isSaving}
-                  style={{ padding: "5px 12px", borderRadius: 8, border: `1px solid ${HOME_INCOME}`, color: HOME_INCOME, backgroundColor: `color-mix(in srgb, ${HOME_INCOME} 12%, transparent)`, fontSize: 12, fontWeight: 600, cursor: importSaveState.isDirty && !importSaveState.isSaving ? "pointer" : "default", opacity: !importSaveState.isDirty || importSaveState.isSaving ? 0.4 : 1, transition: "opacity 150ms ease" }}
-                >
-                  {importSaveState.isSaving ? "Importing…" : importSaveState.validCount ? `Import ${importSaveState.validCount} transaction${importSaveState.validCount !== 1 ? "s" : ""}` : "Import transactions"}
-                </button>
-              </div>
-            </div>
-            <ImportPanel active={addMode === "import"} onSaveStateChange={setImportSaveState} onSaved={(newTxs) => { setTransactions(prev => [...(newTxs || []), ...prev]); setAddMode(null); }} onCancel={() => setAddMode(null)} />
           </div>
 
         </aside>
@@ -1561,6 +1381,14 @@ export default function Dashboard() {
             {openedTools.has("installments") && (
               <div style={{ display: toolMode === "installments" ? "block" : "none" }}>
                 <InstallmentsPanel desktop addSignal={installmentsAddSignal} onSaved={refreshTransactions} />
+              </div>
+            )}
+            {openedTools.has("add") && (
+              <div style={{ display: toolMode === "add" ? "block" : "none" }}>
+                <AddTransactionPage
+                  onSaved={refreshTransactions}
+                  onImported={(newTxs) => setTransactions(prev => [...(newTxs || []), ...prev])}
+                />
               </div>
             )}
           </div>
@@ -2011,7 +1839,7 @@ export default function Dashboard() {
             /* Mirrors the trend block's real layout - controls at either end,
                then the legend strip, then the chart - so the skeleton doesn't
                resolve into a differently-shaped block. */
-            <div>
+            <div style={{ marginTop: -16 }}>
               <div className="flex items-center gap-3" style={{ marginBottom: 20 }}>
                 <Skel h={34} w="130px" style={{ borderRadius: 999 }} />
                 <div className="flex items-center justify-center" style={{ flex: 1, minWidth: 0, gap: 6, flexWrap: "wrap" }}>
@@ -2039,15 +1867,19 @@ export default function Dashboard() {
           /* Full-bleed trend — no card chrome, controls and a legend sit
              directly around the chart instead of being boxed alongside it.
              Replaces the old donut + boxed income/expense pair. */
-          <div>
+          <div style={{ marginTop: -16 }}>
             <div className="flex items-center gap-3" style={{ marginBottom: 20 }}>
                 <div ref={categoriesPanelRef} style={{ position: "relative", flexShrink: 0 }}>
                   <button
                     onClick={() => setCategoriesOpen((v) => !v)}
+                    onMouseEnter={() => setCategoriesHovered(true)}
+                    onMouseLeave={() => setCategoriesHovered(false)}
                     style={{
                       display: "flex", alignItems: "center", gap: 8, padding: "8px 16px", borderRadius: 999,
                       border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600, color: text,
-                      backgroundColor: categoriesOpen ? "rgba(255,255,255,0.09)" : "rgba(255,255,255,0.05)",
+                      backgroundColor: categoriesOpen
+                        ? "rgba(255,255,255,0.09)"
+                        : categoriesHovered ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.05)",
                       transition: "background-color 150ms ease",
                     }}
                   >
@@ -2147,13 +1979,17 @@ export default function Dashboard() {
                     key={n}
                     data-range-active={trendMonths === n}
                     onClick={() => setTrendMonths(n)}
+                    onMouseEnter={() => setRangeHovered(n)}
+                    onMouseLeave={() => setRangeHovered(null)}
                     style={{
                       position: "relative", zIndex: 1,
                       padding: "8px 16px", borderRadius: 999, border: "none", cursor: "pointer",
                       fontSize: 14, fontWeight: 700,
-                      color: trendMonths === n ? ACCENT_TEXT : muted,
-                      backgroundColor: "transparent",
-                      transition: "color 150ms ease",
+                      color: trendMonths === n ? ACCENT_TEXT : rangeHovered === n ? ACCENT : muted,
+                      backgroundColor: trendMonths === n
+                        ? "transparent"
+                        : rangeHovered === n ? `color-mix(in srgb, ${ACCENT} 16%, transparent)` : "transparent",
+                      transition: "color 150ms ease, background-color 150ms ease",
                     }}
                   >
                     {label}
