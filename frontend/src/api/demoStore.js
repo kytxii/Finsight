@@ -1,3 +1,6 @@
+import { parseCsvText, detectColumnMapping, annotateImportRows } from "../utils/csvImport";
+import { computeMonthlyPayment, computeGaugeStatus } from "../utils/installmentMath";
+
 // ── Keys ──────────────────────────────────────────────────────────────────────
 const TX_KEY = "demo_transactions";
 const RP_KEY = "demo_recurring";
@@ -5,13 +8,29 @@ const PS_KEY = "demo_paycheck_schedules";
 const PC_KEY = "demo_paychecks";
 const BA_KEY = "demo_balance_anchor";
 const RES_KEY = "demo_spending_reserve";
+const TD_KEY = "demo_tip_deposits";
+const IN_KEY = "demo_installments";
+const ID_KEY = "demo_next_id";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const getAll  = (key)       => JSON.parse(localStorage.getItem(key) || "[]");
 const saveAll = (key, data) => localStorage.setItem(key, JSON.stringify(data));
 const respond = (data)      => Promise.resolve({ data });
-let   _id     = 1000;
-const nextId  = ()          => `demo-${++_id}`;
+
+// Persisted rather than a plain in-memory counter: every "delete" in this file
+// is a soft-deactivate, not a removal, so a stale record can sit in
+// localStorage indefinitely. An in-memory counter resets to 1000 on every
+// page load (or dev-server hot-reload), so after any create -> delete ->
+// reload cycle the next created record could reuse an id a deactivated
+// record still holds - getAll(...).find(i => i.id === id) then silently
+// resolves to whichever one comes first in array order, which may not be the
+// live record. Persisting the counter itself makes ids monotonic across the
+// whole browser session regardless of reloads.
+function nextId() {
+  const next = parseInt(localStorage.getItem(ID_KEY) || "1000", 10) + 1;
+  localStorage.setItem(ID_KEY, String(next));
+  return `demo-${next}`;
+}
 
 // ── Seed data ─────────────────────────────────────────────────────────────────
 const SEED_TRANSACTIONS = [
@@ -33,7 +52,7 @@ const SEED_TRANSACTIONS = [
   { id: "demo-t-15",  name: "Pharmacy",              amount: "22.30",   category: "EXPENSE",      transaction_date: "2025-05-22" },
   { id: "demo-t-16",  name: "Lunch",                 amount: "16.80",   category: "EXPENSE",      transaction_date: "2025-05-24" },
   { id: "demo-t-17",  name: "Freelance",             amount: "400.00",  category: "INCOME",       transaction_date: "2025-05-25" },
-  { id: "demo-t-18",  name: "Cash",                  amount: "20.00",   category: "TIPS",         transaction_date: "2025-05-26" },
+  { id: "demo-t-18",  name: "Cash",                  amount: "20.00",   category: "TIPS",         transaction_date: "2025-05-26"  },
   { id: "demo-t-19",  name: "Clothing",              amount: "75.00",   category: "EXPENSE",      transaction_date: "2025-05-27" },
   { id: "demo-t-20",  name: "Savings Transfer",      amount: "500.00",  category: "SAVINGS",      transaction_date: "2025-05-28" },
   // June 2025
@@ -75,7 +94,7 @@ const SEED_TRANSACTIONS = [
   { id: "demo-t-55",  name: "Amazon",                amount: "54.99",   category: "EXPENSE",      transaction_date: "2025-07-21" },
   { id: "demo-t-56",  name: "Pharmacy",              amount: "18.90",   category: "EXPENSE",      transaction_date: "2025-07-25" },
   { id: "demo-t-57",  name: "Gas",                   amount: "48.30",   category: "EXPENSE",      transaction_date: "2025-07-26" },
-  { id: "demo-t-58",  name: "Cash",                  amount: "25.00",   category: "TIPS",         transaction_date: "2025-07-27" },
+  { id: "demo-t-58",  name: "Cash",                  amount: "25.00",   category: "TIPS",         transaction_date: "2025-07-27"  },
   { id: "demo-t-59",  name: "Dinner Out",            amount: "72.30",   category: "EXPENSE",      transaction_date: "2025-07-28" },
   { id: "demo-t-60",  name: "Savings Transfer",      amount: "300.00",  category: "SAVINGS",      transaction_date: "2025-07-28" },
   // August 2025
@@ -138,7 +157,7 @@ const SEED_TRANSACTIONS = [
   { id: "demo-t-115", name: "Dinner Out",            amount: "58.60",   category: "EXPENSE",      transaction_date: "2025-10-24" },
   { id: "demo-t-116", name: "Pharmacy",              amount: "27.40",   category: "EXPENSE",      transaction_date: "2025-10-25" },
   { id: "demo-t-117", name: "Pumpkin Patch",         amount: "32.00",   category: "EXPENSE",      transaction_date: "2025-10-26" },
-  { id: "demo-t-118", name: "Cash",                  amount: "20.00",   category: "TIPS",         transaction_date: "2025-10-27" },
+  { id: "demo-t-118", name: "Cash",                  amount: "20.00",   category: "TIPS",         transaction_date: "2025-10-27"  },
   { id: "demo-t-119", name: "Clothing",              amount: "95.00",   category: "EXPENSE",      transaction_date: "2025-10-28" },
   { id: "demo-t-120", name: "Savings Transfer",      amount: "500.00",  category: "SAVINGS",      transaction_date: "2025-10-28" },
   // November 2025
@@ -180,7 +199,7 @@ const SEED_TRANSACTIONS = [
   { id: "demo-t-155", name: "Freelance",             amount: "700.00",  category: "INCOME",       transaction_date: "2025-12-22" },
   { id: "demo-t-156", name: "Christmas Dinner",      amount: "94.80",   category: "EXPENSE",      transaction_date: "2025-12-25" },
   { id: "demo-t-157", name: "Dinner Out",            amount: "52.30",   category: "EXPENSE",      transaction_date: "2025-12-26" },
-  { id: "demo-t-158", name: "Cash",                  amount: "30.00",   category: "TIPS",         transaction_date: "2025-12-27" },
+  { id: "demo-t-158", name: "Cash",                  amount: "30.00",   category: "TIPS",         transaction_date: "2025-12-27"  },
   { id: "demo-t-159", name: "New Year Eve",          amount: "78.00",   category: "EXPENSE",      transaction_date: "2025-12-31" },
   { id: "demo-t-160", name: "Savings Transfer",      amount: "350.00",  category: "SAVINGS",      transaction_date: "2025-12-28" },
   // January 2026
@@ -192,7 +211,7 @@ const SEED_TRANSACTIONS = [
   { id: "demo-t-166", name: "Gas",                   amount: "55.20",   category: "EXPENSE",      transaction_date: "2026-01-08" },
   { id: "demo-t-167", name: "Internet",              amount: "60.00",   category: "BILL",         transaction_date: "2026-01-10" },
   { id: "demo-t-168", name: "New Year Dinner",       amount: "72.50",   category: "EXPENSE",      transaction_date: "2026-01-12" },
-  { id: "demo-t-169", name: "Cash",                  amount: "20.00",   category: "TIPS",         transaction_date: "2026-01-14" },
+  { id: "demo-t-169", name: "Cash",                  amount: "20.00",   category: "TIPS",         transaction_date: "2026-01-14"  },
   { id: "demo-t-170", name: "Netflix",               amount: "15.99",   category: "SUBSCRIPTION", transaction_date: "2026-01-15" },
   { id: "demo-t-171", name: "Student Loan",          amount: "250.00",  category: "DEBT",         transaction_date: "2026-01-15" },
   { id: "demo-t-172", name: "Coffee",                amount: "4.75",    category: "EXPENSE",      transaction_date: "2026-01-16" },
@@ -254,7 +273,7 @@ const SEED_TRANSACTIONS = [
   { id: "demo-t-225", name: "Gym Membership",        amount: "40.00",   category: "SUBSCRIPTION", transaction_date: "2026-04-05" },
   { id: "demo-t-226", name: "Uber",                  amount: "14.50",   category: "EXPENSE",      transaction_date: "2026-04-08" },
   { id: "demo-t-227", name: "Internet",              amount: "60.00",   category: "BILL",         transaction_date: "2026-04-10" },
-  { id: "demo-t-228", name: "Cash",                  amount: "20.00",   category: "TIPS",         transaction_date: "2026-04-10" },
+  { id: "demo-t-228", name: "Cash",                  amount: "165.00",  category: "TIPS",         transaction_date: "2026-04-10" },
   { id: "demo-t-229", name: "Coffee",                amount: "4.75",    category: "EXPENSE",      transaction_date: "2026-04-11" },
   { id: "demo-t-230", name: "Lunch",                 amount: "18.40",   category: "EXPENSE",      transaction_date: "2026-04-12" },
   { id: "demo-t-231", name: "Pharmacy",              amount: "23.10",   category: "EXPENSE",      transaction_date: "2026-04-14" },
@@ -316,6 +335,11 @@ const SEED_TRANSACTIONS = [
   { id: "demo-t-275", name: "Barber",                amount: "25.00",   category: "EXPENSE",      transaction_date: "2026-04-07" },
   { id: "demo-t-276", name: "Travel Reimbursement",  amount: "175.00",  category: "REIMBURSEMENT", transaction_date: "2026-04-16" },
   { id: "demo-t-277", name: "DoorDash",              amount: "27.80",   category: "EXPENSE",      transaction_date: "2026-04-17" },
+  // Cash tips this month: one banked, the rest still cash on hand (demo for #23)
+  { id: "demo-t-278", name: "Cash",                  amount: "150.00",  category: "TIPS",         transaction_date: "2026-04-05" },
+  { id: "demo-t-279", name: "Cash",                  amount: "190.00",  category: "TIPS",         transaction_date: "2026-04-17" },
+  { id: "demo-t-280", name: "Cash",                  amount: "145.00",  category: "TIPS",         transaction_date: "2026-04-22" },
+  { id: "demo-t-281", name: "Cash",                  amount: "210.00",  category: "TIPS",         transaction_date: "2026-04-26" },
 ];
 
 const SEED_RECURRING = [
@@ -332,6 +356,82 @@ const SEED_PAYCHECK_SCHEDULES = [
   { id: "demo-ps-1", name: "Northwind Traders", frequency: "BIWEEKLY", start_date: "2026-01-02", active: true },
 ];
 
+// Past paydays for demo-ps-1 (biweekly from 2026-01-02) with amounts entered, so
+// the surplus/savings features have real projected income + estimates to show.
+// Dates must match iterPayDates output exactly or backfill will duplicate them.
+// The next payday (2026-05-08) is left for backfill to add unfilled.
+const SEED_PAYCHECKS = [
+  { id: "demo-pc-1", schedule_id: "demo-ps-1", pay_date: "2026-01-02", amount: "1820.00" },
+  { id: "demo-pc-2", schedule_id: "demo-ps-1", pay_date: "2026-01-16", amount: "1850.00" },
+  { id: "demo-pc-3", schedule_id: "demo-ps-1", pay_date: "2026-01-30", amount: "1795.00" },
+  { id: "demo-pc-4", schedule_id: "demo-ps-1", pay_date: "2026-02-13", amount: "1880.00" },
+  { id: "demo-pc-5", schedule_id: "demo-ps-1", pay_date: "2026-02-27", amount: "1840.00" },
+  { id: "demo-pc-6", schedule_id: "demo-ps-1", pay_date: "2026-03-13", amount: "1810.00" },
+  { id: "demo-pc-7", schedule_id: "demo-ps-1", pay_date: "2026-03-27", amount: "1905.00" },
+  { id: "demo-pc-8", schedule_id: "demo-ps-1", pay_date: "2026-04-10", amount: "1860.00" },
+  { id: "demo-pc-9", schedule_id: "demo-ps-1", pay_date: "2026-04-24", amount: "1875.00" },
+];
+
+// Starting balance so Available Cash / Upcoming Bills have a base to build from.
+const SEED_BALANCE_ANCHOR = { id: "demo-ba-1", current_balance: "2850.00", as_of_date: "2026-04-01" };
+
+// Cash deposits (lump sums banked), independent of individual tips. Seed tips
+// total ~$975; these leave ~$325 cash on hand awaiting deposit.
+const SEED_TIP_DEPOSITS = [
+  { id: "demo-td-1", amount: "200.00", deposit_date: "2026-02-14" },
+  { id: "demo-td-2", amount: "250.00", deposit_date: "2026-03-20" },
+  { id: "demo-td-3", amount: "200.00", deposit_date: "2026-04-15" },
+];
+
+// Fixed-term payment obligations, tracked separately from the transactions
+// feed. One with a term set (monthly_payment computed) and one still
+// undecided (period_months/monthly_payment both null), so both list-row
+// states show up out of the box. monthly_payment is precomputed via
+// installmentMath.js so seed data stays internally consistent with the math.
+const SEED_INSTALLMENTS = [
+  {
+    id: "demo-in-1",
+    name: "Car Exhaust",
+    total_amount: "600.00",
+    period_months: 6,
+    monthly_payment: computeMonthlyPayment("600.00", 6).toFixed(2),
+    day_of_month: 15,
+    category: "DEBT",
+    // Deliberately one month behind: the 15th has passed in DEMO_TODAY's month,
+    // so applyInstallments posts April's payment on first load. That both
+    // demonstrates auto-posting and leaves the ledger agreeing with
+    // payments_made, rather than claiming 2 payments with no transactions
+    // backing them.
+    payments_made: 1,
+    last_applied_month: "2026-03",
+    active: true,
+  },
+  {
+    id: "demo-in-2",
+    name: "Kitchen Remodel",
+    total_amount: "4200.00",
+    period_months: 24,
+    monthly_payment: computeMonthlyPayment("4200.00", 24).toFixed(2),
+    day_of_month: null,
+    category: "DEBT",
+    payments_made: 0,
+    last_applied_month: null,
+    active: true,
+  },
+  {
+    id: "demo-in-3",
+    name: "New Laptop",
+    total_amount: "1500.00",
+    period_months: null,
+    monthly_payment: null,
+    day_of_month: null,
+    category: "DEBT",
+    payments_made: 0,
+    last_applied_month: null,
+    active: true,
+  },
+];
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 export function initDemo() {
   if (!localStorage.getItem(TX_KEY)) {
@@ -343,6 +443,18 @@ export function initDemo() {
   if (!localStorage.getItem(PS_KEY)) {
     localStorage.setItem(PS_KEY, JSON.stringify(SEED_PAYCHECK_SCHEDULES));
   }
+  if (!localStorage.getItem(PC_KEY)) {
+    localStorage.setItem(PC_KEY, JSON.stringify(SEED_PAYCHECKS));
+  }
+  if (!localStorage.getItem(BA_KEY)) {
+    localStorage.setItem(BA_KEY, JSON.stringify(SEED_BALANCE_ANCHOR));
+  }
+  if (!localStorage.getItem(TD_KEY)) {
+    localStorage.setItem(TD_KEY, JSON.stringify(SEED_TIP_DEPOSITS));
+  }
+  if (!localStorage.getItem(IN_KEY)) {
+    localStorage.setItem(IN_KEY, JSON.stringify(SEED_INSTALLMENTS));
+  }
 }
 
 export function clearDemo() {
@@ -352,6 +464,9 @@ export function clearDemo() {
   localStorage.removeItem(PC_KEY);
   localStorage.removeItem(BA_KEY);
   localStorage.removeItem(RES_KEY);
+  localStorage.removeItem(TD_KEY);
+  localStorage.removeItem(IN_KEY);
+  localStorage.removeItem(ID_KEY);
   localStorage.removeItem("demo");
 }
 
@@ -370,38 +485,96 @@ function applyRecurringPayments() {
 
   let changed = false;
 
+  let recurringChanged = false;
+
   recurring.forEach((rp) => {
-    if (rp.is_estimate) return; // estimates inform surplus math only - never generate ledger transactions
+    if (rp.is_estimate) return; // held for confirmation (#58) - never auto-posts, see getUpcomingRecurringPayments
     if (rp.active === false) return;
     if (rp.day_of_month == null || rp.day_of_month > today) return;
+    if (rp.last_applied_month === prefix) return;
 
     const alreadyExists = transactions.some(
       (t) =>
         t.transaction_date.startsWith(prefix) &&
-        (t._recurring_id === rp.id || (t.name === rp.name && t.amount === rp.amount))
+        (t._recurring_id === rp.id || t.recurring_payment_id === rp.id || (t.name === rp.name && t.amount === rp.amount))
     );
-    if (alreadyExists) return;
+    if (!alreadyExists) {
+      const maxDay = new Date(year, now.getMonth() + 1, 0).getDate();
+      const day    = String(Math.min(rp.day_of_month, maxDay)).padStart(2, "0");
 
-    const maxDay = new Date(year, now.getMonth() + 1, 0).getDate();
-    const day    = String(Math.min(rp.day_of_month, maxDay)).padStart(2, "0");
+      transactions.push({
+        id:                  nextId(),
+        name:                rp.name,
+        amount:              rp.amount,
+        category:            rp.category,
+        transaction_date:    `${prefix}-${day}`,
+        _recurring_id:       rp.id,
+        recurring_payment_id: rp.id,
+      });
+      changed = true;
+    }
 
-    transactions.push({
-      id:               nextId(),
-      name:             rp.name,
-      amount:           rp.amount,
-      category:         rp.category,
-      transaction_date: `${prefix}-${day}`,
-      _recurring_id:    rp.id,
-    });
-    changed = true;
+    rp.last_applied_month = prefix;
+    recurringChanged = true;
   });
 
   if (changed) saveAll(TX_KEY, transactions);
+  if (recurringChanged) saveAll(RP_KEY, recurring);
+}
+
+// "YYYY-MM" for DEMO_TODAY - the bookkeeping key installments use to know
+// whether this month's payment has already been posted.
+const demoCurrentMonth = () => DEMO_TODAY.slice(0, 7);
+
+// Mirrors transaction_service.apply_installments. Same opportunistic on-access
+// pattern as recurring payments, with one difference: an installment has a
+// finite term, so posting stops once payments_made reaches period_months rather
+// than repeating forever.
+function applyInstallments() {
+  const now = new Date(DEMO_TODAY + "T00:00:00");
+  const today = now.getDate();
+  const currentMonth = demoCurrentMonth();
+  const maxDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+
+  const installments = getAll(IN_KEY);
+  const transactions = getAll(TX_KEY);
+
+  let changed = false;
+
+  installments.forEach((inst) => {
+    if (inst.active === false) return;
+    if (inst.day_of_month == null || inst.period_months == null) return;
+    if ((inst.payments_made ?? 0) >= inst.period_months) return; // paid off
+    if (inst.last_applied_month === currentMonth) return;
+
+    // Clamped in JS rather than compared raw: a payment due the 31st still has
+    // to fire in a 30-day month.
+    const day = Math.min(inst.day_of_month, maxDay);
+    if (day > today) return;
+
+    transactions.push({
+      id: nextId(),
+      name: inst.name,
+      amount: inst.monthly_payment,
+      category: inst.category,
+      transaction_date: `${currentMonth}-${String(day).padStart(2, "0")}`,
+      installment_id: inst.id,
+    });
+    inst.last_applied_month = currentMonth;
+    inst.payments_made = (inst.payments_made ?? 0) + 1;
+    changed = true;
+  });
+
+  if (changed) {
+    saveAll(TX_KEY, transactions);
+    saveAll(IN_KEY, installments);
+  }
 }
 
 // ── Transactions ──────────────────────────────────────────────────────────────
 export const getTransactions = () => {
   applyRecurringPayments();
+  applyInstallments();
   return respond(getAll(TX_KEY));
 };
 
@@ -436,11 +609,64 @@ export const deleteTransaction = (id) => {
   return Promise.resolve({ data: null, status: 204 });
 };
 
+// ── Import (demo mode has no backend, so parsing/dedup/categorization all
+// happen client-side here — always auto-detects, demo data is throwaway) ──
+export const previewImport = async (file) => {
+  const text = await file.text();
+  const { headers, rows: rawRows } = parseCsvText(text);
+  const detectedMapping = detectColumnMapping(headers);
+  const rows = annotateImportRows(rawRows, detectedMapping, "MM/DD/YYYY", "negative_expense", getAll(TX_KEY));
+
+  return respond({ source_format: "csv", rows });
+};
+
+export const commitImport = async ({ rows, tip_deposit_rows }) => {
+  const toCreate = rows.filter(r => !r.skip);
+  const created = [];
+  for (const r of toCreate) {
+    const res = await createTransaction({
+      name: r.name, amount: r.amount, category: r.category, transaction_date: r.transaction_date,
+    });
+    created.push(res.data);
+  }
+
+  const createdDeposits = [];
+  for (const d of (tip_deposit_rows || [])) {
+    const res = await createTipDeposit({ amount: d.amount, deposit_date: d.deposit_date });
+    createdDeposits.push(res.data);
+  }
+
+  return respond({
+    created_count: created.length,
+    transactions: created,
+    tip_deposits_created: createdDeposits.length,
+    tip_deposits: createdDeposits,
+  });
+};
+
+export const aiCleanupNames = () =>
+  Promise.reject({ response: { status: 503, data: { detail: "AI cleanup needs a real account — not available in demo mode." } } });
+
 // ── Recurring payments ────────────────────────────────────────────────────────
+// INCOME collides with PaycheckSchedule-generated income transactions; TIPS has
+// cash-on-hand semantics a scheduled recurring payment doesn't model. Mirrors
+// the backend's category validator (app/schemas/recurring_payment.py).
+const RECURRING_BLOCKED_CATEGORIES = new Set(["INCOME", "TIPS"]);
+
+function rejectBlockedCategory(category) {
+  if (RECURRING_BLOCKED_CATEGORIES.has(category)) {
+    return Promise.reject({ response: { status: 422, data: { detail: `${category} is not a valid category for a recurring payment` } } });
+  }
+  return null;
+}
+
 export const getRecurringPayments = () =>
   respond(getAll(RP_KEY).filter((r) => r.active !== false));
 
 export const createRecurringPayment = (data) => {
+  const rejected = rejectBlockedCategory(data.category);
+  if (rejected) return rejected;
+
   const items = getAll(RP_KEY);
   const item = {
     id: nextId(),
@@ -448,12 +674,18 @@ export const createRecurringPayment = (data) => {
     amount: String(parseFloat(data.amount).toFixed(2)),
     is_estimate: data.is_estimate ?? false,
     active: true,
+    last_applied_month: null,
   };
   saveAll(RP_KEY, [...items, item]);
   return respond(item);
 };
 
 export const updateRecurringPayment = (id, data) => {
+  if (data.category != null) {
+    const rejected = rejectBlockedCategory(data.category);
+    if (rejected) return rejected;
+  }
+
   const items = getAll(RP_KEY);
   let updated;
   const next = items.map(r => {
@@ -463,6 +695,115 @@ export const updateRecurringPayment = (id, data) => {
   });
   saveAll(RP_KEY, next);
   return respond(updated);
+};
+
+// Rolling average of a recurring payment's most recent linked-transaction
+// amounts - same shape as averageRecentAmounts (paychecks), used to populate
+// estimated_amount on a pending item.
+function averageRecentRecurringAmounts(recurringPaymentId, allTransactions, limit = 3) {
+  const amounts = allTransactions
+    .filter((t) => t.recurring_payment_id === recurringPaymentId)
+    .sort((a, b) => b.transaction_date.localeCompare(a.transaction_date))
+    .slice(0, limit)
+    .map((t) => parseFloat(t.amount));
+  if (amounts.length === 0) return null;
+  return amounts.reduce((a, b) => a + b, 0) / amounts.length;
+}
+
+// Mirrors transaction_service.get_upcoming_recurring_payments - every active,
+// dated recurring payment's occurrence for the current month, status derived
+// the same way: paid (linked transaction exists) / skipped (last_applied_month
+// set, no transaction) / pending (due day reached, unresolved) / upcoming.
+export const getUpcomingRecurringPayments = () => {
+  applyRecurringPayments();
+
+  const today       = new Date(DEMO_TODAY + "T00:00:00");
+  const prefix      = demoCurrentMonth();
+  const maxDay      = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+  const transactions = getAll(TX_KEY);
+
+  const items = getAll(RP_KEY)
+    .filter((rp) => rp.active !== false && rp.day_of_month != null && !RECURRING_BLOCKED_CATEGORIES.has(rp.category))
+    .map((rp) => {
+      const day = Math.min(rp.day_of_month, maxDay);
+      const dueDate = `${prefix}-${String(day).padStart(2, "0")}`;
+      const linked = transactions.find(
+        (t) => t.recurring_payment_id === rp.id && t.transaction_date.startsWith(prefix)
+      );
+
+      let status;
+      if (linked) status = "paid";
+      else if (rp.last_applied_month === prefix) status = "skipped";
+      else if (dueDate <= toDateStr(today)) status = "pending";
+      else status = "upcoming";
+
+      return {
+        id: rp.id,
+        name: rp.name,
+        category: rp.category,
+        due_date: dueDate,
+        status,
+        is_estimate: !!rp.is_estimate,
+        amount: rp.amount,
+        actual_amount: linked ? linked.amount : null,
+        estimated_amount: status === "pending" ? averageRecentRecurringAmounts(rp.id, transactions)?.toFixed(2) ?? null : null,
+      };
+    })
+    .sort((a, b) => a.due_date.localeCompare(b.due_date));
+
+  return respond(items);
+};
+
+function findPendingRecurringPayment(id) {
+  const rp = getAll(RP_KEY).find((r) => r.id === id);
+  if (!rp) {
+    return { error: { response: { status: 404, data: { detail: "Recurring payment not found" } } } };
+  }
+  if (!rp.active || !rp.is_estimate || rp.day_of_month == null) {
+    return { error: { response: { status: 400, data: { detail: "Recurring payment is not a pending bill" } } } };
+  }
+
+  const today  = new Date(DEMO_TODAY + "T00:00:00");
+  const prefix = demoCurrentMonth();
+  const maxDay = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+  const dueDate = `${prefix}-${String(Math.min(rp.day_of_month, maxDay)).padStart(2, "0")}`;
+
+  if (rp.last_applied_month === prefix) {
+    return { error: { response: { status: 400, data: { detail: "Already resolved for this month" } } } };
+  }
+  if (dueDate > toDateStr(today)) {
+    return { error: { response: { status: 400, data: { detail: "Not due yet" } } } };
+  }
+
+  return { rp, dueDate, prefix };
+}
+
+export const confirmRecurringPayment = (id, data) => {
+  const result = findPendingRecurringPayment(id);
+  if (result.error) return Promise.reject(result.error);
+  const { rp, dueDate, prefix } = result;
+
+  const transaction = {
+    id: nextId(),
+    name: rp.name,
+    amount: String(parseFloat(data.amount).toFixed(2)),
+    category: rp.category,
+    transaction_date: dueDate,
+    recurring_payment_id: rp.id,
+  };
+  saveAll(TX_KEY, [...getAll(TX_KEY), transaction]);
+  saveAll(RP_KEY, getAll(RP_KEY).map((r) => r.id === id ? { ...r, last_applied_month: prefix } : r));
+
+  return respond(transaction);
+};
+
+export const skipRecurringPayment = (id) => {
+  const result = findPendingRecurringPayment(id);
+  if (result.error) return Promise.reject(result.error);
+  const { prefix } = result;
+
+  saveAll(RP_KEY, getAll(RP_KEY).map((r) => r.id === id ? { ...r, last_applied_month: prefix } : r));
+  return Promise.resolve({ data: null, status: 204 });
 };
 
 export const deleteRecurringPayment = (id) => {
@@ -479,6 +820,11 @@ export const deleteRecurringPayment = (id) => {
 
 const PAYCHECK_EXPENSE_CATEGORIES = new Set(["EXPENSE", "BILL", "SUBSCRIPTION", "SAVINGS", "DEBT"]);
 const PAYCHECK_INCOME_CATEGORIES = new Set(["INCOME", "REIMBURSEMENT", "TIPS"]);
+
+// Estimated-savings spend/obligation categories exclude SAVINGS (saving, not
+// spending - surfaced separately as "saved so far").
+const NON_SAVINGS_EXPENSE_CATEGORIES = new Set(["EXPENSE", "BILL", "SUBSCRIPTION", "DEBT"]);
+const SAVINGS_HISTORY_MONTHS = 3;
 
 function toDateStr(d) {
   const y = d.getFullYear();
@@ -604,6 +950,15 @@ export const updatePaycheckSchedule = (id, data) => {
   // them so the next read backfills fresh ones. Entered amounts stay.
   saveAll(PC_KEY, getAll(PC_KEY).filter((p) => p.schedule_id !== id || p.amount != null));
 
+  // A rename has to reach transactions already posted under this schedule
+  // (#97), mirroring paycheck_service.update_paycheck_schedule.
+  if (data.name != null) {
+    const scheduled = new Set(getAll(PC_KEY).filter((p) => p.schedule_id === id).map((p) => p.id));
+    saveAll(TX_KEY, getAll(TX_KEY).map((t) => (
+      t.paycheck_id != null && scheduled.has(t.paycheck_id) ? { ...t, name: data.name } : t
+    )));
+  }
+
   return respond(updated);
 };
 
@@ -649,9 +1004,11 @@ export const updatePaycheckAmount = (id, data) => {
     if (existingIdx !== -1) {
       transactions[existingIdx] = { ...transactions[existingIdx], amount: updated.amount, transaction_date: updated.pay_date };
     } else {
+      // Named after the schedule, not a literal "Paycheck" (#97).
+      const schedule = getAll(PS_KEY).find((s) => s.id === updated.schedule_id);
       transactions.push({
         id: nextId(),
-        name: "Paycheck",
+        name: schedule?.name || "Paycheck",
         amount: updated.amount,
         category: "INCOME",
         transaction_date: updated.pay_date,
@@ -680,6 +1037,15 @@ export const setBalanceAnchor = (data) => {
   return respond(anchor);
 };
 
+// Signed contribution of a transaction to the checking balance. Tips are cash
+// on hand, not money in checking, so they never count here - cash reaches
+// checking only via a deposit. Mirrors _balance_delta in the Python service.
+function balanceDelta(t) {
+  const amt = parseFloat(t.amount);
+  if (t.category === "TIPS") return 0;
+  return PAYCHECK_INCOME_CATEGORIES.has(t.category) ? amt : -amt;
+}
+
 function computeRunningBalance() {
   const raw = localStorage.getItem(BA_KEY);
   if (!raw) return null;
@@ -690,9 +1056,14 @@ function computeRunningBalance() {
   // surfaced explicitly via the projected-income sum in getSpendableSurplus.
   const net = getAll(TX_KEY)
     .filter((t) => t.transaction_date >= anchor.as_of_date && t.transaction_date <= DEMO_TODAY)
-    .reduce((sum, t) => sum + (PAYCHECK_INCOME_CATEGORIES.has(t.category) ? parseFloat(t.amount) : -parseFloat(t.amount)), 0);
+    .reduce((sum, t) => sum + balanceDelta(t), 0);
 
-  return parseFloat(anchor.current_balance) + net;
+  // Cash deposits credit checking as transfers-in, over the same window.
+  const depositTotal = getAll(TD_KEY)
+    .filter((d) => d.deposit_date >= anchor.as_of_date && d.deposit_date <= DEMO_TODAY)
+    .reduce((sum, d) => sum + parseFloat(d.amount), 0);
+
+  return parseFloat(anchor.current_balance) + net + depositTotal;
 }
 
 export const getRunningBalance = () => {
@@ -720,39 +1091,26 @@ function averageRecentAmounts(scheduleId, allPaychecks, limit = 3) {
   return amounts.reduce((a, b) => a + b, 0) / amounts.length;
 }
 
-function committedBefore(recurring, today, horizon) {
-  return recurring.reduce((sum, rp) => {
-    // Estimate with no fixed due date - count it in full (conservative).
-    if (rp.day_of_month == null) return sum + parseFloat(rp.amount);
-    const occurrence = nextOccurrence(rp.day_of_month, today);
-    return occurrence <= horizon ? sum + parseFloat(rp.amount) : sum;
-  }, 0);
-}
-
-// Sum every future paycheck landing before monthEnd, across all active
-// schedules - actual amount if entered, else that schedule's average
-// estimate. Paychecks with pay_date <= today are excluded - they're either
-// already reflected in the running balance or still pending entry.
-function projectedIncomeBefore(schedules, today, monthEnd) {
-  if (schedules.length === 0) return 0;
-
-  // Backfilling through monthEnd (rather than just today) guarantees a row
-  // exists for every payday in the window we're about to sum, including ones
-  // further out than the immediate next check.
-  const allPaychecks = backfillPaychecks(monthEnd);
-  const todayStr = toDateStr(today);
-  const monthEndStr = toDateStr(monthEnd);
-  const scheduleIds = new Set(schedules.map((s) => s.id));
-
-  const future = allPaychecks.filter(
-    (p) => scheduleIds.has(p.schedule_id) && p.pay_date > todayStr && p.pay_date < monthEndStr
-  );
-
-  return future.reduce((sum, p) => {
-    if (p.amount != null) return sum + parseFloat(p.amount);
-    const estimate = averageRecentAmounts(p.schedule_id, allPaychecks);
-    return sum + (estimate ?? 0);
-  }, 0);
+// Bills committed before `horizon`, as { total, items } - mirrors the Python
+// service's _committed_items. Estimates (no fixed date) count in full with a
+// null due_date; items are sorted by due date, estimates last.
+function committedItems(recurring, today, horizon) {
+  let total = 0;
+  const items = [];
+  recurring.forEach((rp) => {
+    if (rp.day_of_month == null) {
+      total += parseFloat(rp.amount);
+      items.push({ name: rp.name, amount: parseFloat(rp.amount).toFixed(2), day_of_month: null, due_date: null, category: rp.category });
+    } else {
+      const occurrence = nextOccurrence(rp.day_of_month, today);
+      if (occurrence <= horizon) {
+        total += parseFloat(rp.amount);
+        items.push({ name: rp.name, amount: parseFloat(rp.amount).toFixed(2), day_of_month: rp.day_of_month, due_date: toDateStr(occurrence), category: rp.category });
+      }
+    }
+  });
+  items.sort((a, b) => (a.due_date == null) - (b.due_date == null) || (a.due_date ?? "").localeCompare(b.due_date ?? ""));
+  return { total, items };
 }
 
 export const getSpendingReserve = () => {
@@ -796,27 +1154,351 @@ export const getSpendableSurplus = () => {
       }
     }
   });
-  const monthEnd = nextMonthStart(today);
-  const nextPaydayEstimate = nextSchedule ? averageRecentAmounts(nextSchedule.id, getAll(PC_KEY)) : null;
+  // Prefer the actual amount already entered for this specific pay date over
+  // the rolling average - backfill through nextPayday first so that row
+  // exists to check. Mirrors _next_payday_amount in the Python service (#79).
+  const nextPaydayStr = toDateStr(nextPayday);
+  const backfilled = backfillPaychecks(nextPayday);
+  const enteredNextPaycheck = backfilled.find(
+    (p) => p.schedule_id === nextSchedule?.id && p.pay_date === nextPaydayStr && p.amount != null
+  );
+  const nextPaydayEstimate = enteredNextPaycheck
+    ? parseFloat(enteredNextPaycheck.amount)
+    : nextSchedule
+      ? averageRecentAmounts(nextSchedule.id, backfilled)
+      : null;
 
   const recurring = getAll(RP_KEY).filter((rp) => rp.active !== false && PAYCHECK_EXPENSE_CATEGORIES.has(rp.category));
 
-  // Primary number: what's actually free to spend/save before bills reset at
-  // the start of next month. Secondary: how much of that is already spoken
-  // for before the next paycheck lands, shown separately for context.
-  const billsBeforeMonthEnd = committedBefore(recurring, today, monthEnd);
-  const billsBeforeNextPayday = committedBefore(recurring, today, nextPayday);
+  // What's actually free to spend/save before the next paycheck lands - not
+  // the whole month, so this stays "live" instead of counting paychecks that
+  // haven't arrived yet.
+  const { total: billsBeforeNextPayday, items: billsBreakdown } = committedItems(recurring, today, nextPayday);
 
-  const projectedIncome = projectedIncomeBefore(schedules, today, monthEnd);
-  const spendableSurplus = runningBalance + projectedIncome - billsBeforeMonthEnd;
+  const spendableSurplus = runningBalance + (nextPaydayEstimate ?? 0) - billsBeforeNextPayday;
   const freeToAllocate = spendableSurplus - getSpendingReserveValue();
 
   return respond({
-    next_payday: toDateStr(nextPayday),
-    month_end: toDateStr(monthEnd),
+    next_payday: nextPaydayStr,
     spendable_surplus: spendableSurplus.toFixed(2),
     free_to_allocate: freeToAllocate.toFixed(2),
     bills_before_next_payday: billsBeforeNextPayday.toFixed(2),
     next_payday_estimate: nextPaydayEstimate != null ? nextPaydayEstimate.toFixed(2) : null,
+    running_balance: runningBalance.toFixed(2),
+    bills_breakdown: billsBreakdown,
   });
+};
+
+// Every dollar of income for [monthStart, monthEnd): real INCOME transactions
+// already logged (paycheck-linked or not - a manual entry like a freelance gig
+// counts the same as a formal paycheck) plus a projected amount for each
+// schedule's still-unfilled paycheck this month. Not a double count: a filled
+// paycheck's amount already exists as a linked INCOME transaction, so it's
+// covered by the actual-transactions sum. Mirrors _whole_month_income (#85).
+function computeWholeMonthIncome(schedules, monthStartStr, monthEndStr) {
+  const actualIncome = getAll(TX_KEY)
+    .filter((t) => t.category === "INCOME" && t.transaction_date >= monthStartStr && t.transaction_date < monthEndStr)
+    .reduce((sum, t) => sum + parseFloat(t.amount), 0);
+
+  if (schedules.length === 0) return actualIncome;
+
+  const allPaychecks = backfillPaychecks(new Date(monthEndStr + "T00:00:00"));
+  const scheduleIds = new Set(schedules.map((s) => s.id));
+  const unfilled = allPaychecks.filter(
+    (p) => scheduleIds.has(p.schedule_id) && p.pay_date >= monthStartStr && p.pay_date < monthEndStr && p.amount == null
+  );
+
+  const projectedUnfilled = unfilled.reduce((sum, p) => {
+    const estimate = averageRecentAmounts(p.schedule_id, allPaychecks);
+    return sum + (estimate ?? 0);
+  }, 0);
+
+  return actualIncome + projectedUnfilled;
+}
+
+export const getEstimatedSavings = () => {
+  const schedules = getAll(PS_KEY).filter((s) => s.active !== false);
+  if (schedules.length === 0) {
+    return Promise.reject({ response: { status: 404, data: { detail: "No active paycheck schedule found" } } });
+  }
+
+  const today = new Date(DEMO_TODAY + "T00:00:00");
+  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+  const monthEnd = nextMonthStart(today);
+  const monthStartStr = toDateStr(monthStart);
+  const monthEndStr = toDateStr(monthEnd);
+
+  // Without a known income figure the estimate is meaningless - a schedule whose
+  // checks have no amounts entered projects $0 and is treated as not-ready. This
+  // gate looks at the whole month (received + upcoming), not just what's left.
+  const wholeMonthIncome = computeWholeMonthIncome(schedules, monthStartStr, monthEndStr);
+  if (wholeMonthIncome <= 0) {
+    return Promise.reject({ response: { status: 404, data: { detail: "No paycheck amounts yet" } } });
+  }
+
+  const historyStartStr = toDateStr(addMonthsClamped(monthStart, -SAVINGS_HISTORY_MONTHS));
+
+  // The real backend excludes recurring-linked transactions from the discretionary
+  // average via recurring_payment_id. Seed history predates that link, so mirror
+  // the intent by also excluding transactions whose name matches an active
+  // non-estimate recurring - those fixed bills are added back separately below.
+  const recurringNames = new Set(
+    getAll(RP_KEY)
+      .filter((rp) => rp.active !== false && !rp.is_estimate && NON_SAVINGS_EXPENSE_CATEGORIES.has(rp.category))
+      .map((rp) => rp.name)
+  );
+
+  const spendRows = getAll(TX_KEY).filter(
+    (t) =>
+      NON_SAVINGS_EXPENSE_CATEGORIES.has(t.category) &&
+      !t._recurring_id && !t.recurring_payment_id && !recurringNames.has(t.name) &&
+      t.transaction_date >= historyStartStr && t.transaction_date < monthStartStr
+  );
+
+  const totalsByMonth = {};
+  spendRows.forEach((t) => {
+    const key = t.transaction_date.slice(0, 7);
+    totalsByMonth[key] = (totalsByMonth[key] ?? 0) + parseFloat(t.amount);
+  });
+
+  const expectedMonths = [];
+  for (let n = 1; n <= SAVINGS_HISTORY_MONTHS; n++) {
+    expectedMonths.push(toDateStr(addMonthsClamped(monthStart, -n)).slice(0, 7));
+  }
+  if (!expectedMonths.every((m) => m in totalsByMonth)) {
+    return Promise.reject({ response: { status: 404, data: { detail: "Not enough spending history" } } });
+  }
+
+  const totalSpend = Object.values(totalsByMonth).reduce((a, b) => a + b, 0);
+  const monthlyDiscretionaryAvg = totalSpend / SAVINGS_HISTORY_MONTHS;
+
+  const savedSoFar = getAll(TX_KEY)
+    .filter((t) => t.category === "SAVINGS" && t.transaction_date >= monthStartStr && t.transaction_date < monthEndStr)
+    .reduce((sum, t) => sum + parseFloat(t.amount), 0);
+
+  // Fixed obligations for the whole month, regardless of already paid. Dated
+  // is_estimate rows (utility-style bills, #58) count too via their baseline
+  // amount - only pure budget-line estimates (no day_of_month) are excluded,
+  // since those never hit the ledger and are captured via discretionary spend
+  // instead. Mirrors get_estimated_savings in the Python service.
+  const committedRecurring = getAll(RP_KEY)
+    .filter((rp) => rp.active !== false && !(rp.is_estimate && rp.day_of_month == null) && NON_SAVINGS_EXPENSE_CATEGORIES.has(rp.category))
+    .reduce((sum, rp) => sum + parseFloat(rp.amount), 0);
+
+  // Discretionary spend, blended: what's actually posted so far this month
+  // (real data) plus the historical daily rate for the days strictly after
+  // today. Mirrors get_estimated_savings in the Python service (#85).
+  const todayStr = toDateStr(today);
+  const discretionarySpentSoFar = getAll(TX_KEY)
+    .filter(
+      (t) =>
+        NON_SAVINGS_EXPENSE_CATEGORIES.has(t.category) &&
+        !t._recurring_id && !t.recurring_payment_id &&
+        t.transaction_date >= monthStartStr && t.transaction_date <= todayStr
+    )
+    .reduce((sum, t) => sum + parseFloat(t.amount), 0);
+
+  const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+  const daysAfterToday = daysInMonth - today.getDate();
+  const discretionaryProjectedRemaining = (monthlyDiscretionaryAvg / daysInMonth) * daysAfterToday;
+
+  const rawCeiling = wholeMonthIncome - committedRecurring - discretionarySpentSoFar - discretionaryProjectedRemaining;
+  const estimatedSavings = Math.max(rawCeiling, savedSoFar);
+
+  return respond({
+    month_start: monthStartStr,
+    month_end: monthEndStr,
+    estimated_savings: estimatedSavings.toFixed(2),
+    saved_so_far: savedSoFar.toFixed(2),
+    whole_month_income: wholeMonthIncome.toFixed(2),
+    committed_recurring: committedRecurring.toFixed(2),
+    discretionary_spent_so_far: discretionarySpentSoFar.toFixed(2),
+    discretionary_projected_remaining: discretionaryProjectedRemaining.toFixed(2),
+  });
+};
+
+// ── Tip deposits ──────────────────────────────────────────────────────────────
+// Lump-sum cash deposits into checking, logged separately from tip entries.
+// Cash on hand = total tips earned - total deposited.
+export const getTipDeposits = () =>
+  respond(getAll(TD_KEY).slice().sort((a, b) => b.deposit_date.localeCompare(a.deposit_date)));
+
+export const createTipDeposit = (data) => {
+  const items = getAll(TD_KEY);
+  const item = { id: nextId(), amount: String(parseFloat(data.amount).toFixed(2)), deposit_date: data.deposit_date };
+  saveAll(TD_KEY, [...items, item]);
+  return respond(item);
+};
+
+export const updateTipDeposit = (id, data) => {
+  let updated;
+  const next = getAll(TD_KEY).map((d) => {
+    if (d.id !== id) return d;
+    updated = { ...d, ...data, amount: data.amount != null ? String(parseFloat(data.amount).toFixed(2)) : d.amount };
+    return updated;
+  });
+  saveAll(TD_KEY, next);
+  return respond(updated);
+};
+
+export const deleteTipDeposit = (id) => {
+  saveAll(TD_KEY, getAll(TD_KEY).filter((d) => d.id !== id));
+  return Promise.resolve({ data: null, status: 204 });
+};
+
+export const getCashOnHand = () => {
+  const tipsEarned = getAll(TX_KEY)
+    .filter((t) => t.category === "TIPS")
+    .reduce((s, t) => s + parseFloat(t.amount), 0);
+  const tipsDeposited = getAll(TD_KEY).reduce((s, d) => s + parseFloat(d.amount), 0);
+  return respond({
+    cash_on_hand: (tipsEarned - tipsDeposited).toFixed(2),
+    tips_earned: tipsEarned.toFixed(2),
+    tips_deposited: tipsDeposited.toFixed(2),
+  });
+};
+
+// ── Installments ──────────────────────────────────────────────────────────────
+// Fixed-term payment obligations, tracked separately from the transactions feed
+// (never auto-posted). period_months is genuinely optional - monthly_payment is
+// a stored snapshot recomputed on create/update, staying null until a term is
+// set, mirroring the real backend rather than derived on every read.
+const NO_TERM_REASON = "Set a term for this installment to see insights";
+
+export const getInstallments = () =>
+  respond(getAll(IN_KEY).filter((i) => i.active !== false));
+
+export const createInstallment = (data) => {
+  const items = getAll(IN_KEY);
+  const hasTerm = data.period_months != null && data.period_months !== "";
+  const hasDay = data.day_of_month != null && data.day_of_month !== "";
+  const item = {
+    id: nextId(),
+    name: data.name,
+    total_amount: String(parseFloat(data.total_amount).toFixed(2)),
+    period_months: hasTerm ? parseInt(data.period_months, 10) : null,
+    monthly_payment: hasTerm ? computeMonthlyPayment(data.total_amount, data.period_months).toFixed(2) : null,
+    day_of_month: hasDay ? parseInt(data.day_of_month, 10) : null,
+    category: "DEBT", // always debt, not client-settable, mirrors the real backend
+    payments_made: 0,
+    last_applied_month: null,
+    active: true,
+  };
+  saveAll(IN_KEY, [...items, item]);
+  return respond(item);
+};
+
+export const updateInstallment = (id, data) => {
+  let updated;
+  const next = getAll(IN_KEY).map((i) => {
+    if (i.id !== id) return i;
+    updated = { ...i };
+    if (data.name !== undefined) updated.name = data.name;
+    if (data.total_amount != null) updated.total_amount = String(parseFloat(data.total_amount).toFixed(2));
+    // "period_months" in data distinguishes an explicit clear (null) from the
+    // field simply not being part of this update, matching the real backend's
+    // exclude_unset semantics.
+    if ("period_months" in data) {
+      updated.period_months = data.period_months != null && data.period_months !== ""
+        ? parseInt(data.period_months, 10)
+        : null;
+    }
+    if ("day_of_month" in data) {
+      updated.day_of_month = data.day_of_month != null && data.day_of_month !== ""
+        ? parseInt(data.day_of_month, 10)
+        : null;
+    }
+    // Recompute the stored snapshot whenever either input changed - null out
+    // again if the term was cleared, since there's nothing to divide by.
+    if (data.total_amount != null || "period_months" in data) {
+      updated.monthly_payment = updated.period_months
+        ? computeMonthlyPayment(updated.total_amount, updated.period_months).toFixed(2)
+        : null;
+    }
+    return updated;
+  });
+
+  // Mirrors the un-apply/mirror half of installment_service.update_installment.
+  // If this month's payment was already auto-posted but the edit means it is no
+  // longer actually due - term or day cleared, or the new day hasn't arrived -
+  // delete the linked transaction and roll the bookkeeping back so the apply
+  // pass picks it up again whenever it genuinely falls due. If it is still due,
+  // mirror the name/amount change onto that transaction instead.
+  if (updated && updated.last_applied_month === demoCurrentMonth()) {
+    const now = new Date(DEMO_TODAY + "T00:00:00");
+    const maxDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const stillDue =
+      updated.day_of_month != null &&
+      updated.period_months != null &&
+      Math.min(updated.day_of_month, maxDay) <= now.getDate();
+
+    const transactions = getAll(TX_KEY);
+    const idx = transactions.findIndex(
+      (t) => t.installment_id === id && t.transaction_date.startsWith(demoCurrentMonth())
+    );
+
+    if (!stillDue) {
+      if (idx !== -1) transactions.splice(idx, 1);
+      updated.last_applied_month = null;
+      updated.payments_made = Math.max(0, (updated.payments_made ?? 0) - 1);
+      saveAll(TX_KEY, transactions);
+    } else if (idx !== -1) {
+      transactions[idx] = { ...transactions[idx], name: updated.name, amount: updated.monthly_payment };
+      saveAll(TX_KEY, transactions);
+    }
+  }
+
+  saveAll(IN_KEY, next);
+  return respond(updated);
+};
+
+export const deleteInstallment = (id) => {
+  // Soft-deactivate rather than remove, consistent with recurring payments.
+  saveAll(IN_KEY, getAll(IN_KEY).map((i) => (i.id === id ? { ...i, active: false } : i)));
+  return Promise.resolve({ data: null, status: 204 });
+};
+
+export const getInstallmentInsights = (id) => {
+  const installment = getAll(IN_KEY).find((i) => i.id === id);
+  if (!installment) {
+    return Promise.reject({ response: { status: 404, data: { detail: "Installment not found" } } });
+  }
+
+  // No term set yet -> nothing to compare against the budget, gated before
+  // even touching getSpendableSurplus(), matching the real backend.
+  if (installment.monthly_payment == null) {
+    return respond({
+      available: false,
+      reason: NO_TERM_REASON,
+      monthly_payment: null,
+      available_cash: null,
+      ratio: null,
+      status: null,
+    });
+  }
+
+  // Never propagates getSpendableSurplus()'s rejection - "not enough budget
+  // data yet" is a legitimate widget state here, not an error, matching the
+  // real /installments/{id}/insights endpoint's always-200 contract.
+  return getSpendableSurplus().then(
+    (res) => {
+      const { status, ratio } = computeGaugeStatus(installment.monthly_payment, res.data.free_to_allocate);
+      return respond({
+        available: true,
+        reason: null,
+        monthly_payment: installment.monthly_payment,
+        available_cash: res.data.free_to_allocate,
+        ratio,
+        status,
+      });
+    },
+    (err) => respond({
+      available: false,
+      reason: err.response?.data?.detail ?? "Not enough budget data yet",
+      monthly_payment: installment.monthly_payment,
+      available_cash: null,
+      ratio: null,
+      status: null,
+    })
+  );
 };

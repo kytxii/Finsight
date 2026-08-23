@@ -1,7 +1,5 @@
 import { useEffect, useRef } from "react";
 
-const REVEAL_W = 130;
-
 export default function SwipeableRow({
   id,
   openId,
@@ -15,6 +13,9 @@ export default function SwipeableRow({
   editColor,
   deleteBg,
   deleteColor,
+  roundTop = false,
+  roundBottom = false,
+  radius = 18,
   children,
 }) {
   // Solid per-action background is the default (matches the dark mobile UI's
@@ -26,6 +27,10 @@ export default function SwipeableRow({
   const resolvedEditColor = editColor ?? text;
   const resolvedDeleteBg = deleteBg ?? fallbackBg;
   const resolvedDeleteColor = deleteColor ?? "var(--category-expense)";
+  // Reveal one lane per action, so a delete-only row (no onEdit) shows a single
+  // narrower action instead of an empty half.
+  const hasEdit = typeof onEdit === "function";
+  const REVEAL_W = hasEdit ? 130 : 65;
   const contentRef = useRef(null);
   const startXRef = useRef(0);
   const startYRef = useRef(0);
@@ -40,12 +45,24 @@ export default function SwipeableRow({
       contentRef.current.style.transform = `translateX(${x}px)`;
   };
 
+  // Promote to a compositing layer only for the duration of an interaction.
+  // Leaving will-change on permanently would give every row in a long list its
+  // own layer for no benefit, so it's toggled imperatively here rather than
+  // through state - the transform is already driven imperatively, and a
+  // re-render per drag frame would be pure waste.
+  const setPromoted = (on) => {
+    if (contentRef.current)
+      contentRef.current.style.willChange = on ? "transform" : "auto";
+  };
+
   const animateTo = (x) => {
     if (!contentRef.current) return;
     contentRef.current.style.transition = "transform 0.28s cubic-bezier(0.32, 0.72, 0, 1)";
     setTransform(x);
     setTimeout(() => {
-      if (contentRef.current) contentRef.current.style.transition = "none";
+      if (!contentRef.current) return;
+      contentRef.current.style.transition = "none";
+      if (currentOffsetRef.current === 0) setPromoted(false);
     }, 280);
   };
 
@@ -72,6 +89,7 @@ export default function SwipeableRow({
         if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
         if (Math.abs(dy) > Math.abs(dx)) return; // vertical scroll — let browser handle it
         movedRef.current = true;
+        setPromoted(true);
       }
       e.preventDefault();
       setTransform(
@@ -80,7 +98,7 @@ export default function SwipeableRow({
     };
     el.addEventListener("touchmove", onMove, { passive: false });
     return () => el.removeEventListener("touchmove", onMove);
-  }, []);
+  }, [REVEAL_W]);
 
   const handleTouchStart = (e) => {
     startXRef.current = e.touches[0].clientX;
@@ -91,7 +109,10 @@ export default function SwipeableRow({
   };
 
   const handleTouchEnd = () => {
-    if (!movedRef.current) return;
+    if (!movedRef.current) {
+      setPromoted(false);
+      return;
+    }
     snapTo(currentOffsetRef.current < -REVEAL_W / 2 ? -REVEAL_W : 0);
   };
 
@@ -100,97 +121,109 @@ export default function SwipeableRow({
       style={{
         position: "relative",
         overflow: "hidden",
+        // First/last row in a rounded card carries its own matching corner
+        // radius rather than leaning on the ancestor card's overflow:hidden,
+        // so the actions lane is clipped by the same curve it slides under.
+        borderRadius: `${roundTop ? radius : 0}px ${roundTop ? radius : 0}px ${roundBottom ? radius : 0}px ${roundBottom ? radius : 0}px`,
         borderTop: `1px solid ${border}`,
         zIndex: isOpen ? 10 : "auto",
       }}
     >
-      <div
-        style={{
-          position: "absolute",
-          right: 0,
-          top: 0,
-          bottom: 0,
-          width: REVEAL_W,
-          display: "flex",
-        }}
-      >
-        <button
-          onClick={() => {
-            snapTo(0);
-            onEdit();
-          }}
-          style={{
-            flex: 1,
-            background: resolvedEditBg,
-            border: "none",
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            color: resolvedEditColor,
-            transition: "background-color 0.15s ease",
-          }}
-        >
-          <svg
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-          </svg>
-        </button>
-        <button
-          onClick={() => {
-            snapTo(0);
-            onDelete();
-          }}
-          style={{
-            flex: 1,
-            background: resolvedDeleteBg,
-            border: "none",
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            color: resolvedDeleteColor,
-            transition: "background-color 0.15s ease",
-          }}
-        >
-          <svg
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <polyline points="3 6 5 6 21 6" />
-            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-            <path d="M10 11v6M14 11v6" />
-            <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
-          </svg>
-        </button>
-      </div>
+      {/* The actions ride *inside* the translated track as a flex sibling of
+          the content, parked just past the right edge, instead of sitting in
+          an absolutely positioned layer underneath it (#104). Underneath, the
+          two layers were clipped by the same rounded corner, and an
+          antialiased curve gives both of them partial-alpha edge pixels -
+          compositing a half-transparent row background over a half-transparent
+          red button cannot fully cover it, so a colored hairline survived at
+          the curve no matter how the mount timing or layer promotion was
+          tuned. Middle rows have no curvature, hence hard edges and full
+          coverage, which is why only the first/last row ever showed it. Parked
+          off the right edge there is simply no colored pixel near a corner at
+          rest, and mid-drag the actions are the topmost layer at that corner,
+          so it antialiases against the card like any other rounded element. */}
       <div
         ref={contentRef}
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
         style={{
+          display: "flex",
           transform: "translateX(0)",
           position: "relative",
           zIndex: 1,
-          willChange: "transform",
         }}
       >
-        {children}
+        {/* minWidth:0 keeps a long merchant name from stretching the track
+            past the row width and pulling the actions into view at rest. */}
+        <div style={{ flex: "0 0 100%", minWidth: 0 }}>{children}</div>
+        <div style={{ flex: `0 0 ${REVEAL_W}px`, display: "flex" }}>
+          {hasEdit && (
+            <button
+              onClick={() => {
+                snapTo(0);
+                onEdit();
+              }}
+              style={{
+                flex: 1,
+                background: resolvedEditBg,
+                border: "none",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: resolvedEditColor,
+                transition: "background-color 0.15s ease",
+              }}
+            >
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+              </svg>
+            </button>
+          )}
+          <button
+            onClick={() => {
+              snapTo(0);
+              onDelete();
+            }}
+            style={{
+              flex: 1,
+              background: resolvedDeleteBg,
+              border: "none",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: resolvedDeleteColor,
+              transition: "background-color 0.15s ease",
+            }}
+          >
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <polyline points="3 6 5 6 21 6" />
+              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+              <path d="M10 11v6M14 11v6" />
+              <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+            </svg>
+          </button>
+        </div>
       </div>
     </div>
   );

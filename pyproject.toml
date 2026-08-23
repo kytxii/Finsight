@@ -20,6 +20,10 @@ dependencies = [
     "pydantic[email]",
     "pydantic-settings",
     "slowapi>=0.1.9",
+    "python-multipart",
+    "pdfplumber",
+    # AI
+    "google-genai",
 ]
 
 [project.optional-dependencies]
@@ -27,6 +31,7 @@ dev = [
     "pytest",
     "pytest-asyncio",
     "httpx",
+    "reportlab",
 ]
 
 [tool.pytest.ini_options]
@@ -37,4 +42,5 @@ dev = [
     "httpx>=0.28.1",
     "pytest>=9.0.2",
     "pytest-asyncio>=1.3.0",
+    "reportlab>=4.0.0",
 ]

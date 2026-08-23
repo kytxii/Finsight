@@ -11,6 +11,7 @@ router = APIRouter(prefix="/transactions", tags=["transactions"])
 @router.get("/", response_model=list[TransactionResponse])
 async def get_transactions(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     await transaction_service.apply_recurring_payments(current_user.id, db)
+    await transaction_service.apply_installments(current_user.id, db)
     result = await transaction_service.get_transactions(current_user.id, db)
     return result
 

@@ -1,18 +1,15 @@
-import { useTheme } from "../hooks/useTheme";
+import { HOME_DIVIDER, HOME_MUTED } from "./categoryVisuals";
 
 export default function Footer() {
-  const dark = useTheme();
-  const border = dark ? "var(--dark-border)" : "var(--light-border)";
-  const muted = dark
-    ? "color-mix(in srgb, var(--dark-text) 45%, transparent)"
-    : "color-mix(in srgb, var(--light-text) 45%, transparent)";
+  const border = HOME_DIVIDER;
+  const muted = HOME_MUTED;
 
   return (
     <footer
       className="px-6 py-4 text-xs flex items-center justify-between border-t"
       style={{ color: muted, borderColor: border }}
     >
-      <span>© {new Date().getFullYear()} FinSight</span>
+      <span>© {new Date().getFullYear()} Finsight</span>
       <div className="flex items-center gap-3">
         <a
           target="_blank"

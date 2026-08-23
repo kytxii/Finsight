@@ -1,11 +1,12 @@
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 from datetime import date, timedelta
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Iterator, NamedTuple
 import calendar
-from app.models import Paycheck, PaycheckSchedule, RecurringPayment, Transaction, BalanceAnchor, User
+from app.models import Paycheck, PaycheckSchedule, RecurringPayment, Transaction, BalanceAnchor, User, TipDeposit
 from app.models.paycheck_schedule import PaycheckFrequency
 from app.models.category import Category
 from app.schemas import CreatePaycheckSchedule, UpdatePaycheckSchedule, UpdatePaycheckAmount, SetBalanceAnchor
@@ -15,6 +16,18 @@ from app.schemas.paycheck import SetSpendingReserve
 # money going out. INCOME, TIPS, and REIMBURSEMENT are inflows, not expenses.
 EXPENSE_CATEGORIES = {Category.EXPENSE, Category.BILL, Category.SUBSCRIPTION, Category.SAVINGS, Category.DEBT}
 INCOME_CATEGORIES = {Category.INCOME, Category.REIMBURSEMENT, Category.TIPS}
+
+# Estimated-savings spend/obligation categories exclude SAVINGS: money moved into
+# savings is saving, not spending, and is surfaced separately as "saved so far".
+NON_SAVINGS_EXPENSE_CATEGORIES = EXPENSE_CATEGORIES - {Category.SAVINGS}
+
+# Full completed calendar months of spending history required before we'll project
+# a savings estimate, and the window the discretionary-spend average covers.
+SAVINGS_HISTORY_MONTHS = 3
+
+
+def _cents(value: Decimal) -> Decimal:
+    return value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 def _add_months(d: date, months: int) -> date:
@@ -77,13 +90,23 @@ def _next_month_start(today: date) -> date:
     return date(today.year, today.month + 1, 1)
 
 
+class BillItem(NamedTuple):
+    name: str
+    amount: Decimal
+    day_of_month: int | None
+    due_date: date | None  # None for no-fixed-date estimates
+    category: Category
+
+
 class SpendableSurplusResult(NamedTuple):
     next_payday: date
-    month_end: date
     spendable_surplus: Decimal
     free_to_allocate: Decimal
     bills_before_next_payday: Decimal
     next_payday_estimate: Decimal | None
+    # Decomposition, surfaced so the client can explain the headline number.
+    running_balance: Decimal
+    bills_breakdown: list[BillItem]  # the bills making up bills_before_next_payday
 
 
 def _generate_pay_dates_through(schedule: PaycheckSchedule, through: date) -> list[date]:
@@ -127,7 +150,8 @@ async def _get_owned_schedule(schedule_id: UUID, current_user: UUID, db: AsyncSe
 async def update_paycheck_schedule(schedule_id: UUID, data: UpdatePaycheckSchedule, current_user: UUID, db: AsyncSession):
     schedule = await _get_owned_schedule(schedule_id, current_user, db)
 
-    for key, value in data.model_dump(exclude_unset=True).items():
+    changes = data.model_dump(exclude_unset=True)
+    for key, value in changes.items():
         setattr(schedule, key, value)
     schedule.updated_by = current_user
 
@@ -135,6 +159,24 @@ async def update_paycheck_schedule(schedule_id: UUID, data: UpdatePaycheckSchedu
     # no longer match - drop them so the next read backfills fresh ones.
     # Paychecks with an amount already entered are real history and stay.
     await db.execute(delete(Paycheck).where(Paycheck.schedule_id == schedule_id, Paycheck.amount.is_(None)))
+
+    # A rename has to reach transactions already posted under this schedule
+    # (#97). They're named from the schedule at the moment their paycheck gets
+    # an amount, so without this they'd keep the old name forever - the
+    # Paychecks list would show the new name while Activity and the Income
+    # category page still showed the old one. Same idea as
+    # recurring_payment_service.update_recurring_payment mirroring a rename
+    # onto its linked transaction, just across every paycheck in the schedule
+    # instead of a single current-month row.
+    if "name" in changes:
+        await db.execute(
+            update(Transaction)
+            .where(Transaction.paycheck_id.in_(
+                select(Paycheck.id).where(Paycheck.schedule_id == schedule_id)
+            ))
+            .values(name=changes["name"], updated_by=current_user)
+            .execution_options(synchronize_session=False)
+        )
 
     await db.commit()
     await db.refresh(schedule)
@@ -170,17 +212,24 @@ async def _backfill_paychecks(schedules: list[PaycheckSchedule], current_user: U
     for schedule_id, pay_date in existing_rows:
         existing_by_schedule.setdefault(schedule_id, set()).add(pay_date)
 
-    for schedule in active:
-        existing_dates = existing_by_schedule.get(schedule.id, set())
-        for pay_date in expected_by_schedule[schedule.id]:
-            if pay_date not in existing_dates:
-                db.add(Paycheck(
-                    schedule_id=schedule.id,
-                    pay_date=pay_date,
-                    amount=None,
-                    created_by=current_user,
-                    updated_by=current_user,
-                ))
+    rows = [
+        {"schedule_id": schedule.id, "pay_date": pay_date, "amount": None, "created_by": current_user, "updated_by": current_user}
+        for schedule in active
+        for pay_date in expected_by_schedule[schedule.id]
+        if pay_date not in existing_by_schedule.get(schedule.id, set())
+    ]
+    if not rows:
+        return
+
+    # The existing_dates check above is only an optimization to skip re-sending
+    # rows we already know about - it's not itself race-safe (two concurrent
+    # calls can both see a date as missing and both try to insert it). The
+    # uq_paychecks_schedule_id_pay_date constraint plus ON CONFLICT DO NOTHING
+    # is what actually prevents the duplicate, whichever request loses the race.
+    await db.execute(
+        pg_insert(Paycheck).on_conflict_do_nothing(index_elements=["schedule_id", "pay_date"]),
+        rows,
+    )
 
 
 async def _average_recent_amounts(schedule_id: UUID, db: AsyncSession, limit: int = 3) -> Decimal | None:
@@ -273,8 +322,16 @@ async def update_paycheck_amount(paycheck_id: UUID, data: UpdatePaycheckAmount, 
         linked.transaction_date = paycheck.pay_date
         linked.updated_by = current_user
     else:
+        # Name the transaction after its schedule rather than a literal
+        # "Paycheck" (#97). Deliberately only on creation - an existing row's
+        # name is left alone here so an amount edit can't clobber a rename the
+        # user made by hand. Schedule renames propagate separately, in
+        # update_paycheck_schedule.
+        schedule_name = await db.scalar(
+            select(PaycheckSchedule.name).where(PaycheckSchedule.id == paycheck.schedule_id)
+        )
         db.add(Transaction(
-            name="Paycheck",
+            name=schedule_name or "Paycheck",
             amount=data.amount,
             transaction_date=paycheck.pay_date,
             category=Category.INCOME,
@@ -308,25 +365,46 @@ async def set_balance_anchor(data: SetBalanceAnchor, current_user: UUID, db: Asy
     return anchor
 
 
+def _balance_delta(t: Transaction) -> Decimal:
+    """Signed contribution of a transaction to the checking running balance.
+
+    Tips are cash on hand, not money in checking, so they never count here -
+    cash reaches checking only via a TipDeposit. Other income adds, expenses
+    subtract.
+    """
+    if t.category == Category.TIPS:
+        return Decimal("0")
+    return t.amount if t.category in INCOME_CATEGORIES else -t.amount
+
+
 async def _get_running_balance(current_user: UUID, db: AsyncSession) -> Decimal | None:
     anchor = await get_balance_anchor(current_user, db)
     if anchor is None:
         return None
 
-    # Bounded to today - an already-entered future-dated paycheck transaction
-    # must not inflate the *current* running balance. Future income is instead
-    # surfaced explicitly via the projected-income sum in get_spendable_surplus.
+    # Strictly after as_of_date - current_balance is treated as already
+    # inclusive of that day's activity (it's the real balance the user read
+    # off their bank), so replaying same-day transactions on top would
+    # double-count them. Bounded to today - an already-entered future-dated
+    # paycheck transaction must not inflate the *current* running balance.
+    # Future income is instead surfaced explicitly via the projected-income
+    # sum in get_spendable_surplus.
     transactions = (await db.scalars(select(Transaction).where(
         Transaction.created_by == current_user,
-        Transaction.transaction_date >= anchor.as_of_date,
+        Transaction.transaction_date > anchor.as_of_date,
         Transaction.transaction_date <= date.today(),
     ))).all()
+    net = sum((_balance_delta(t) for t in transactions), start=Decimal("0"))
 
-    net = sum(
-        (t.amount if t.category in INCOME_CATEGORIES else -t.amount for t in transactions),
-        start=Decimal("0"),
-    )
-    return anchor.current_balance + net
+    # Cash deposits credit checking as transfers-in, over the same window.
+    deposits = (await db.scalars(select(TipDeposit).where(
+        TipDeposit.created_by == current_user,
+        TipDeposit.deposit_date > anchor.as_of_date,
+        TipDeposit.deposit_date <= date.today(),
+    ))).all()
+    deposit_total = sum((d.amount for d in deposits), start=Decimal("0"))
+
+    return anchor.current_balance + net + deposit_total
 
 
 class RunningBalanceResult(NamedTuple):
@@ -343,51 +421,52 @@ async def get_running_balance(current_user: UUID, db: AsyncSession) -> RunningBa
     return RunningBalanceResult(balance=balance, as_of_date=anchor.as_of_date)
 
 
-def _committed_before(recurring_payments: list[RecurringPayment], today: date, horizon: date) -> Decimal:
+def _committed_items(recurring_payments: list[RecurringPayment], today: date, horizon: date) -> tuple[Decimal, list[BillItem]]:
+    """Bills committed before `horizon`, as (total, itemized list).
+
+    Fixed-date bills count when their next occurrence is on/before horizon;
+    estimates with no fixed due date count in full (due_date None). Conservative:
+    under-reporting surplus is safer than over-reporting it. Items are sorted by
+    due date, with no-fixed-date estimates last.
+    """
     total = Decimal("0")
+    items: list[BillItem] = []
     for rp in recurring_payments:
         if rp.day_of_month is None:
-            # Estimate with no fixed due date - count it in full. Conservative:
-            # under-reporting surplus is safer than over-reporting it.
             total += rp.amount
-        elif _next_occurrence(rp.day_of_month, today) <= horizon:
-            total += rp.amount
-    return total
+            items.append(BillItem(rp.name, rp.amount, None, None, rp.category))
+        else:
+            occurrence = _next_occurrence(rp.day_of_month, today)
+            if occurrence <= horizon:
+                total += rp.amount
+                items.append(BillItem(rp.name, rp.amount, rp.day_of_month, occurrence, rp.category))
+    items.sort(key=lambda b: (b.due_date is None, b.due_date or date.max))
+    return total, items
 
 
-async def _projected_income_before(schedules: list[PaycheckSchedule], today: date, month_end: date, current_user: UUID, db: AsyncSession) -> Decimal:
-    """Sum every future paycheck landing before month_end, across all active schedules.
+async def _next_payday_amount(next_schedule: PaycheckSchedule, next_payday: date, current_user: UUID, db: AsyncSession) -> Decimal | None:
+    """Amount to project for the very next paycheck.
 
-    Actual amount if already entered, else that schedule's average estimate.
-    Paychecks with pay_date <= today are excluded - they're either already
-    reflected in the running balance (amount entered -> linked Transaction) or
-    still pending entry, not a projection.
+    Prefers the actual amount already entered for that specific pay date -
+    consistent with how a landed paycheck stops being a projection everywhere
+    else in this file - and falls back to the schedule's recent average only
+    when nothing's been entered yet. Backfills through next_payday first so a
+    row exists to check (it may not otherwise, since nothing else guarantees
+    one this far out).
     """
-    schedule_ids = [s.id for s in schedules]
-    if not schedule_ids:
-        return Decimal("0")
-
-    # Backfilling through month_end (rather than just today) guarantees a row
-    # exists for every payday in the window we're about to sum, including ones
-    # further out than the immediate next check (e.g. two biweekly paydays
-    # landing in the same month).
-    await _backfill_paychecks(schedules, current_user, db, through=month_end)
+    await _backfill_paychecks([next_schedule], current_user, db, through=next_payday)
     await db.commit()
 
-    future_paychecks = (await db.scalars(
+    paycheck = await db.scalar(
         select(Paycheck).where(
-            Paycheck.schedule_id.in_(schedule_ids),
-            Paycheck.pay_date > today,
-            Paycheck.pay_date < month_end,
+            Paycheck.schedule_id == next_schedule.id,
+            Paycheck.pay_date == next_payday,
         )
-    )).all()
-
-    estimates_by_schedule = await _average_recent_amounts_by_schedule(schedule_ids, db)
-
-    return sum(
-        (p.amount if p.amount is not None else estimates_by_schedule.get(p.schedule_id) or Decimal("0") for p in future_paychecks),
-        start=Decimal("0"),
     )
+    if paycheck is not None and paycheck.amount is not None:
+        return paycheck.amount
+
+    return await _average_recent_amounts(next_schedule.id, db)
 
 
 async def get_spendable_surplus(current_user: UUID, spending_reserve: Decimal, db: AsyncSession) -> SpendableSurplusResult:
@@ -408,8 +487,7 @@ async def get_spendable_surplus(current_user: UUID, spending_reserve: Decimal, d
         ((next(pay_date for pay_date in _iter_pay_dates(schedule) if pay_date >= today), schedule) for schedule in schedules),
         key=lambda pair: pair[0],
     )
-    next_payday_estimate = await _average_recent_amounts(next_schedule.id, db)
-    month_end = _next_month_start(today)
+    next_payday_estimate = await _next_payday_amount(next_schedule, next_payday, current_user, db)
 
     recurring_payments = (await db.scalars(
         select(RecurringPayment).where(
@@ -419,24 +497,23 @@ async def get_spendable_surplus(current_user: UUID, spending_reserve: Decimal, d
         )
     )).all()
 
-    # Primary number: what's actually free to spend/save before bills reset at
-    # the start of next month. Secondary: how much of that is already spoken
-    # for before the next paycheck lands, shown separately for context.
-    bills_before_month_end = _committed_before(recurring_payments, today, month_end)
-    bills_before_next_payday = _committed_before(recurring_payments, today, next_payday)
+    # What's actually free to spend/save before the next paycheck lands - not
+    # the whole month, so this stays "live" instead of counting paychecks that
+    # haven't arrived yet. Self-corrects as paydays pass: next_payday rolls
+    # forward on its own once the current one is reflected in running_balance.
+    bills_before_next_payday, bills_breakdown = _committed_items(recurring_payments, today, next_payday)
 
-    projected_income = await _projected_income_before(schedules, today, month_end, current_user, db)
-
-    spendable_surplus = running_balance + projected_income - bills_before_month_end
+    spendable_surplus = running_balance + (next_payday_estimate or Decimal("0")) - bills_before_next_payday
     free_to_allocate = spendable_surplus - spending_reserve
 
     return SpendableSurplusResult(
         next_payday=next_payday,
-        month_end=month_end,
         spendable_surplus=spendable_surplus,
         free_to_allocate=free_to_allocate,
         bills_before_next_payday=bills_before_next_payday,
         next_payday_estimate=next_payday_estimate,
+        running_balance=running_balance,
+        bills_breakdown=bills_breakdown,
     )
 
 
@@ -449,3 +526,194 @@ async def set_spending_reserve(data: SetSpendingReserve, current_user: User, db:
     await db.commit()
     await db.refresh(current_user)
     return current_user.spending_reserve
+
+
+class EstimatedSavingsResult(NamedTuple):
+    month_start: date
+    month_end: date
+    estimated_savings: Decimal
+    saved_so_far: Decimal
+    whole_month_income: Decimal
+    committed_recurring: Decimal
+    discretionary_spent_so_far: Decimal
+    discretionary_projected_remaining: Decimal
+
+
+async def _whole_month_income(schedules: list[PaycheckSchedule], month_start: date, month_end: date, current_user: UUID, db: AsyncSession) -> Decimal:
+    """Every dollar of income for [month_start, month_end): real INCOME
+    transactions already logged (paycheck-linked or not - a manual entry like
+    a freelance gig counts the same as a formal paycheck) plus a projected
+    amount for each active schedule's still-unfilled paycheck this month.
+
+    Not a double count: a filled paycheck's amount already exists as a linked
+    INCOME transaction (see update_paycheck_amount), so it's covered by the
+    actual-transactions sum below. Only unfilled paychecks - which have no
+    transaction yet - need the schedule's recent-average estimate added on top.
+    """
+    actual_income = sum((
+        await db.scalars(select(Transaction.amount).where(
+            Transaction.created_by == current_user,
+            Transaction.category == Category.INCOME,
+            Transaction.transaction_date >= month_start,
+            Transaction.transaction_date < month_end,
+        ))
+    ).all(), start=Decimal("0"))
+
+    schedule_ids = [s.id for s in schedules]
+    if not schedule_ids:
+        return actual_income
+
+    await _backfill_paychecks(schedules, current_user, db, through=month_end)
+    await db.commit()
+
+    unfilled_paychecks = (await db.scalars(
+        select(Paycheck).where(
+            Paycheck.schedule_id.in_(schedule_ids),
+            Paycheck.pay_date >= month_start,
+            Paycheck.pay_date < month_end,
+            Paycheck.amount.is_(None),
+        )
+    )).all()
+
+    estimates_by_schedule = await _average_recent_amounts_by_schedule(schedule_ids, db)
+    projected_unfilled = sum(
+        (estimates_by_schedule.get(p.schedule_id) or Decimal("0") for p in unfilled_paychecks),
+        start=Decimal("0"),
+    )
+
+    return actual_income + projected_unfilled
+
+
+async def get_estimated_savings(current_user: UUID, db: AsyncSession) -> EstimatedSavingsResult:
+    """How much can realistically be saved this month, blending real month-to-date
+    results with a projection for the days still ahead.
+
+    estimated_savings = max(whole_month_income - committed_recurring -
+    discretionary_projection, saved_so_far). whole_month_income is every dollar
+    of income for the month - landed or not, paycheck-schedule or a manual
+    entry like a freelance gig - deliberately NOT scoped to "still to come," so
+    a raise or an amount correction on an already-landed paycheck (or a
+    one-off income transaction) is reflected immediately instead of vanishing
+    once payday passes or being silently excluded.
+    discretionary_projection blends real spending already logged this month
+    with a historical daily rate for the days left, so the estimate gets more
+    accurate (not just smaller) as the month plays out. Flooring at saved_so_far
+    means the total can never read as "saved past your target" - a month
+    outperforming the projection just raises the ceiling to match instead.
+
+    Deliberately independent of the balance anchor - it's a flow calc, so it works
+    for users who never set a starting balance. Two prerequisite gates raise
+    ValueError: no active schedule, or fewer than SAVINGS_HISTORY_MONTHS completed
+    months of discretionary spending to average.
+    """
+    today = date.today()
+    month_start = today.replace(day=1)
+    month_end = _next_month_start(today)
+
+    schedules = (await db.scalars(select(PaycheckSchedule).where(
+        PaycheckSchedule.created_by == current_user,
+        PaycheckSchedule.active.is_(True),
+    ))).all()
+    if not schedules:
+        raise ValueError("No active paycheck schedule found")
+
+    # Without a known income figure the estimate is meaningless, so a schedule
+    # whose checks have no amounts entered (and no history to average from) is
+    # treated as not-ready rather than projecting $0. This gate still looks at
+    # the whole month (received + upcoming) rather than just what's remaining -
+    # a schedule that already paid out earlier this month is still "ready".
+    whole_month_income = await _whole_month_income(schedules, month_start, month_end, current_user, db)
+    if whole_month_income <= 0:
+        raise ValueError("No paycheck amounts yet")
+
+    # Discretionary spend average over the completed months before this one.
+    # SAVINGS excluded (it's saving, surfaced separately) and recurring-linked
+    # transactions excluded (fixed bills are added back separately, so
+    # counting them here too would double-count).
+    history_start = _add_months(month_start, -SAVINGS_HISTORY_MONTHS)
+    spend_rows = (await db.execute(
+        select(Transaction.transaction_date, Transaction.amount).where(
+            Transaction.created_by == current_user,
+            Transaction.category.in_(NON_SAVINGS_EXPENSE_CATEGORIES),
+            Transaction.recurring_payment_id.is_(None),
+            Transaction.transaction_date >= history_start,
+            Transaction.transaction_date < month_start,
+        )
+    )).all()
+
+    totals_by_month: dict[str, Decimal] = {}
+    for txn_date, amount in spend_rows:
+        key = txn_date.strftime("%Y-%m")
+        totals_by_month[key] = totals_by_month.get(key, Decimal("0")) + amount
+
+    expected_months = {_add_months(month_start, -n).strftime("%Y-%m") for n in range(1, SAVINGS_HISTORY_MONTHS + 1)}
+    if not expected_months.issubset(totals_by_month.keys()):
+        raise ValueError("Not enough spending history")
+
+    monthly_discretionary_avg = _cents(sum(totals_by_month.values(), start=Decimal("0")) / Decimal(SAVINGS_HISTORY_MONTHS))
+
+    saved_rows = (await db.scalars(
+        select(Transaction.amount).where(
+            Transaction.created_by == current_user,
+            Transaction.category == Category.SAVINGS,
+            Transaction.transaction_date >= month_start,
+            Transaction.transaction_date < month_end,
+        )
+    )).all()
+    saved_so_far = sum(saved_rows, start=Decimal("0"))
+
+    # Fixed obligations for the whole month, regardless of whether they're
+    # already paid - a paid bill isn't "back in play" just because its due
+    # date passed. Dated is_estimate rows (utility-style bills with a due date,
+    # see #58) count here too via their baseline amount - once confirmed they
+    # post a transaction with recurring_payment_id set, which the
+    # discretionary-spend query below excludes, so leaving them out here would
+    # make the confirmed spend vanish from the estimate instead of counting it
+    # once. Only pure budget-line estimates (is_estimate, no day_of_month, e.g.
+    # a grocery forecast) are excluded: they never hit the ledger, so the
+    # spend they model is already captured in the discretionary figures below.
+    recurring = (await db.scalars(
+        select(RecurringPayment).where(
+            RecurringPayment.created_by == current_user,
+            RecurringPayment.active.is_(True),
+            RecurringPayment.category.in_(NON_SAVINGS_EXPENSE_CATEGORIES),
+        )
+    )).all()
+    committed_recurring = sum(
+        (rp.amount for rp in recurring if not (rp.is_estimate and rp.day_of_month is None)),
+        start=Decimal("0"),
+    )
+
+    # Discretionary spend, blended: what's actually posted so far this month
+    # (real data, only gets more complete as the month goes on) plus the
+    # historical daily rate applied to the days strictly after today (not yet
+    # observed). This is what makes the estimate "live" - a month running
+    # lighter than the 3-month average shows more room immediately, instead of
+    # waiting for month-end to reflect it.
+    discretionary_spent_so_far = sum((
+        await db.scalars(select(Transaction.amount).where(
+            Transaction.created_by == current_user,
+            Transaction.category.in_(NON_SAVINGS_EXPENSE_CATEGORIES),
+            Transaction.recurring_payment_id.is_(None),
+            Transaction.transaction_date >= month_start,
+            Transaction.transaction_date <= today,
+        ))
+    ).all(), start=Decimal("0"))
+
+    days_in_month = calendar.monthrange(today.year, today.month)[1]
+    days_after_today = days_in_month - today.day
+    discretionary_projected_remaining = _cents(monthly_discretionary_avg / Decimal(days_in_month) * Decimal(days_after_today))
+
+    raw_ceiling = whole_month_income - committed_recurring - discretionary_spent_so_far - discretionary_projected_remaining
+    estimated_savings = _cents(max(raw_ceiling, saved_so_far))
+
+    return EstimatedSavingsResult(
+        month_start=month_start,
+        month_end=month_end,
+        estimated_savings=estimated_savings,
+        saved_so_far=saved_so_far,
+        whole_month_income=whole_month_income,
+        committed_recurring=committed_recurring,
+        discretionary_spent_so_far=discretionary_spent_so_far,
+        discretionary_projected_remaining=discretionary_projected_remaining,
+    )

@@ -22,6 +22,9 @@
   --category-debt: #fb8c00;
   --category-reimbursement: #e91e63;
   --category-tips: #00897b;
+
+  /* System alerts that must read as distinct from any category color */
+  --duplicate-alert: #607d8b;
 }
 
 .dark {
@@ -42,6 +45,9 @@
   --category-debt: #ffb74d;
   --category-reimbursement: #f06292;
   --category-tips: #4db6ac;
+
+  /* System alerts that must read as distinct from any category color */
+  --duplicate-alert: #90a4ae;
 }
 
 body {
@@ -49,6 +55,6 @@ body {
 }
 
 * {
-  font-family: "Quicksand", system-ui, sans-serif;
+  font-family: "Plus Jakarta Sans", system-ui, sans-serif;
   -webkit-tap-highlight-color: transparent;
 }

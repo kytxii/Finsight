@@ -14,6 +14,9 @@ import {
   setSpendingReserve,
 } from "../api/paychecks";
 import { IconIncomeTile } from "./categoryIcons";
+import CurrencyInput from "./CurrencyInput";
+import CompactDateField from "./CompactDateField";
+import Skel from "./Skel";
 import { HOME_TEXT, HOME_MUTED, HOME_SURFACE, HOME_DIVIDER, HOME_INCOME, HOME_EXPENSE, TILE_COLOR } from "./categoryVisuals";
 
 const GOLD = TILE_COLOR.SAVINGS; // "needs amount" / balance accent
@@ -29,26 +32,96 @@ const FREQUENCY_LABELS = Object.fromEntries(FREQUENCY_OPTIONS.map(({ value, labe
 
 const PAGE_SIZE = 15;
 
+// Save lifecycle timings (#112). The panels used to close the instant Save was
+// pressed, which made a successful save look identical to a no-op. SAVED_HOLD is
+// long enough to read the confirmation without feeling like a stall.
+const SAVED_HOLD_MS = 600;
+const COLLAPSE_MS = 220;
+const HIGHLIGHT_MS = 400;
+
+// Matches the solid treatment every other sheet already uses (MobileInstallments,
+// MobileRecurring, MobileTips) - borderless, solid fill, primary weighted 2:1
+// against cancel. Paychecks was the last screen still on the old outlined style.
+const btnCancelStyle = {
+  flex: 1, padding: "10px 0", borderRadius: 12, border: "none",
+  backgroundColor: "rgba(255,255,255,0.06)", color: HOME_MUTED,
+  fontSize: 14, fontWeight: 600, cursor: "pointer",
+};
+
+function btnPrimaryStyle(enabled) {
+  return {
+    flex: 2, padding: "10px 0", borderRadius: 12, border: "none",
+    backgroundColor: HOME_INCOME,
+    color: "#fff", fontSize: 14, fontWeight: 700,
+    cursor: enabled ? "pointer" : "default",
+    opacity: enabled ? 1 : 0.5,
+    display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+  };
+}
+
+function IconCheck() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="20 6 9 17 4 12" />
+    </svg>
+  );
+}
+
+// Label for a primary save button across the idle -> saving -> saved sequence.
+function SaveLabel({ status, idle }) {
+  if (status === "saving") return "Saving…";
+  if (status === "saved") return <><IconCheck />Saved</>;
+  return idle;
+}
+
+// Height-animated swap between an edit panel and its read-only row (#112). Both
+// sides stay mounted through the transition so the panel collapses as the row
+// expands, rather than one popping in after the other disappears. Uses the same
+// grid-template-rows technique already established in MobileActivity.
+function Collapse({ open, children }) {
+  return (
+    <div className="pcCollapse" data-open={open ? "true" : "false"}>
+      <div className="pcCollapseInner">{children}</div>
+    </div>
+  );
+}
+
+// Drives one panel's idle -> saving -> saved -> collapse -> row-highlight run.
+// `task` resolves to a truthy value on failure, which keeps the panel open and
+// leaves the caller to render the message.
+function useSaveFlow() {
+  const [status, setStatus] = useState("idle");
+  const [savedKey, setSavedKey] = useState(null);
+  const timers = useRef([]);
+
+  useEffect(() => () => timers.current.forEach(clearTimeout), []);
+  const later = (fn, ms) => { timers.current.push(setTimeout(fn, ms)); };
+
+  async function run(task, { onClose, key = true } = {}) {
+    setStatus("saving");
+    if (await task()) {
+      setStatus("idle");
+      return;
+    }
+    setStatus("saved");
+    later(() => {
+      setStatus("idle");
+      onClose?.();
+      setSavedKey(key);
+      later(() => setSavedKey(null), COLLAPSE_MS + HIGHLIGHT_MS);
+    }, SAVED_HOLD_MS);
+  }
+
+  return { status, savedKey, run };
+}
+
 function fmtDate(dateStr) {
   return new Date(dateStr + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
 function monthLabel(dateStr) {
   return new Date(dateStr + "T00:00:00").toLocaleDateString("en-US", { month: "long", year: "numeric" });
-}
-
-// Relies on the @keyframes skel-shimmer rule injected by MobileDashboard,
-// which always mounts this panel as a descendant.
-function Skel({ w = "100%", h = 16, style: extra = {} }) {
-  return (
-    <div style={{
-      width: w, height: h, borderRadius: 6, flexShrink: 0,
-      background: "linear-gradient(90deg, rgba(255,255,255,0.05) 25%, rgba(255,255,255,0.11) 50%, rgba(255,255,255,0.05) 75%)",
-      backgroundSize: "200% 100%",
-      animation: "skel-shimmer 1.4s ease-in-out infinite",
-      ...extra,
-    }} />
-  );
 }
 
 function SectionLabel({ children }) {
@@ -96,6 +169,9 @@ export default function MobilePaychecks({ onSaved }) {
   const [showScheduleForm, setShowScheduleForm] = useState(false);
   const [scheduleDraft, setScheduleDraft] = useState({ name: "", frequency: "BIWEEKLY", start_date: getToday() });
   const [creatingSchedule, setCreatingSchedule] = useState(false);
+  const scheduleSave = useSaveFlow();
+  const balanceSave = useSaveFlow();
+  const reserveSave = useSaveFlow();
   const [scheduleError, setScheduleError] = useState("");
 
   const [editingScheduleId, setEditingScheduleId] = useState(null);
@@ -131,7 +207,10 @@ export default function MobilePaychecks({ onSaved }) {
       setPending(paychecksRes.data.pending_paychecks);
       setBalanceAnchorState(balanceRes.data);
       if (balanceRes.data) {
-        setBalanceDraft({ current_balance: String(balanceRes.data.current_balance), as_of_date: balanceRes.data.as_of_date });
+        // as_of_date defaults to today, not the stored anchor's date - editing
+        // the balance means re-snapshotting it now, and leaving a stale past
+        // date behind silently double-counts everything since then (#115).
+        setBalanceDraft({ current_balance: String(balanceRes.data.current_balance), as_of_date: getToday() });
       }
       setSpendingReserveState(reserveRes.data.spending_reserve);
       setReserveDraft(String(reserveRes.data.spending_reserve));
@@ -203,21 +282,28 @@ export default function MobilePaychecks({ onSaved }) {
     setScheduleActionError("");
   }
 
-  async function commitEditSchedule(id) {
+  // The panel now stays open until the save resolves, so a failure just renders
+  // its message in place instead of closing and reopening itself (#112). The
+  // optimistic state update still lands immediately so the row underneath is
+  // already correct by the time the panel collapses over it.
+  function commitEditSchedule(id) {
     const previous = schedules.find(s => s.id === id);
     const draft = scheduleEditDraft;
-    setScheduleActionError("");
-    setSchedules(prev => prev.map(s => s.id === id ? { ...s, ...draft } : s));
-    setEditingScheduleId(null);
-    try {
-      const res = await updatePaycheckSchedule(id, draft);
-      setSchedules(prev => prev.map(s => s.id === id ? res.data : s));
-      onSaved?.();
-      refreshPaychecksInBackground();
-    } catch (err) {
-      setSchedules(prev => prev.map(s => s.id === id ? previous : s));
-      setScheduleActionError(err.response?.data?.detail ?? "Something went wrong");
-    }
+    return scheduleSave.run(async () => {
+      setScheduleActionError("");
+      setSchedules(prev => prev.map(s => s.id === id ? { ...s, ...draft } : s));
+      try {
+        const res = await updatePaycheckSchedule(id, draft);
+        setSchedules(prev => prev.map(s => s.id === id ? res.data : s));
+        onSaved?.();
+        refreshPaychecksInBackground();
+        return null;
+      } catch (err) {
+        setSchedules(prev => prev.map(s => s.id === id ? previous : s));
+        setScheduleActionError(err.response?.data?.detail ?? "Something went wrong");
+        return err;
+      }
+    }, { onClose: () => setEditingScheduleId(null), key: id });
   }
 
   async function handleDeleteSchedule(id) {
@@ -266,40 +352,44 @@ export default function MobilePaychecks({ onSaved }) {
     }
   }
 
-  async function handleSaveBalance() {
+  function handleSaveBalance() {
     const n = parseFloat(balanceDraft.current_balance);
     if (isNaN(n)) return;
-    setBalanceError("");
     const previous = balanceAnchor;
-    setBalanceAnchorState({ ...(previous ?? {}), current_balance: n, as_of_date: balanceDraft.as_of_date });
-    setEditingBalance(false);
-    try {
-      const res = await setBalanceAnchor({ current_balance: n, as_of_date: balanceDraft.as_of_date });
-      setBalanceAnchorState(res.data);
-      onSaved?.();
-    } catch (err) {
-      setBalanceAnchorState(previous);
-      setEditingBalance(true);
-      setBalanceError(err.response?.data?.detail ?? "Something went wrong");
-    }
+    return balanceSave.run(async () => {
+      setBalanceError("");
+      setBalanceAnchorState({ ...(previous ?? {}), current_balance: n, as_of_date: balanceDraft.as_of_date });
+      try {
+        const res = await setBalanceAnchor({ current_balance: n, as_of_date: balanceDraft.as_of_date });
+        setBalanceAnchorState(res.data);
+        onSaved?.();
+        return null;
+      } catch (err) {
+        setBalanceAnchorState(previous);
+        setBalanceError(err.response?.data?.detail ?? "Something went wrong");
+        return err;
+      }
+    }, { onClose: () => setEditingBalance(false) });
   }
 
-  async function handleSaveReserve() {
+  function handleSaveReserve() {
     const n = parseFloat(reserveDraft);
     if (isNaN(n) || n < 0) return;
-    setReserveError("");
     const previous = spendingReserve;
-    setSpendingReserveState(n.toFixed(2));
-    setEditingReserve(false);
-    try {
-      const res = await setSpendingReserve({ spending_reserve: n });
-      setSpendingReserveState(res.data.spending_reserve);
-      onSaved?.();
-    } catch (err) {
-      setSpendingReserveState(previous);
-      setEditingReserve(true);
-      setReserveError(err.response?.data?.detail ?? "Something went wrong");
-    }
+    return reserveSave.run(async () => {
+      setReserveError("");
+      setSpendingReserveState(n.toFixed(2));
+      try {
+        const res = await setSpendingReserve({ spending_reserve: n });
+        setSpendingReserveState(res.data.spending_reserve);
+        onSaved?.();
+        return null;
+      } catch (err) {
+        setSpendingReserveState(previous);
+        setReserveError(err.response?.data?.detail ?? "Something went wrong");
+        return err;
+      }
+    }, { onClose: () => setEditingReserve(false) });
   }
 
   const fieldStyle = {
@@ -310,8 +400,26 @@ export default function MobilePaychecks({ onSaved }) {
   const labelStyle = { fontSize: 11, color: HOME_MUTED, marginBottom: 4, paddingLeft: 2 };
   const cardStyle = { backgroundColor: HOME_SURFACE, borderRadius: 16, overflow: "hidden" };
 
+  // Save stays disabled until the draft actually differs from what's stored, so
+  // opening a panel and closing it via Save can't fire a pointless write (and
+  // can't show a "Saved" confirmation for a no-op). Amounts compare numerically
+  // because the drafts are strings off the inputs while the stored values aren't.
+  const balanceDirty = !balanceAnchor
+    || parseFloat(balanceDraft.current_balance) !== parseFloat(balanceAnchor.current_balance)
+    || balanceDraft.as_of_date !== balanceAnchor.as_of_date;
+  const reserveDirty = parseFloat(reserveDraft) !== parseFloat(spendingReserve);
+
   return (
     <div ref={scrollRef} onScroll={handleScroll} style={{ flex: 1, overflowY: "auto", overscrollBehavior: "contain", padding: "16px 16px 32px", display: "flex", flexDirection: "column", gap: 22, color: HOME_TEXT }}>
+      <style>{`
+        .pcCollapse { display: grid; grid-template-rows: 0fr; transition: grid-template-rows ${COLLAPSE_MS}ms cubic-bezier(0.32, 0.72, 0, 1); }
+        .pcCollapse[data-open="true"] { grid-template-rows: 1fr; }
+        .pcCollapseInner { overflow: hidden; min-height: 0; }
+        .pcSaved { transition: background-color ${HIGHLIGHT_MS}ms ease; }
+        @media (prefers-reduced-motion: reduce) {
+          .pcCollapse, .pcSaved { transition: none; }
+        }
+      `}</style>
 
       {loading && (
         <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
@@ -319,11 +427,26 @@ export default function MobilePaychecks({ onSaved }) {
             <Skel w={80} h={12} />
             <Skel w={18} h={18} style={{ borderRadius: 4 }} />
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {[...Array(6)].map((_, i) => (
-              <Skel key={i} h={44} style={{ borderRadius: 12, opacity: 1 - i * 0.1 }} />
-            ))}
-          </div>
+          {[3, 2, 2].map((rowCount, g) => (
+            <div key={g} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <Skel w={70} h={11} style={{ marginLeft: 4 }} />
+              <div style={{ backgroundColor: HOME_SURFACE, borderRadius: 18, overflow: "hidden" }}>
+                {[...Array(rowCount)].map((_, i) => (
+                  <div key={i} style={{
+                    display: "flex", alignItems: "center", gap: 12, padding: "11px 14px", minHeight: 60,
+                    borderTop: i === 0 ? "none" : `1px solid ${HOME_DIVIDER}`, opacity: 1 - i * 0.12,
+                  }}>
+                    <Skel h={40} w={40} style={{ borderRadius: "50%" }} />
+                    <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
+                      <Skel h={13.5} w="35%" />
+                      <Skel h={17} w="55%" />
+                    </div>
+                    <Skel h={16} w={60} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
@@ -364,9 +487,14 @@ export default function MobilePaychecks({ onSaved }) {
 
                 {schedules.length > 0 && (
                   <div style={{ ...cardStyle, marginBottom: showScheduleForm ? 12 : 0 }}>
-                    {schedules.map((s, i) => (
-                      editingScheduleId === s.id ? (
-                        <div key={s.id} style={{ position: "relative", padding: 14, display: "flex", flexDirection: "column", gap: 8 }}>
+                    {schedules.map((s, i) => {
+                    const scheduleDirty = scheduleEditDraft.name !== s.name
+                      || scheduleEditDraft.frequency !== s.frequency
+                      || scheduleEditDraft.start_date !== s.start_date;
+                    return (
+                      <div key={s.id}>
+                      <Collapse open={editingScheduleId === s.id}>
+                        <div style={{ position: "relative", padding: 14, display: "flex", flexDirection: "column", gap: 8 }}>
                           {i > 0 && <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 1, backgroundColor: HOME_DIVIDER }} />}
                           <input
                             type="text"
@@ -391,16 +519,22 @@ export default function MobilePaychecks({ onSaved }) {
                             style={fieldStyle}
                           />
                           <div style={{ display: "flex", gap: 8, marginTop: 2 }}>
-                            <button type="button" onClick={() => setEditingScheduleId(null)}
-                              style={{ flex: 1, padding: "8px 0", borderRadius: 10, border: `1px solid ${HOME_DIVIDER}`, background: "transparent", color: HOME_MUTED, fontSize: 13, fontWeight: 600, cursor: "pointer" }}
+                            <button type="button" onClick={() => setEditingScheduleId(null)} disabled={scheduleSave.status !== "idle"}
+                              style={btnCancelStyle}
                             >Cancel</button>
-                            <button type="button" onClick={() => commitEditSchedule(s.id)} disabled={!scheduleEditDraft.name.trim()}
-                              style={{ flex: 1, padding: "8px 0", borderRadius: 10, border: `1px solid ${HOME_INCOME}`, backgroundColor: `color-mix(in srgb, ${HOME_INCOME} 15%, transparent)`, color: HOME_INCOME, fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: scheduleEditDraft.name.trim() ? 1 : 0.5 }}
-                            >Save</button>
+                            <button type="button" onClick={() => commitEditSchedule(s.id)}
+                              disabled={!scheduleEditDraft.name.trim() || !scheduleDirty || scheduleSave.status !== "idle"}
+                              style={btnPrimaryStyle(!!scheduleEditDraft.name.trim() && scheduleDirty)}
+                            ><SaveLabel status={scheduleSave.status} idle="Save" /></button>
                           </div>
                         </div>
-                      ) : (
-                        <div key={s.id} style={{ position: "relative", display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", minHeight: 60 }}>
+                      </Collapse>
+                      <Collapse open={editingScheduleId !== s.id}>
+                        <div className="pcSaved" style={{
+                          position: "relative", display: "flex", alignItems: "center", gap: 12,
+                          padding: "10px 14px", minHeight: 60,
+                          backgroundColor: scheduleSave.savedKey === s.id ? `color-mix(in srgb, ${HOME_INCOME} 16%, transparent)` : "transparent",
+                        }}>
                           {i > 0 && <div style={{ position: "absolute", top: 0, left: 66, right: 0, height: 1, backgroundColor: HOME_DIVIDER }} />}
                           <div style={{ flex: "0 0 auto", width: 38, height: 38, borderRadius: 10, background: TILE_COLOR.INCOME, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "inset 0 1px 0 rgba(255,255,255,0.12)" }}>
                             <IconIncomeTile />
@@ -431,8 +565,10 @@ export default function MobilePaychecks({ onSaved }) {
                             </button>
                           </div>
                         </div>
-                      )
-                    ))}
+                      </Collapse>
+                      </div>
+                    );
+                    })}
                   </div>
                 )}
                 {scheduleActionError && <p style={{ fontSize: 12, color: HOME_EXPENSE, margin: "8px 4px 0" }}>{scheduleActionError}</p>}
@@ -483,10 +619,10 @@ export default function MobilePaychecks({ onSaved }) {
                     {scheduleError && <p style={{ fontSize: 12, color: HOME_EXPENSE, margin: 0 }}>{scheduleError}</p>}
                     <div style={{ display: "flex", gap: 8 }}>
                       <button type="button" onClick={() => { setShowScheduleForm(false); setScheduleError(""); }}
-                        style={{ flex: 1, padding: "8px 0", borderRadius: 10, border: `1px solid ${HOME_DIVIDER}`, background: "transparent", color: HOME_MUTED, fontSize: 13, fontWeight: 600, cursor: "pointer" }}
+                        style={btnCancelStyle}
                       >Cancel</button>
                       <button type="submit" disabled={creatingSchedule || !scheduleDraft.name.trim()}
-                        style={{ flex: 1, padding: "8px 0", borderRadius: 10, border: `1px solid ${HOME_INCOME}`, backgroundColor: `color-mix(in srgb, ${HOME_INCOME} 15%, transparent)`, color: HOME_INCOME, fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: creatingSchedule || !scheduleDraft.name.trim() ? 0.6 : 1 }}
+                        style={btnPrimaryStyle(!creatingSchedule && !!scheduleDraft.name.trim())}
                       >{creatingSchedule ? "Creating…" : "Create"}</button>
                     </div>
                   </form>
@@ -497,38 +633,51 @@ export default function MobilePaychecks({ onSaved }) {
               <div>
                 <SectionLabel>Starting Balance</SectionLabel>
 
-                {editingBalance ? (
+                <Collapse open={editingBalance}>
                   <div style={{ ...cardStyle, padding: 14, display: "flex", flexDirection: "column", gap: 8 }}>
                     <div>
                       <p style={labelStyle}>Checking balance</p>
-                      <input
-                        type="number" step="0.01" min="0" placeholder="0.00"
+                      <CurrencyInput
+                        placeholder="0.00"
                         value={balanceDraft.current_balance}
-                        onChange={e => setBalanceDraft(d => ({ ...d, current_balance: e.target.value }))}
+                        onChange={v => setBalanceDraft(d => ({ ...d, current_balance: v }))}
                         style={fieldStyle}
                       />
                     </div>
                     <div>
                       <p style={labelStyle}>As of</p>
-                      <input
-                        type="date"
+                      <CompactDateField
                         value={balanceDraft.as_of_date}
-                        onChange={e => setBalanceDraft(d => ({ ...d, as_of_date: e.target.value }))}
+                        onChange={v => setBalanceDraft(d => ({ ...d, as_of_date: v }))}
                         style={fieldStyle}
                       />
                     </div>
                     {balanceError && <p style={{ fontSize: 12, color: HOME_EXPENSE, margin: 0 }}>{balanceError}</p>}
                     <div style={{ display: "flex", gap: 8 }}>
-                      <button type="button" onClick={() => { setEditingBalance(false); setBalanceError(""); }}
-                        style={{ flex: 1, padding: "8px 0", borderRadius: 10, border: `1px solid ${HOME_DIVIDER}`, background: "transparent", color: HOME_MUTED, fontSize: 13, fontWeight: 600, cursor: "pointer" }}
+                      <button type="button" disabled={balanceSave.status !== "idle"}
+                        onClick={() => {
+                          setEditingBalance(false);
+                          setBalanceError("");
+                          // Discard the draft, matching Cancel on the reserve panel.
+                          // Without this an abandoned edit survives to the next open
+                          // and reads as unsaved changes.
+                          if (balanceAnchor) setBalanceDraft({ current_balance: String(balanceAnchor.current_balance), as_of_date: balanceAnchor.as_of_date });
+                        }}
+                        style={btnCancelStyle}
                       >Cancel</button>
-                      <button type="button" onClick={handleSaveBalance} disabled={balanceDraft.current_balance === ""}
-                        style={{ flex: 1, padding: "8px 0", borderRadius: 10, border: `1px solid ${HOME_INCOME}`, backgroundColor: `color-mix(in srgb, ${HOME_INCOME} 15%, transparent)`, color: HOME_INCOME, fontSize: 13, fontWeight: 700, cursor: "pointer" }}
-                      >Save</button>
+                      <button type="button" onClick={handleSaveBalance}
+                        disabled={balanceDraft.current_balance === "" || !balanceDirty || balanceSave.status !== "idle"}
+                        style={btnPrimaryStyle(balanceDraft.current_balance !== "" && balanceDirty)}
+                      ><SaveLabel status={balanceSave.status} idle="Save" /></button>
                     </div>
                   </div>
-                ) : balanceAnchor ? (
-                  <div style={{ ...cardStyle, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px" }}>
+                </Collapse>
+                <Collapse open={!editingBalance}>
+                  {balanceAnchor ? (
+                  <div className="pcSaved" style={{
+                    ...cardStyle, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px",
+                    backgroundColor: balanceSave.savedKey ? `color-mix(in srgb, ${HOME_INCOME} 16%, ${HOME_SURFACE})` : HOME_SURFACE,
+                  }}>
                     <div>
                       <span style={{ fontWeight: 700, fontSize: 17, fontVariantNumeric: "tabular-nums", color: HOME_TEXT }}>{fmt(balanceAnchor.current_balance)}</span>
                       <span style={{ color: HOME_MUTED, marginLeft: 8, fontSize: 12.5 }}>as of {fmtDate(balanceAnchor.as_of_date)}</span>
@@ -542,11 +691,12 @@ export default function MobilePaychecks({ onSaved }) {
                       </svg>
                     </button>
                   </div>
-                ) : (
+                  ) : (
                   <EmptyCTA message="No starting balance set" cta="Set Starting Balance" onClick={() => setEditingBalance(true)} />
-                )}
-                <p style={{ fontSize: 11, color: HOME_MUTED, marginTop: 8, padding: "0 2px" }}>
-                  Safe to Spend on the dashboard builds forward from this using your actual transactions.
+                  )}
+                </Collapse>
+                <p style={{ fontSize: 11, color: HOME_MUTED, margin: "8px 0 0", padding: "0 2px" }}>
+                  Available Cash builds forward from here using your transactions.
                 </p>
               </div>
 
@@ -554,32 +704,37 @@ export default function MobilePaychecks({ onSaved }) {
               <div>
                 <SectionLabel>Spending Reserve</SectionLabel>
 
-                {editingReserve ? (
+                <Collapse open={editingReserve}>
                   <div style={{ ...cardStyle, padding: 14, display: "flex", flexDirection: "column", gap: 8 }}>
                     <div>
                       <p style={labelStyle}>Don't-touch floor</p>
-                      <input
-                        type="number" step="0.01" min="0" placeholder="0.00"
+                      <CurrencyInput
+                        placeholder="0.00"
                         value={reserveDraft}
-                        onChange={e => setReserveDraft(e.target.value)}
+                        onChange={v => setReserveDraft(v)}
                         style={fieldStyle}
                       />
                     </div>
                     {reserveError && <p style={{ fontSize: 12, color: HOME_EXPENSE, margin: 0 }}>{reserveError}</p>}
                     <div style={{ display: "flex", gap: 8 }}>
-                      <button type="button" onClick={() => { setEditingReserve(false); setReserveDraft(spendingReserve); setReserveError(""); }}
-                        style={{ flex: 1, padding: "8px 0", borderRadius: 10, border: `1px solid ${HOME_DIVIDER}`, background: "transparent", color: HOME_MUTED, fontSize: 13, fontWeight: 600, cursor: "pointer" }}
+                      <button type="button" onClick={() => { setEditingReserve(false); setReserveDraft(spendingReserve); setReserveError(""); }} disabled={reserveSave.status !== "idle"}
+                        style={btnCancelStyle}
                       >Cancel</button>
-                      <button type="button" onClick={handleSaveReserve} disabled={reserveDraft === ""}
-                        style={{ flex: 1, padding: "8px 0", borderRadius: 10, border: `1px solid ${HOME_INCOME}`, backgroundColor: `color-mix(in srgb, ${HOME_INCOME} 15%, transparent)`, color: HOME_INCOME, fontSize: 13, fontWeight: 700, cursor: "pointer" }}
-                      >Save</button>
+                      <button type="button" onClick={handleSaveReserve}
+                        disabled={reserveDraft === "" || !reserveDirty || reserveSave.status !== "idle"}
+                        style={btnPrimaryStyle(reserveDraft !== "" && reserveDirty)}
+                      ><SaveLabel status={reserveSave.status} idle="Save" /></button>
                     </div>
                   </div>
-                ) : (
-                  <div style={{ ...cardStyle, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px" }}>
+                </Collapse>
+                <Collapse open={!editingReserve}>
+                  <div className="pcSaved" style={{
+                    ...cardStyle, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px",
+                    backgroundColor: reserveSave.savedKey ? `color-mix(in srgb, ${HOME_INCOME} 16%, ${HOME_SURFACE})` : HOME_SURFACE,
+                  }}>
                     <div>
                       <span style={{ fontWeight: 700, fontSize: 17, fontVariantNumeric: "tabular-nums", color: HOME_TEXT }}>{fmt(spendingReserve)}</span>
-                      <span style={{ color: HOME_MUTED, marginLeft: 8, fontSize: 12.5 }}>groceries / gas / eating out</span>
+                      <span style={{ color: HOME_MUTED, marginLeft: 8, fontSize: 12.5 }}>kept aside</span>
                     </div>
                     <button onClick={() => setEditingReserve(true)} aria-label="Edit spending reserve"
                       style={{ color: HOME_MUTED, background: "none", border: "none", cursor: "pointer", padding: 5, display: "inline-flex", flexShrink: 0 }}
@@ -590,10 +745,30 @@ export default function MobilePaychecks({ onSaved }) {
                       </svg>
                     </button>
                   </div>
-                )}
-                <p style={{ fontSize: 11, color: HOME_MUTED, marginTop: 8, padding: "0 2px" }}>
-                  Subtracted from Safe to Spend to get what's actually free to allocate.
+                </Collapse>
+                <p style={{ fontSize: 11, color: HOME_MUTED, margin: "8px 0 0", padding: "0 2px" }}>
+                  Held back from Available Cash, so it isn't counted as free to allocate.
                 </p>
+                {balanceAnchor && (
+                  // Reuses the real Starting Balance and Reserve figures already
+                  // shown above rather than computing a third number here - the
+                  // dashboard's actual Available Cash also factors in bills and
+                  // projected income, which this panel doesn't have, so naming
+                  // the result instead of a dollar amount avoids showing a figure
+                  // that wouldn't match.
+                  <div style={{
+                    display: "flex", alignItems: "baseline", gap: 5, flexWrap: "wrap", width: "fit-content",
+                    margin: "6px 2px 0", padding: "5px 9px", borderRadius: 8,
+                    backgroundColor: "rgba(255,255,255,0.04)",
+                    fontSize: 11.5, fontVariantNumeric: "tabular-nums", color: HOME_MUTED,
+                  }}>
+                    <span>{fmt(balanceAnchor.current_balance)}</span>
+                    <span style={{ opacity: 0.5 }}>−</span>
+                    <span>{fmt(spendingReserve)}</span>
+                    <span style={{ opacity: 0.5 }}>=</span>
+                    <span style={{ color: HOME_INCOME, fontWeight: 700 }}>Available Cash</span>
+                  </div>
+                )}
               </div>
             </>
           ) : (
@@ -678,7 +853,11 @@ export default function MobilePaychecks({ onSaved }) {
                               const isFuture = p.pay_date > today;
                               const needsAmount = !isFuture && p.amount == null;
                               const isEditing = editingId === p.id;
-                              const hasSchedule = schedules.length > 1 && p.schedule_name;
+                              // Always label the row with the schedule's own name (#97).
+                              // This used to be gated on schedules.length > 1, which meant
+                              // the single-schedule case - the common one - fell back to a
+                              // literal "Paycheck" and a rename never showed up here.
+                              const rowLabel = p.schedule_name || "Paycheck";
 
                               return (
                                 <div key={p.id} style={{
@@ -691,7 +870,7 @@ export default function MobilePaychecks({ onSaved }) {
                                   </div>
                                   <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
                                     <span style={{ fontSize: 13.5, color: HOME_MUTED, fontWeight: 500 }}>
-                                      {hasSchedule ? p.schedule_name : "Paycheck"}
+                                      {rowLabel}
                                     </span>
                                     <span style={{ fontSize: 17, fontWeight: 600, letterSpacing: "-0.2px", color: HOME_TEXT, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                                       {fmtDate(p.pay_date)}
@@ -699,10 +878,9 @@ export default function MobilePaychecks({ onSaved }) {
                                   </div>
                                   <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
                                     {isEditing ? (
-                                      <input autoFocus
-                                        type="number" step="0.01" min="0.01"
+                                      <CurrencyInput autoFocus
                                         value={editValue}
-                                        onChange={e => setEditValue(e.target.value)}
+                                        onChange={v => setEditValue(v)}
                                         onBlur={() => commitEdit(p.id)}
                                         onKeyDown={e => { if (e.key === "Enter") e.target.blur(); if (e.key === "Escape") setEditingId(null); }}
                                         style={{ width: 90, textAlign: "right", background: "transparent", color: HOME_TEXT, border: "none", outline: "none", fontSize: 16, fontFamily: "inherit" }}

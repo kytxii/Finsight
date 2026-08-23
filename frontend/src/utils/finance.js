@@ -33,6 +33,18 @@ export const CATEGORY_CONFIG = {
 
 export const INCOME_TYPES = new Set(["INCOME", "REIMBURSEMENT", "TIPS"]);
 
+// Categories whose transaction name carries no information beyond the category
+// itself. These auto-fill and lock the name input at every entry point rather
+// than letting each row be named separately (#73). Centralised because the old
+// `category === "TIPS" ? "Cash" : ...` ternary was duplicated across 14 sites in
+// 7 files, so adding a second locked category meant touching all of them.
+export const LOCKED_NAMES = { TIPS: "Cash", SAVINGS: "Savings" };
+
+// The forced name for a category, or null when the user names it themselves.
+export function lockedNameFor(category) {
+  return LOCKED_NAMES[category] ?? null;
+}
+
 export function hexToHsl(hex) {
   const r = parseInt(hex.slice(1, 3), 16) / 255;
   const g = parseInt(hex.slice(3, 5), 16) / 255;
@@ -93,4 +105,19 @@ export function fmt(amount) {
     style: "currency",
     currency: "USD",
   }).format(amount);
+}
+
+// Whole-dollar variant - no cents. UI-only rounding for surfaces where exact
+// change is noise (e.g. savings projections: "saved $100" not "$100.23").
+export function fmtWhole(amount) {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  }).format(amount);
+}
+
+// Cycle for the shared amount-sort toggle (AmountSortButton): null -> desc -> asc -> null.
+export function nextAmountSort(current) {
+  return current === "desc" ? "asc" : current === "asc" ? null : "desc";
 }

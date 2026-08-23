@@ -49,13 +49,21 @@ class PaycheckListResponse(BaseModel):
     paychecks: list[PaycheckResponse]
     pending_paychecks: list[PaycheckResponse]
 
+class BillBreakdownItem(BaseModel):
+    name: str
+    amount: Decimal
+    day_of_month: int | None = None
+    due_date: date | None = None
+    category: str
+
 class SpendableSurplusResponse(BaseModel):
     next_payday: date
-    month_end: date
     spendable_surplus: Decimal
     free_to_allocate: Decimal
     bills_before_next_payday: Decimal
     next_payday_estimate: Decimal | None = None
+    running_balance: Decimal
+    bills_breakdown: list[BillBreakdownItem] = []
 
 class SetBalanceAnchor(BaseModel):
     current_balance: Decimal
@@ -81,3 +89,13 @@ class SetSpendingReserve(BaseModel):
 
 class SpendingReserveResponse(BaseModel):
     spending_reserve: Decimal
+
+class EstimatedSavingsResponse(BaseModel):
+    month_start: date
+    month_end: date
+    estimated_savings: Decimal
+    saved_so_far: Decimal
+    whole_month_income: Decimal
+    committed_recurring: Decimal
+    discretionary_spent_so_far: Decimal
+    discretionary_projected_remaining: Decimal

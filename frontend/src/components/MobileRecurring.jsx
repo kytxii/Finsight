@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import SwipeableRow from "./SwipeableRow";
+import CurrencyInput from "./CurrencyInput";
+import Skel from "./Skel";
 import { CATEGORY_CONFIG, fmt } from "../utils/finance";
 import {
   getRecurringPayments,
@@ -7,9 +9,15 @@ import {
   updateRecurringPayment,
   deleteRecurringPayment,
 } from "../api/recurringPayments";
+import { useSheetDrag, SHEET_EASE } from "../hooks/useSheetDrag";
 import { HOME_TEXT, HOME_MUTED, HOME_SURFACE, HOME_DIVIDER, HOME_EXPENSE, HOME_INCOME, HOME_ACCENT, TILE_COLOR, CATEGORY_ICON } from "./categoryVisuals";
 
 const EMPTY_DRAFT = { name: "", amount: "", day_of_month: "", category: "SUBSCRIPTION", is_estimate: false };
+
+// Matches MobileInstallments' EditSheet - same slide-up-from-bottom entrance
+// and drag-to-dismiss, so the two "+"-opened sheets in this drawer feel
+// consistent instead of one of them just popping in with no transition.
+const EXIT_MS = 260;
 
 function ordinal(n) {
   const v = n % 100;
@@ -23,17 +31,6 @@ function isDraftValid(d) {
     (d.is_estimate || (parseInt(d.day_of_month, 10) >= 1 && parseInt(d.day_of_month, 10) <= 31));
 }
 
-function Skel({ w = "100%", h = 16, style: extra = {} }) {
-  return (
-    <div style={{
-      width: w, height: h, borderRadius: 6, flexShrink: 0,
-      background: "linear-gradient(90deg, rgba(255,255,255,0.05) 25%, rgba(255,255,255,0.11) 50%, rgba(255,255,255,0.05) 75%)",
-      backgroundSize: "200% 100%",
-      animation: "skel-shimmer 1.4s ease-in-out infinite",
-      ...extra,
-    }} />
-  );
-}
 
 const fieldStyle = {
   width: "100%", borderRadius: 10, padding: "9px 11px", fontSize: 15,
@@ -87,24 +84,42 @@ function EstimateToggle({ active, onToggle }) {
 
 function EditSheet({ draft, setDraft, mode, saving, error, onCancel, onSave, onDelete, deleteConfirm }) {
   const valid = isDraftValid(draft);
+
+  const [closing, setClosing] = useState(false);
+  const requestClose = () => setClosing(true);
+  useEffect(() => {
+    if (!closing) return;
+    const timer = setTimeout(onCancel, EXIT_MS);
+    return () => clearTimeout(timer);
+  }, [closing, onCancel]);
+  const { dragY, dragging, handlers } = useSheetDrag(requestClose);
+
   return (
     <>
       <div
         style={{ position: "fixed", inset: 0, zIndex: 60, backgroundColor: "rgba(0,0,0,0.5)" }}
-        onClick={onCancel}
+        onClick={requestClose}
       />
+      <style>{`@keyframes recurring-sheet-up { from { transform: translateY(100%); } to { transform: translateY(0); } }`}</style>
       <div
         style={{
           position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 61,
           backgroundColor: HOME_SURFACE, borderRadius: "20px 20px 0 0",
           padding: "10px 20px calc(env(safe-area-inset-bottom, 0px) + 20px)",
           display: "flex", flexDirection: "column", gap: 12,
+          transform: closing ? "translateY(100%)" : dragging ? `translateY(${dragY}px)` : undefined,
+          animation: dragging || closing ? undefined : "recurring-sheet-up 0.26s cubic-bezier(0.32, 0.72, 0, 1)",
+          transition: dragging ? "none" : `transform ${EXIT_MS}ms ${SHEET_EASE}`,
         }}
       >
-        <div style={{ width: 40, height: 5, borderRadius: 3, backgroundColor: HOME_DIVIDER, alignSelf: "center", margin: "2px 0 4px" }} />
-        <p style={{ margin: 0, fontSize: 16, fontWeight: 700, color: HOME_TEXT }}>
-          {mode === "add" ? "New Recurring Payment" : "Edit Recurring Payment"}
-        </p>
+        {/* Drag region covers the notch and title row only - the fields below
+            need normal touch handling for typing/tapping. */}
+        <div {...handlers} style={{ touchAction: "none" }}>
+          <div style={{ width: 40, height: 5, borderRadius: 3, backgroundColor: HOME_DIVIDER, margin: "2px auto 4px", cursor: "grab" }} />
+          <p style={{ margin: 0, fontSize: 16, fontWeight: 700, color: HOME_TEXT }}>
+            {mode === "add" ? "New Recurring Payment" : "Edit Recurring Payment"}
+          </p>
+        </div>
 
         <div>
           <p style={labelStyle}>Name</p>
@@ -121,10 +136,9 @@ function EditSheet({ draft, setDraft, mode, saving, error, onCancel, onSave, onD
         <div style={{ display: "flex", gap: 10 }}>
           <div style={{ flex: 1 }}>
             <p style={labelStyle}>Amount</p>
-            <input
-              type="number" step="0.01" min="0.01"
+            <CurrencyInput
               value={draft.amount}
-              onChange={e => setDraft(d => ({ ...d, amount: e.target.value }))}
+              onChange={v => setDraft(d => ({ ...d, amount: v }))}
               placeholder="0.00"
               style={fieldStyle}
             />
@@ -156,7 +170,7 @@ function EditSheet({ draft, setDraft, mode, saving, error, onCancel, onSave, onD
         {error && <p style={{ fontSize: 12, color: HOME_EXPENSE, margin: 0 }}>{error}</p>}
 
         <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
-          <button type="button" onClick={onCancel}
+          <button type="button" onClick={requestClose}
             style={{ flex: 1, padding: "10px 0", borderRadius: 12, border: `1px solid ${HOME_DIVIDER}`, background: "transparent", color: HOME_MUTED, fontSize: 14, fontWeight: 600, cursor: "pointer" }}
           >Cancel</button>
           <button type="button" onClick={onSave} disabled={!valid || saving}
@@ -307,9 +321,26 @@ export default function MobileRecurring({ onSaved, openAddSignal }) {
       )}
 
       {loading ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {[...Array(5)].map((_, i) => (
-            <Skel key={i} h={56} style={{ borderRadius: 14, opacity: 1 - i * 0.12 }} />
+        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+          {[0, 1].map((group) => (
+            <div key={group} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <Skel w={70} h={11} style={{ marginLeft: 4 }} />
+              <div style={{ backgroundColor: HOME_SURFACE, borderRadius: 18, overflow: "hidden" }}>
+                {[...Array(group === 0 ? 3 : 2)].map((_, i) => (
+                  <div key={i} style={{
+                    display: "flex", alignItems: "center", gap: 12, padding: "11px 14px", minHeight: 60,
+                    borderTop: i === 0 ? "none" : `1px solid ${HOME_DIVIDER}`, opacity: 1 - i * 0.12,
+                  }}>
+                    <Skel h={40} w={40} style={{ borderRadius: "50%" }} />
+                    <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
+                      <Skel h={17} w="50%" />
+                      <Skel h={13} w="30%" />
+                    </div>
+                    <Skel h={16} w={55} />
+                  </div>
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       ) : rows.length === 0 ? (

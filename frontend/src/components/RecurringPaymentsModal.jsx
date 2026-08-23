@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { CATEGORY_CONFIG, fmt } from "../utils/finance";
-import { useTheme } from "../hooks/useTheme";
+import { HOME_SURFACE, HOME_DIVIDER, HOME_TEXT, HOME_MUTED, HOME_INCOME, HOME_EXPENSE, CATEGORY_ACCENT } from "./categoryVisuals";
+import CurrencyInput from "./CurrencyInput";
+import Skel from "./Skel";
 import {
   getRecurringPayments,
   createRecurringPayment,
@@ -31,14 +33,230 @@ function isDraftValid(d) {
 let _lid = 0;
 const newDraft = () => ({ _lid: ++_lid, ...EMPTY_DRAFT });
 
-// inline=true  → renders as a flush panel inside the drawer (no modal chrome)
-// inline=false → renders as a centred modal overlay
-export default function RecurringPaymentsModal({ onClose, inline = false, onSaveStateChange, mobile = false, onDelete, onSaved }) {
-  const dark = useTheme();
-  const bg     = dark ? "var(--dark-surface)" : "var(--light-surface)";
-  const border = dark ? "var(--dark-border)"  : "var(--light-border)";
-  const text   = dark ? "var(--dark-text)"    : "var(--light-text)";
-  const muted  = `color-mix(in srgb, ${text} 45%, transparent)`;
+const WEEKDAY_LABELS = ["S", "M", "T", "W", "T", "F", "S"];
+
+// Recurring payments repeat on the same day_of_month every month, so this is
+// the same for any month shown - only which days exist (daysInMonth) and
+// which weekday they land on changes.
+function buildMonthGrid(rows, date) {
+  const year = date.getFullYear();
+  const month = date.getMonth();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const firstWeekday = new Date(year, month, 1).getDay(); // 0 = Sunday
+
+  const byDay = {};
+  rows.forEach(r => {
+    const d = r.day_of_month;
+    if (d == null || d > daysInMonth) return;
+    (byDay[d] ??= { bill: false, sub: false, names: [] });
+    if (r.category === "BILL") byDay[d].bill = true;
+    if (r.category === "SUBSCRIPTION") byDay[d].sub = true;
+    byDay[d].names.push(r.name);
+  });
+
+  const cells = [
+    ...Array.from({ length: firstWeekday }, () => null),
+    ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
+  ];
+  return { cells, byDay, numRows: Math.ceil(cells.length / 7) };
+}
+
+// One month's square-cell grid - shared by the focused (main) calendar and
+// the smaller previous/next previews on either side of it. `today` is only
+// passed for the real current month, so the today-ring never shows up on a
+// preview that isn't actually today's month. Sizing/dimming is entirely the
+// caller's job now (MonthDueCalendar owns opacity on the wrapper so a month
+// can fade in/out as it moves between roles) - this just renders at full
+// opacity and transitions its own font-size/gap/radius smoothly whenever
+// those props change under it, so a month growing into focus visibly grows
+// its numbers and spacing instead of snapping.
+function MiniMonthGrid({ rows, date, today, cellFont, gap, radius, faint, text, muted, showLabel = false }) {
+  const { cells, byDay, numRows } = buildMonthGrid(rows, date);
+  const billColor = CATEGORY_ACCENT.BILL;
+  const subColor = CATEGORY_ACCENT.SUBSCRIPTION;
+  const gridTransition = "gap 420ms cubic-bezier(0.32,0.72,0,1)";
+
+  return (
+    <div>
+      <p style={{ fontSize: 11, fontWeight: 700, color: muted, textAlign: "center", margin: "0 0 8px", opacity: showLabel ? 1 : 0, transition: "opacity 420ms ease" }}>
+        {date.toLocaleDateString("en-US", { month: "short" })}
+      </p>
+      <div className="grid" style={{ gridTemplateColumns: "repeat(7, 1fr)", gap, marginBottom: gap, transition: gridTransition }}>
+        {WEEKDAY_LABELS.map((w, i) => (
+          <div key={i} style={{ textAlign: "center", fontSize: 10.5, fontWeight: 700, color: muted }}>{w}</div>
+        ))}
+      </div>
+      <div className="grid" style={{ gridTemplateColumns: "repeat(7, 1fr)", gridTemplateRows: `repeat(${numRows}, 1fr)`, gap, transition: gridTransition }}>
+        {cells.map((d, i) => {
+          if (d == null) return <div key={i} />;
+          const info = byDay[d];
+          const both = info?.bill && info?.sub;
+          const background = both
+            ? `linear-gradient(135deg, ${billColor} 50%, ${subColor} 50%)`
+            : info?.bill ? billColor
+            : info?.sub ? subColor
+            : faint;
+          const isToday = d === today;
+          return (
+            <div
+              key={i}
+              title={info ? `${ordinal(d)}: ${info.names.join(", ")}` : ordinal(d)}
+              style={{
+                aspectRatio: "1", borderRadius: radius, background,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: cellFont, fontWeight: 700, fontVariantNumeric: "tabular-nums",
+                color: info ? "#fff" : muted,
+                boxShadow: isToday ? `inset 0 0 0 2px ${text}` : "none",
+                transition: "font-size 420ms cubic-bezier(0.32,0.72,0,1), border-radius 420ms cubic-bezier(0.32,0.72,0,1), box-shadow 200ms ease",
+              }}
+            >
+              {d}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// Percentage geometry for the carousel: how far from center (50%) each role
+// sits, and how wide each role's card is. The two "buffer" slots are kept
+// mounted but invisible further out past the visible prev/next cards -
+// that's what lets a new month slide in "from the abyss" instead of
+// appearing out of nowhere the moment it becomes the new prev/next.
+const FOCUSED_WIDTH = 21;
+const SIDE_WIDTH = 18;
+const SIDE_SPACING = 22;
+const BUFFER_SPACING = 46;
+const CAROUSEL_TRANSITION = "left 440ms cubic-bezier(0.32,0.72,0,1), width 440ms cubic-bezier(0.32,0.72,0,1), padding 440ms cubic-bezier(0.32,0.72,0,1), opacity 440ms ease, background-color 440ms ease, border-color 440ms ease";
+
+// Desktop-only, month-calendar shaped but GitHub-activity-styled: a small
+// filled square per day instead of a number list, colored by what's due that
+// day. Only rows with a fixed day_of_month show up here - estimates (no due
+// day) have nothing to plot. Shows the focused month full-size flanked by
+// the previous/next month for context; the title+arrows above step the
+// focused month back and forth (same header treatment as the dashboard's
+// own month navigator, just local to this calendar - nothing above it
+// changes).
+//
+// Every month within 2 steps of center stays mounted at all times, each
+// keyed by its own year-month so React never remounts one just because its
+// role changed - it only gets new position/size/opacity props, which the
+// CSS transitions above animate. That's what turns a page into a real
+// carousel move instead of a crossfade: the old focused month visibly
+// shrinks and slides out to the side it's heading toward, the old side
+// month on that side grows and slides into focus, and the next one back
+// slides in from its hidden buffer slot to take the vacated side spot.
+function MonthDueCalendar({ rows, bg, faint, border, text, muted }) {
+  const [offset, setOffset] = useState(0);
+  const now = new Date();
+  const focused = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+
+  const billColor = CATEGORY_ACCENT.BILL;
+  const subColor = CATEGORY_ACCENT.SUBSCRIPTION;
+
+  const slots = [-2, -1, 0, 1, 2];
+
+  return (
+    <div>
+      <div className="flex items-center justify-center gap-3" style={{ marginBottom: 16 }}>
+        <button
+          onClick={() => setOffset(o => o - 1)}
+          aria-label="Previous month"
+          className="rounded-lg cursor-pointer transition-colors"
+          style={{ padding: 6, color: muted }}
+          onMouseEnter={e => e.currentTarget.style.color = text}
+          onMouseLeave={e => e.currentTarget.style.color = muted}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
+        </button>
+        <h3 className="text-xl font-bold tracking-tight" style={{ color: text, minWidth: "11ch", textAlign: "center" }}>
+          {focused.toLocaleDateString("en-US", { month: "long", year: "numeric" })}
+        </h3>
+        <button
+          onClick={() => setOffset(o => o + 1)}
+          aria-label="Next month"
+          className="rounded-lg cursor-pointer transition-colors"
+          style={{ padding: 6, color: muted }}
+          onMouseEnter={e => e.currentTarget.style.color = text}
+          onMouseLeave={e => e.currentTarget.style.color = muted}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6" /></svg>
+        </button>
+      </div>
+
+      <div style={{ position: "relative", overflow: "hidden" }}>
+        {/* Invisible spacer, sized like the focused card, so this relative
+            wrapper has a real height to lay the absolutely-positioned slots
+            over - those slots don't otherwise contribute any height of
+            their own. Keeps the carousel's footprint correct at any screen
+            width without a guessed pixel height. overflow:hidden clips the
+            buffer slots sitting off past the visible edges (their whole
+            point is to stay out of view until they slide in) so they don't
+            expand this box into a scroll container. */}
+        <div aria-hidden style={{ visibility: "hidden", width: `${FOCUSED_WIDTH}%`, margin: "0 auto", padding: "14px 16px" }}>
+          <MiniMonthGrid rows={rows} date={focused} cellFont={18} gap={4} radius={6} faint={faint} text={text} muted={muted} />
+        </div>
+
+        {slots.map(slot => {
+          const monthDate = new Date(now.getFullYear(), now.getMonth() + offset + slot, 1);
+          const key = `${monthDate.getFullYear()}-${monthDate.getMonth()}`;
+          const isFocused = slot === 0;
+          const isSide = Math.abs(slot) === 1;
+          const width = isFocused ? FOCUSED_WIDTH : SIDE_WIDTH;
+          const spacing = isSide ? SIDE_SPACING : BUFFER_SPACING;
+          const center = slot === 0 ? 50 : 50 + Math.sign(slot) * spacing;
+          const left = center - width / 2;
+          const opacity = isFocused ? 1 : isSide ? 0.55 : 0;
+          const todayInMonth = isFocused && offset === 0 ? now.getDate() : undefined;
+
+          return (
+            <div
+              key={key}
+              className="rounded-2xl"
+              style={{
+                position: "absolute", top: 0, left: `${left}%`, width: `${width}%`,
+                padding: isFocused ? "14px 16px" : "12px 14px",
+                backgroundColor: isFocused ? bg : "transparent",
+                border: `1px solid ${isFocused ? "transparent" : border}`,
+                opacity, zIndex: isFocused ? 2 : 1,
+                pointerEvents: isFocused ? "auto" : "none",
+                transition: CAROUSEL_TRANSITION,
+              }}
+            >
+              <MiniMonthGrid
+                rows={rows} date={monthDate} today={todayInMonth}
+                cellFont={isFocused ? 18 : 14} gap={isFocused ? 4 : 3} radius={isFocused ? 6 : 4}
+                faint={faint} text={text} muted={muted} showLabel={!isFocused}
+              />
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 18, fontSize: 12.5, color: muted, marginTop: 14, flexWrap: "wrap" }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          <span style={{ width: 10, height: 10, borderRadius: 3, backgroundColor: billColor, display: "inline-block" }} /> Bill
+        </span>
+        <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          <span style={{ width: 10, height: 10, borderRadius: 3, backgroundColor: subColor, display: "inline-block" }} /> Subscription
+        </span>
+        <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          <span style={{ width: 10, height: 10, borderRadius: 3, background: `linear-gradient(135deg, ${billColor} 50%, ${subColor} 50%)`, display: "inline-block" }} /> Both
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// inline=true   → renders as a flush panel inside the drawer (no modal chrome)
+// desktop=true  → full main-content-page layout: stat header + roomier table
+// neither/false → renders as a centred modal overlay
+export default function RecurringPaymentsModal({ onClose, inline = false, desktop = false, addSignal, onSaveStateChange, mobile = false, onDelete, onSaved }) {
+  const bg     = HOME_SURFACE;
+  const border = HOME_DIVIDER;
+  const text   = HOME_TEXT;
+  const muted  = HOME_MUTED;
   const faint  = `color-mix(in srgb, ${text} 5%, ${bg})`;
 
   const [rows, setRows]             = useState([]);
@@ -54,6 +272,38 @@ export default function RecurringPaymentsModal({ onClose, inline = false, onSave
   const originalRowsRef             = useRef([]);
   const rowsRef                     = useRef([]);
   rowsRef.current = rows; // always current — no stale-closure risk in async handlers
+
+  // Desktop card grid's detail modal (clicking a card opens it instead of a
+  // per-card edit button; delete lives in here now too). Stores just the id,
+  // not the row object - deriving the row fresh from `rows` on every render
+  // keeps it showing live edits instead of a stale snapshot from whenever it
+  // was opened.
+  const [detailRowId, setDetailRowId] = useState(null);
+  const [detailDeleteConfirm, setDetailDeleteConfirm] = useState(false);
+  const detailRow = rows.find(r => r.id === detailRowId) ?? null;
+  function openDetail(row) { setDetailRowId(row.id); setDetailDeleteConfirm(false); }
+  function closeDetail() { setDetailRowId(null); setDetailDeleteConfirm(false); }
+  function handleDetailDelete() {
+    if (!detailDeleteConfirm) {
+      setDetailDeleteConfirm(true);
+      setTimeout(() => setDetailDeleteConfirm(false), 3000);
+      return;
+    }
+    const id = detailRowId;
+    closeDetail();
+    handleDelete(id);
+  }
+
+  // Same "bump a counter, watch it" signal MobileDashboard already uses for
+  // its own Recurring "+" button - Dashboard.jsx's page-level header lives
+  // outside this component, so this is how its click reaches in here.
+  const prevAddSignal = useRef(addSignal);
+  useEffect(() => {
+    if (addSignal !== prevAddSignal.current) {
+      prevAddSignal.current = addSignal;
+      setDrafts(prev => [...prev, newDraft()]);
+    }
+  }, [addSignal]);
 
   useEffect(() => {
     getRecurringPayments()
@@ -245,9 +495,9 @@ export default function RecurringPaymentsModal({ onClose, inline = false, onSave
         width: "16px",
         height: "16px",
         borderRadius: "4px",
-        border: `1px solid ${active ? "var(--category-savings)" : "transparent"}`,
-        color: active ? "var(--category-savings)" : muted,
-        backgroundColor: active ? "color-mix(in srgb, var(--category-savings) 15%, transparent)" : "transparent",
+        border: `1px solid ${active ? CATEGORY_ACCENT.SAVINGS : "transparent"}`,
+        color: active ? CATEGORY_ACCENT.SAVINGS : muted,
+        backgroundColor: active ? `color-mix(in srgb, ${CATEGORY_ACCENT.SAVINGS} 15%, transparent)` : "transparent",
         cursor: "pointer",
         display: "inline-flex",
         alignItems: "center",
@@ -262,7 +512,7 @@ export default function RecurringPaymentsModal({ onClose, inline = false, onSave
     const isEditing = editCell?.id === row.id && editCell?.field === field;
 
     if (field === "category") {
-      const color = `var(--category-${row.category.toLowerCase()})`;
+      const color = CATEGORY_ACCENT[row.category];
       return (
         <button
           key={row.category}
@@ -289,20 +539,32 @@ export default function RecurringPaymentsModal({ onClose, inline = false, onSave
     let content;
     if (isEditing) {
       content = (
-        <input autoFocus
-          type={field === "amount" || field === "day_of_month" ? "number" : "text"}
+        field === "amount" ? (
+        <CurrencyInput autoFocus
           value={editValue}
-          onChange={e => setEditValue(e.target.value)}
+          onChange={v => setEditValue(v)}
           onBlur={() => commitEdit(row.id, field)}
           onKeyDown={e => { if (e.key === "Enter") e.target.blur(); if (e.key === "Escape") setEditCell(null); }}
-          min={field === "day_of_month" ? 1 : field === "amount" ? 0.01 : undefined}
-          max={field === "day_of_month" ? 31 : undefined}
-          step={field === "amount" ? "0.01" : undefined}
           style={{
             width: "100%", background: "transparent", color: text,
             border: "none", outline: "none", fontSize: mobile ? "15px" : "13px", fontFamily: "inherit",
           }}
         />
+        ) : (
+        <input autoFocus
+          type={field === "day_of_month" ? "number" : "text"}
+          value={editValue}
+          onChange={e => setEditValue(e.target.value)}
+          onBlur={() => commitEdit(row.id, field)}
+          onKeyDown={e => { if (e.key === "Enter") e.target.blur(); if (e.key === "Escape") setEditCell(null); }}
+          min={field === "day_of_month" ? 1 : undefined}
+          max={field === "day_of_month" ? 31 : undefined}
+          style={{
+            width: "100%", background: "transparent", color: text,
+            border: "none", outline: "none", fontSize: mobile ? "15px" : "13px", fontFamily: "inherit",
+          }}
+        />
+        )
       );
     } else {
       content = (
@@ -345,15 +607,150 @@ export default function RecurringPaymentsModal({ onClose, inline = false, onSave
   // Show + when there are no drafts, or when the last draft is fully filled out
   const showAddRow = !loading && (drafts.length === 0 || isDraftValid(drafts[drafts.length - 1]));
 
-  // ── Table content ─────────────────────────────────────────────────────────
+  // Desktop-only stat header - bills vs. subscriptions split, since those are
+  // the two categories this list actually uses (toggleCategory only flips
+  // between them).
+  const bills = rows.filter(r => r.category === "BILL");
+  const subscriptions = rows.filter(r => r.category === "SUBSCRIPTION");
+  const sumOf = (list) => list.reduce((s, r) => s + parseFloat(r.amount), 0);
 
-  const tableContent = (
-    <>
-      <style>{`
-        @keyframes rp-pulse {
-          0%, 100% { opacity: 0.35; }
-          50%       { opacity: 0.7;  }
-        }
+  // Desktop-only card grid, split into a Bills section and a Subscriptions
+  // section (the two categories this list actually uses) instead of one
+  // flat mixed grid. Same renderCell/drafts/handlers as the table underneath,
+  // just laid out as cards.
+  //
+  // Each card: a category-colored dot + name up top, a divider, then the
+  // amount/day on the left with the category pill (still the only control
+  // that moves a row between sections) bottom-right - gives the card real
+  // internal structure instead of three lines stacked with no separation.
+  // Read-only now - clicking the card opens the detail modal (openDetail)
+  // instead of editing a field in place, and there's no per-card delete
+  // button any more (moved into that modal too).
+  function renderCard(row) {
+    const catColor = CATEGORY_ACCENT[row.category];
+    return (
+      <div
+        key={row.id}
+        className="rounded-2xl p-5"
+        onClick={() => openDetail(row)}
+        style={{
+          backgroundColor: bg, cursor: "pointer",
+          opacity: deleted.has(row.id) ? 0.35 : 1, transition: "opacity 0.2s ease", pointerEvents: deleted.has(row.id) ? "none" : "auto",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+          <span style={{ width: 7, height: 7, borderRadius: "50%", backgroundColor: catColor, flexShrink: 0 }} />
+          <div style={{ fontSize: 15, fontWeight: 700, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.name}</div>
+        </div>
+        <div style={{ borderTop: `1px solid ${border}`, marginTop: 12, paddingTop: 12, display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 8 }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 20, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{renderDisplay(row, "amount")}</div>
+            <div style={{ fontSize: 12, color: muted, marginTop: 4 }}>{renderDisplay(row, "day_of_month")}</div>
+          </div>
+          <span style={{
+            flexShrink: 0, display: "inline-block", padding: "2px 8px", borderRadius: 999, fontSize: 11, fontWeight: 600,
+            color: catColor, backgroundColor: `color-mix(in srgb, ${catColor} 15%, transparent)`,
+          }}>
+            {CATEGORY_CONFIG[row.category]?.label ?? row.category}
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  function renderDraftCard(d, idx) {
+    const isLast = idx === drafts.length - 1;
+    const color = CATEGORY_ACCENT[d.category];
+    return (
+      <div key={d._lid} className="rounded-2xl p-5" style={{ backgroundColor: faint, animation: "rp-row-in 0.2s ease-out" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+          <input
+            autoFocus={isLast}
+            type="text"
+            value={d.name}
+            placeholder="e.g. Netflix"
+            onChange={e => setDrafts(prev => prev.map((x, xi) => xi === idx ? { ...x, name: e.target.value } : x))}
+            onKeyDown={e => { if (e.key === "Escape") setDrafts(prev => prev.filter((_, xi) => xi !== idx)); }}
+            style={{ flex: 1, minWidth: 0, background: "transparent", color: text, border: "none", outline: "none", fontSize: 15, fontWeight: 700, fontFamily: "inherit" }}
+          />
+          <button
+            onClick={() => setDrafts(prev => prev.filter((_, xi) => xi !== idx))}
+            title="Cancel"
+            style={{ color: muted, cursor: "pointer", background: "none", border: "none", padding: 3, display: "inline-flex", flexShrink: 0 }}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M18 6 6 18M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <div style={{ borderTop: `1px solid ${border}`, marginTop: 12, paddingTop: 12 }}>
+          <CurrencyInput
+            value={d.amount}
+            placeholder="0.00"
+            onChange={v => setDrafts(prev => prev.map((x, xi) => xi === idx ? { ...x, amount: v } : x))}
+            style={{ fontSize: 20, fontWeight: 700, background: "transparent", color: text, border: "none", outline: "none", fontFamily: "inherit", padding: 0 }}
+          />
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginTop: 4 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <input
+                type="number"
+                value={d.day_of_month}
+                placeholder={d.is_estimate ? "optional" : "1–31"}
+                min={1} max={31}
+                onChange={e => setDrafts(prev => prev.map((x, xi) => xi === idx ? { ...x, day_of_month: e.target.value } : x))}
+                style={{ width: 60, background: "transparent", color: muted, border: "none", outline: "none", fontSize: 12, fontFamily: "inherit" }}
+              />
+              {estimateToggle(d.is_estimate, () => setDrafts(prev => prev.map((x, xi) => xi === idx ? { ...x, is_estimate: !x.is_estimate } : x)))}
+            </div>
+            <button
+              onClick={() => setDrafts(prev => prev.map((x, xi) => xi === idx ? { ...x, category: x.category === "SUBSCRIPTION" ? "BILL" : "SUBSCRIPTION" } : x))}
+              style={{ padding: "2px 8px", borderRadius: 999, fontSize: 11, fontWeight: 600, color, backgroundColor: `color-mix(in srgb, ${color} 15%, transparent)`, border: "none", cursor: "pointer", flexShrink: 0 }}
+            >
+              {CATEGORY_CONFIG[d.category]?.label ?? d.category}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const draftsWithIndex = drafts.map((d, idx) => ({ d, idx }));
+
+  function categorySection(categoryKey, label, sectionRows) {
+    const sectionDrafts = draftsWithIndex.filter(({ d }) => d.category === categoryKey);
+    const color = CATEGORY_ACCENT[categoryKey];
+    return (
+      <div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+          <p style={{ fontSize: 17, fontWeight: 800, letterSpacing: "-0.2px", color: text, margin: 0 }}>{label}</p>
+          <span style={{
+            fontSize: 12.5, fontWeight: 700, color, fontVariantNumeric: "tabular-nums",
+            padding: "3px 10px", borderRadius: 999, backgroundColor: `color-mix(in srgb, ${color} 16%, transparent)`,
+          }}>
+            {fmt(sumOf(sectionRows))}/mo
+          </span>
+        </div>
+        {sectionRows.length === 0 && sectionDrafts.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "20px 16px", border: `1px dashed ${border}`, borderRadius: 16 }}>
+            <p style={{ fontSize: 12.5, color: muted, margin: 0 }}>No {label.toLowerCase()} yet</p>
+          </div>
+        ) : (
+          <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 16 }}>
+            {sectionRows.map(row => renderCard(row))}
+            {sectionDrafts.map(({ d, idx }) => renderDraftCard(d, idx))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Shared by both layouts below (table/sidebar and this desktop card grid) -
+  // previously defined only inside tableContent's own <style>, so a draft
+  // card added here on desktop (which renders desktopCardsContent, never
+  // tableContent) referenced these keyframe names but they were never
+  // actually in the DOM - the animation was a silent no-op (#123 follow-up).
+  const keyframesStyle = (
+    <style>{`
         @keyframes rp-bar-sweep {
           0%   { transform: scaleX(0); opacity: 0.9; }
           55%  { transform: scaleX(1); opacity: 0.9; }
@@ -367,13 +764,40 @@ export default function RecurringPaymentsModal({ onClose, inline = false, onSave
           0%   { transform: scale(0.88); opacity: 0.6; }
           100% { transform: scale(1);    opacity: 1;   }
         }
-      `}</style>
+    `}</style>
+  );
+
+  const desktopCardsContent = (
+    <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
+      {keyframesStyle}
+      {rows.length === 0 && drafts.length === 0 && !loading ? (
+        <div style={{ textAlign: "center", padding: "28px 16px", border: `1px dashed ${border}`, borderRadius: 16 }}>
+          <p style={{ fontSize: 13, color: muted, margin: 0 }}>No recurring payments yet</p>
+        </div>
+      ) : (
+        <>
+          {categorySection("BILL", "Bills", bills)}
+          <div style={{ borderTop: `1px solid ${border}` }} />
+          {categorySection("SUBSCRIPTION", "Subscriptions", subscriptions)}
+        </>
+      )}
+      {rows.length > 0 && (
+        <MonthDueCalendar rows={rows} bg={bg} faint={faint} border={border} text={text} muted={muted} />
+      )}
+    </div>
+  );
+
+  // ── Table content ─────────────────────────────────────────────────────────
+
+  const tableContent = (
+    <>
+      {keyframesStyle}
 
       <div style={{
         overflowX: "auto",
         overflowY: "auto",
         flex: 1,
-        ...(inline ? {} : { minHeight: "380px", maxHeight: "60vh" }),
+        ...(inline || desktop ? {} : { minHeight: "380px", maxHeight: "60vh" }),
       }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: mobile ? "15px" : "13px", tableLayout: "fixed" }}>
           <thead>
@@ -403,11 +827,7 @@ export default function RecurringPaymentsModal({ onClose, inline = false, onSave
               <tr key={i} style={{ borderBottom: `1px solid ${border}` }}>
                 {widths.map((w, j) => (
                   <td key={j} style={tdStyle(j === widths.length - 1, j === 0)}>
-                    <div style={{
-                      height: "11px", width: w, borderRadius: "4px",
-                      backgroundColor: `color-mix(in srgb, ${text} 8%, transparent)`,
-                      animation: `rp-pulse 1.6s ease-in-out ${i * 0.15}s infinite`,
-                    }} />
+                    <Skel h="11px" w={w} style={{ borderRadius: 4 }} />
                   </td>
                 ))}
                 <td style={tdStyle(true)} />
@@ -440,7 +860,7 @@ export default function RecurringPaymentsModal({ onClose, inline = false, onSave
                     <div style={{
                       position: "absolute",
                       inset: 0,
-                      backgroundColor: `color-mix(in srgb, var(--category-expense) 18%, ${bg})`,
+                      backgroundColor: `color-mix(in srgb, ${HOME_EXPENSE} 18%, ${bg})`,
                       transformOrigin: "right center",
                       animation: "rp-bar-sweep 0.7s ease-out forwards",
                     }} />
@@ -466,7 +886,7 @@ export default function RecurringPaymentsModal({ onClose, inline = false, onSave
                           cursor: "pointer", background: "none", border: "none",
                           padding: "1px", display: "inline-flex", alignItems: "center",
                         }}
-                        onMouseEnter={e => e.currentTarget.style.color = "var(--category-expense)"}
+                        onMouseEnter={e => e.currentTarget.style.color = HOME_EXPENSE}
                         onMouseLeave={e => e.currentTarget.style.color = muted}
                       >
                         <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24"
@@ -483,7 +903,7 @@ export default function RecurringPaymentsModal({ onClose, inline = false, onSave
             {/* Draft rows */}
             {drafts.map((d, idx) => {
               const isLast = idx === drafts.length - 1;
-              const color  = `var(--category-${d.category.toLowerCase()})`;
+              const color  = CATEGORY_ACCENT[d.category];
               return (
                 <tr key={d._lid} style={{ borderBottom: `1px solid ${border}`, backgroundColor: faint, animation: "rp-row-in 0.2s ease-out" }}>
                   {[
@@ -493,6 +913,18 @@ export default function RecurringPaymentsModal({ onClose, inline = false, onSave
                   ].map(({ field, type, placeholder }, i) => (
                     <td key={field} style={tdStyle(false, i === 0)}>
                       <div style={{ display: "flex", alignItems: "center", gap: field === "day_of_month" ? 6 : 0 }}>
+                      {field === "amount" ? (
+                      <CurrencyInput
+                        value={d[field]}
+                        placeholder={placeholder}
+                        onChange={v => setDrafts(prev => prev.map((x, xi) => xi === idx ? { ...x, [field]: v } : x))}
+                        onKeyDown={e => { if (e.key === "Escape") setDrafts(prev => prev.filter((_, xi) => xi !== idx)); }}
+                        style={{
+                          width: "100%", background: "transparent", color: text,
+                          border: "none", outline: "none", fontSize: mobile ? "15px" : "13px", fontFamily: "inherit",
+                        }}
+                      />
+                      ) : (
                       <input
                         autoFocus={i === 0 && isLast}
                         type={type}
@@ -500,14 +932,14 @@ export default function RecurringPaymentsModal({ onClose, inline = false, onSave
                         placeholder={placeholder}
                         onChange={e => setDrafts(prev => prev.map((x, xi) => xi === idx ? { ...x, [field]: e.target.value } : x))}
                         onKeyDown={e => { if (e.key === "Escape") setDrafts(prev => prev.filter((_, xi) => xi !== idx)); }}
-                        min={field === "day_of_month" ? 1 : field === "amount" ? 0.01 : undefined}
+                        min={field === "day_of_month" ? 1 : undefined}
                         max={field === "day_of_month" ? 31 : undefined}
-                        step={field === "amount" ? "0.01" : undefined}
                         style={{
                           width: "100%", background: "transparent", color: text,
                           border: "none", outline: "none", fontSize: mobile ? "15px" : "13px", fontFamily: "inherit",
                         }}
                       />
+                      )}
                       {field === "day_of_month" && estimateToggle(d.is_estimate, () => setDrafts(prev => prev.map((x, xi) => xi === idx ? { ...x, is_estimate: !x.is_estimate } : x)))}
                       </div>
                     </td>
@@ -578,7 +1010,7 @@ export default function RecurringPaymentsModal({ onClose, inline = false, onSave
         flexShrink: 0,
       }}>
         {deleteError && (
-          <span style={{ fontSize: mobile ? "13px" : "11px", color: "var(--category-expense)" }}>
+          <span style={{ fontSize: mobile ? "13px" : "11px", color: HOME_EXPENSE }}>
             Failed to delete — try again
           </span>
         )}
@@ -600,10 +1032,10 @@ export default function RecurringPaymentsModal({ onClose, inline = false, onSave
         fontWeight: 600,
         padding: "4px 12px",
         borderRadius: "8px",
-        border: `1px solid ${isDirty ? "var(--category-income)" : border}`,
-        color: isDirty ? "var(--category-income)" : muted,
+        border: `1px solid ${isDirty ? HOME_INCOME : border}`,
+        color: isDirty ? HOME_INCOME : muted,
         backgroundColor: isDirty
-          ? "color-mix(in srgb, var(--category-income) 12%, transparent)"
+          ? `color-mix(in srgb, ${HOME_INCOME} 12%, transparent)`
           : "transparent",
         cursor: isDirty && !isSaving ? "pointer" : "default",
         opacity: isSaving ? 0.6 : 1,
@@ -613,6 +1045,74 @@ export default function RecurringPaymentsModal({ onClose, inline = false, onSave
       {isSaving ? "Saving…" : "Save"}
     </button>
   );
+
+  // ── Desktop mode ──────────────────────────────────────────────────────────
+
+  if (desktop) {
+    return (
+      <div style={{ padding: "24px 28px 5px", display: "flex", flexDirection: "column", gap: 24, color: text }}>
+        {loading ? (
+          <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 16 }}>
+            {[...Array(4)].map((_, i) => <Skel key={i} h={128} style={{ borderRadius: 16, opacity: 1 - i * 0.12 }} />)}
+          </div>
+        ) : desktopCardsContent}
+
+        {/* Detail/edit modal - clicking any card opens this instead of an
+            in-card edit; delete now lives in here instead of on the card.
+            Reuses the exact same click-to-edit cells (renderCell/editCell)
+            the table version uses, just relocated. */}
+        {detailRow && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center px-4"
+            style={{ background: "rgba(0,0,0,0.5)" }}
+            onClick={e => { if (e.target === e.currentTarget) closeDetail(); }}
+          >
+            <div className="w-full max-w-sm rounded-2xl p-5" style={{ backgroundColor: bg }}>
+              <div className="flex items-center justify-between" style={{ marginBottom: 16 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: CATEGORY_ACCENT[detailRow.category], flexShrink: 0 }} />
+                  <p style={{ fontSize: 16, fontWeight: 700, color: text, margin: 0 }}>Recurring Payment</p>
+                </div>
+                <button onClick={closeDetail} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: muted, display: "flex", padding: 2 }}>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
+                </button>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <div>
+                  <p style={{ fontSize: 10, color: muted, marginBottom: 3, paddingLeft: 2 }}>Name</p>
+                  <div style={{ fontSize: 15, fontWeight: 700 }}>{renderCell(detailRow, "name")}</div>
+                </div>
+                <div style={{ display: "flex", gap: 12 }}>
+                  <div style={{ flex: 1 }}>
+                    <p style={{ fontSize: 10, color: muted, marginBottom: 3, paddingLeft: 2 }}>Amount</p>
+                    <div style={{ fontSize: 18, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{renderCell(detailRow, "amount")}</div>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <p style={{ fontSize: 10, color: muted, marginBottom: 3, paddingLeft: 2 }}>Recurs</p>
+                    <div style={{ fontSize: 14 }}>{renderCell(detailRow, "day_of_month")}</div>
+                  </div>
+                </div>
+                <div>
+                  <p style={{ fontSize: 10, color: muted, marginBottom: 3, paddingLeft: 2 }}>Type</p>
+                  {renderCell(detailRow, "category")}
+                </div>
+              </div>
+              <button
+                onClick={handleDetailDelete}
+                style={{
+                  marginTop: 16, paddingTop: 14, width: "100%", borderTop: `1px solid ${border}`, borderRadius: 0,
+                  background: "transparent", color: detailDeleteConfirm ? HOME_EXPENSE : muted,
+                  fontSize: 12, fontWeight: 600, cursor: "pointer",
+                }}
+              >
+                {detailDeleteConfirm ? "Tap again to confirm delete" : "Delete recurring payment"}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   // ── Inline mode ───────────────────────────────────────────────────────────
 

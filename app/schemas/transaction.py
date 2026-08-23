@@ -9,6 +9,7 @@ class TransactionBase(BaseModel):
     amount: Decimal
     transaction_date: date
     category: Category
+    note: str | None = Field(default=None, max_length=100)
 
 class CreateTransaction(TransactionBase):
     pass
