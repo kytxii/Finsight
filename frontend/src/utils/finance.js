@@ -31,7 +31,26 @@ export const CATEGORY_CONFIG = {
   TIPS: { color: "#34d399", lightColor: "#059669", label: "Tips" },
 };
 
+// Direction test: does this row render as a "+" (green) or a "-" (red)? Every
+// per-transaction display site uses this - tables, import previews, activity
+// rows. Cash tips are money earned, so they stay a "+" here.
 export const INCOME_TYPES = new Set(["INCOME", "REIMBURSEMENT", "TIPS"]);
+
+// Totals tests, deliberately narrower than INCOME_TYPES. Summing money that
+// moved is a different question from signing a row, and two categories answer
+// it differently (#131, #69):
+//
+//   TIPS    - cash in hand. Tracked, but nothing has moved until it's banked,
+//             at which point it counts as a tip deposit instead. Excluded from
+//             income so the Income card means "money that actually arrived."
+//   SAVINGS - moving money into savings isn't spending it, it's still yours.
+//             Excluded from expenses so it stops dragging Net down.
+//
+// Both still render signed in transaction lists; they just don't feed the
+// Income/Expenses/Net headline figures. Tip deposits aren't transactions at
+// all, so they're added to income separately at each call site.
+export const MONEY_IN_TYPES = new Set(["INCOME", "REIMBURSEMENT"]);
+export const MONEY_OUT_TYPES = new Set(["EXPENSE", "BILL", "SUBSCRIPTION", "DEBT"]);
 
 // Categories whose transaction name carries no information beyond the category
 // itself. These auto-fill and lock the name input at every entry point rather

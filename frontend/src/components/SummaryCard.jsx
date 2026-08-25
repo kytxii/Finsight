@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { HOME_SURFACE, HOME_TEXT, HOME_MUTED, HOME_INCOME, HOME_EXPENSE, HOME_DIVIDER } from "./categoryVisuals";
 
 // `hero` is the bigger, top-of-dashboard treatment for the one or two
@@ -14,6 +15,10 @@ import { HOME_SURFACE, HOME_TEXT, HOME_MUTED, HOME_INCOME, HOME_EXPENSE, HOME_DI
 // detail that's taller than the box (e.g. a long bill list) scrolls inside
 // it instead of growing the card.
 const DETAIL_HEIGHT = 240;
+
+// Chevron footprint, and how far the change badge slides left to clear it.
+const CHEVRON_SIZE = 14;
+const CHEVRON_CLEARANCE = CHEVRON_SIZE + 4;
 
 // Compact "▲12%" / "▼4%" indicator next to the label, comparing this period
 // to the one before it - same shape as MobileHome's ChangeBadge. `goodWhenUp`
@@ -37,29 +42,63 @@ export default function SummaryCard({ label, value, activeColor, deltaLabel, del
   const muted = HOME_MUTED;
   const deltaColor = deltaUp ? HOME_INCOME : HOME_EXPENSE;
   const expandable = detail != null;
+  const [hovered, setHovered] = useState(false);
+  const tint = activeColor ?? valueColor ?? text;
+  const showChevron = expandable || active;
 
   return (
     <div
       onClick={onClick}
-      className={`rounded-2xl ${hero ? "px-6 py-6" : "px-5 py-5"} ${onClick ? "cursor-pointer transition-transform duration-150 hover:scale-[1.02] active:scale-[0.99]" : ""}`}
+      onMouseEnter={onClick ? () => setHovered(true) : undefined}
+      onMouseLeave={onClick ? () => setHovered(false) : undefined}
+      className={`rounded-2xl ${hero ? "px-6 py-6" : "px-5 py-5"} ${onClick ? "cursor-pointer" : ""}`}
       style={{
-        backgroundColor: bg, color: text,
-        boxShadow: active ? `0 0 0 2px ${activeColor ?? valueColor ?? text}` : "none",
-        transition: "box-shadow 150ms ease",
+        // Hover and open state are both carried by the surface tint alone - no
+        // transform, no ring. These are the two largest elements on the page,
+        // so a scale moved a lot of pixels for a hint that only needed to say
+        // "clickable", and a 2px outline around something this big read as a
+        // hard edge rather than a highlight. Open is simply a stronger tint
+        // than hover, the same way OverviewColumn distinguishes the two.
+        backgroundColor: onClick && (hovered || active)
+          ? `color-mix(in srgb, ${tint} ${active ? 12 : 6}%, ${bg})`
+          : bg,
+        color: text,
+        transition: "background-color 150ms ease",
       }}
     >
       <div className="flex items-center justify-between gap-2">
         <p className={hero ? "text-lg font-medium" : "text-base font-medium"} style={{ color: muted, margin: 0 }}>{label}</p>
-        {changePct != null && <ChangeBadge pct={changePct} goodWhenUp={changeGoodWhenUp} />}
-        {(expandable || active) && (
-          <svg
-            xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
-            stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-            style={{ color: muted, flexShrink: 0, transform: (expanded || active) ? "rotate(180deg)" : "none", transition: "transform 200ms ease" }}
-          >
-            <path d="M6 9l6 6 6-6" />
-          </svg>
-        )}
+        {/* The chevron is absolutely positioned and the badge slides out of its
+            way, rather than the chevron mounting into the flex row and shoving
+            the badge sideways in a single frame. CHEVRON_CLEARANCE is the icon
+            plus a little breathing room, so the badge ends up clear of it
+            instead of tucked underneath. */}
+        <div style={{ position: "relative", display: "flex", alignItems: "center", flexShrink: 0 }}>
+          {changePct != null && (
+            <span style={{
+              display: "inline-flex",
+              transform: showChevron ? `translateX(-${CHEVRON_CLEARANCE}px)` : "translateX(0)",
+              transition: "transform 220ms cubic-bezier(0.32, 0.72, 0, 1)",
+            }}>
+              <ChangeBadge pct={changePct} goodWhenUp={changeGoodWhenUp} />
+            </span>
+          )}
+          {(expandable || onClick) && (
+            <svg
+              xmlns="http://www.w3.org/2000/svg" width={CHEVRON_SIZE} height={CHEVRON_SIZE} viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+              style={{
+                position: "absolute", right: 0, top: "50%",
+                color: muted, flexShrink: 0, pointerEvents: "none",
+                opacity: showChevron ? 1 : 0,
+                transform: `translateY(-50%) rotate(${(expanded || active) ? 180 : 0}deg)`,
+                transition: "transform 220ms cubic-bezier(0.32, 0.72, 0, 1), opacity 180ms ease",
+              }}
+            >
+              <path d="M6 9l6 6 6-6" />
+            </svg>
+          )}
+        </div>
       </div>
 
       {expandable ? (

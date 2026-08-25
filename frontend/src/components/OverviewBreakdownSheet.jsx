@@ -14,6 +14,8 @@ const TITLES = {
   bills: "Upcoming Bills",
   cash: "Available Cash",
   savings: "Estimated Savings",
+  income: "Income",
+  expenses: "Expenses",
 };
 
 function shortDate(d) {
@@ -39,11 +41,15 @@ function Row({ label, value, color = HOME_TEXT, strong = false, muted = false, d
 // name, muted meta subtitle underneath - reused here so Available Cash and
 // Estimated Savings share its spacing, padding, and two-line rhythm instead
 // of a flatter single-line label/value pair.
-function DotRow({ label, meta, value, color = HOME_TEXT, dotColor = HOME_MUTED, divider = false, compact = false }) {
+function DotRow({ label, meta, value, color = HOME_TEXT, dotColor = HOME_MUTED, divider = false, dashed = false, compact = false }) {
   return (
     <div style={{
       display: "flex", alignItems: "center", justifyContent: "space-between", gap: compact ? 8 : 12,
-      padding: compact ? "6px 0" : "11px 0", borderTop: divider ? `1px solid ${HOME_DIVIDER}` : "none",
+      padding: compact ? "6px 0" : "11px 0",
+      // Dashed marks a row that is deliberately not part of the total above it.
+      borderTop: dashed
+        ? `1px dashed ${HOME_DIVIDER}`
+        : divider ? `1px solid ${HOME_DIVIDER}` : "none",
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: compact ? 7 : 10, minWidth: 0 }}>
         <span style={{ width: compact ? 6 : 8, height: compact ? 6 : 8, borderRadius: "50%", background: dotColor, flexShrink: 0 }} />
@@ -171,6 +177,16 @@ export function SavingsBody({ savings, status, compact = false }) {
   if (status !== "ok" || !savings) {
     return <Note compact={compact}>Add a paycheck amount and some spending history to estimate what you can save.</Note>;
   }
+  const savedSoFar = parseFloat(savings.saved_so_far);
+  const ceiling = parseFloat(savings.estimated_savings);
+  // Order matters: having saved past the projection is the more informative
+  // state, and it's reachable with a zero ceiling too (a month whose bills and
+  // spending account for all the income, where you saved anyway). Checking
+  // "no room" first made that case claim you couldn't save while showing what
+  // you saved.
+  const overSaved = savedSoFar > ceiling;
+  const noRoom = ceiling <= 0 && !overSaved;
+
   return (
     <>
       {/* whole_month_income covers the full month regardless of whether it's
@@ -190,11 +206,147 @@ export function SavingsBody({ savings, status, compact = false }) {
         divider
         compact={compact}
       />
+      {/* The four rows above are the inputs to the projected figure, so they
+          add up to it exactly - they didn't while the estimate was floored at
+          saved_so_far (#130). Saving past the projection needs no note; a month
+          with no room to save at all does. */}
+      {noRoom && (
+        <Note compact={compact}>
+          Bills and typical spending account for this month's income, so there's no room left to save. Anything you do put aside still shows above.
+        </Note>
+      )}
     </>
   );
 }
 
-export default function OverviewBreakdownSheet({ cell, onClose, safeToSpend, safeToSpendStatus, savings, savingsStatus, desktop = false }) {
+// Income and Expenses itemise the same figures their Home hero card shows, so
+// both read straight off the summary the card already uses rather than
+// recomputing. Rows are listed in a fixed order (not sorted by size) so the
+// panel doesn't reshuffle itself as the month goes on.
+const INCOME_ROWS = [
+  { key: "INCOME", label: "Paychecks", meta: "Wages and other income" },
+  { key: "REIMBURSEMENT", label: "Reimbursements", meta: "Money paid back to you" },
+];
+
+const EXPENSE_ROWS = [
+  { key: "EXPENSE", label: "Spending", meta: "Day-to-day purchases" },
+  { key: "BILL", label: "Bills", meta: "Recurring bills" },
+  { key: "SUBSCRIPTION", label: "Subscriptions", meta: "Recurring services" },
+  { key: "DEBT", label: "Debt", meta: "Loan and card payments" },
+];
+
+export function IncomeBody({ categoryTotals, deposits = 0, total, cashTips = 0, compact = false }) {
+  const rows = INCOME_ROWS
+    .map((r) => ({ ...r, amount: categoryTotals?.[r.key] ?? 0 }))
+    .filter((r) => r.amount > 0);
+  if (deposits > 0) {
+    rows.push({ key: "TIPS", label: "Tip deposits", meta: "Cash banked this period", amount: deposits });
+  }
+
+  if (rows.length === 0) {
+    return <Note compact={compact}>No income recorded for this period yet.</Note>;
+  }
+
+  return (
+    <>
+      {rows.map((r, i) => (
+        <DotRow
+          key={r.key}
+          label={r.label}
+          meta={r.meta}
+          value={`+${fmt(r.amount)}`}
+          color={HOME_INCOME}
+          dotColor={TILE_COLOR[r.key]}
+          divider={i > 0}
+          compact={compact}
+        />
+      ))}
+      <Row label="Total" value={fmt(total)} color={HOME_INCOME} strong divider compact={compact} />
+      {/* One row, same shape as every other line here: what the period comes to
+          if the cash gets banked, with the untracked amount as its subtitle.
+          Cash tips only count as income once deposited (#131), so the dashed
+          rule marks this as sitting outside the total above. Period-scoped like
+          everything else in the panel. */}
+      {cashTips > 0 && (
+        <DotRow
+          dashed
+          label="With cash tips"
+          meta={(
+            <>
+              {"Untracked"}
+              <span style={{
+                color: TILE_COLOR.TIPS, fontWeight: 800,
+                fontSize: compact ? 12 : 13.5, fontVariantNumeric: "tabular-nums",
+                // Margin rather than literal spaces - HTML collapses
+                // consecutive whitespace, so the gaps have to be real.
+                margin: "0 4px",
+              }}>
+                {fmt(cashTips)}
+              </span>
+              {"in cash."}
+            </>
+          )}
+          value={fmt(total + cashTips)}
+          color={TILE_COLOR.TIPS}
+          dotColor={TILE_COLOR.TIPS}
+          compact={compact}
+        />
+      )}
+    </>
+  );
+}
+
+export function ExpensesBody({ categoryTotals, total, compact = false }) {
+  const rows = EXPENSE_ROWS
+    .map((r) => ({ ...r, amount: categoryTotals?.[r.key] ?? 0 }))
+    .filter((r) => r.amount > 0);
+
+  if (rows.length === 0) {
+    return <Note compact={compact}>No spending recorded for this period yet.</Note>;
+  }
+
+  return (
+    <>
+      {rows.map((r, i) => (
+        <DotRow
+          key={r.key}
+          label={r.label}
+          meta={r.meta}
+          value={`−${fmt(r.amount)}`}
+          color={HOME_EXPENSE}
+          dotColor={TILE_COLOR[r.key]}
+          divider={i > 0}
+          compact={compact}
+        />
+      ))}
+      <Row label="Total" value={fmt(total)} color={HOME_EXPENSE} strong divider compact={compact} />
+      {/* Moving money into savings isn't spending it, so it stays out of the
+          Expenses figure entirely (#69). */}
+      {(categoryTotals?.SAVINGS ?? 0) > 0 && (
+        <DotRow
+          dashed
+          label="Savings"
+          meta="Not tracked as spending"
+          // Same emphasis the Income panel gives its untracked cash: the
+          // excluded amount is the point of the row, so it carries the
+          // category tint at full weight rather than receding into muted grey.
+          value={(
+            <span style={{
+              color: TILE_COLOR.SAVINGS, fontWeight: 800,
+              fontSize: compact ? 13.5 : 15.5, fontVariantNumeric: "tabular-nums",
+            }}>
+              {fmt(categoryTotals.SAVINGS)}
+            </span>
+          )}
+          dotColor={TILE_COLOR.SAVINGS}
+          compact={compact}
+        />
+      )}
+    </>
+  );
+}
+
+export default function OverviewBreakdownSheet({ cell, onClose, safeToSpend, safeToSpendStatus, savings, savingsStatus, summary, categoryTotals, periodDeposits, cashTips, desktop = false }) {
   // Closing is staged rather than immediate: the parent unmounts this component
   // the moment onClose fires, which would cut the exit animation off. Hold it for
   // one animation, then hand control back. (#46)
@@ -227,6 +379,15 @@ export default function OverviewBreakdownSheet({ cell, onClose, safeToSpend, saf
       {cell === "bills" && <BillsBody safeToSpend={safeToSpend} status={safeToSpendStatus} />}
       {cell === "cash" && <CashBody safeToSpend={safeToSpend} status={safeToSpendStatus} />}
       {cell === "savings" && <SavingsBody savings={savings} status={savingsStatus} />}
+      {cell === "income" && (
+        <IncomeBody
+          categoryTotals={categoryTotals}
+          deposits={periodDeposits}
+          total={summary?.totalIn ?? 0}
+          cashTips={cashTips}
+        />
+      )}
+      {cell === "expenses" && <ExpensesBody categoryTotals={categoryTotals} total={summary?.totalOut ?? 0} />}
     </>
   );
 

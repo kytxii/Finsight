@@ -5,15 +5,16 @@ import Skel from "./Skel";
 import { fmt } from "../utils/finance";
 import { getToday } from "../utils/time";
 import { periodLabel } from "../utils/mobileFormat";
-import { getTipDeposits, createTipDeposit, updateTipDeposit, deleteTipDeposit } from "../api/tipDeposits";
+import { getTipDeposits, createTipDeposit, updateTipDeposit, deleteTipDeposit, getCashOnHand } from "../api/tipDeposits";
 import { HOME_TEXT, HOME_MUTED, HOME_SURFACE, HOME_DIVIDER, HOME_EXPENSE, HOME_ACCENT, TILE_COLOR } from "./categoryVisuals";
 import { IconTipsTile } from "./categoryIcons";
 
 // Dedicated Tips surface: a Tips table (this month's tips) over a Deposits table
 // (this month's lump-sum cash banked into checking). Both lists are scoped to
-// the current month, as are the three hero stats above them: cash on hand
-// (this month's tips, independent of deposits) + deposited (this month's
-// deposits) = the top number. See #56.
+// the current month, as are two of the three hero stats: tips earned (the top
+// number) and deposited. Cash on hand is the exception - it's all-time
+// undeposited cash, read from the server, because the cash in your pocket
+// doesn't reset on the 1st. See #56, #67.
 const TIPS = TILE_COLOR.TIPS;        // #26a69a
 const TIPS_DEPOSITED = "#5ccfc0";    // lighter teal for the deposit state
 const TIPS_PAGE = 4;
@@ -73,6 +74,7 @@ function IconBank({ color, size = 18 }) {
 export default function MobileTips({ transactions, loading, onBack, onEditTransaction, onDeleteTransaction, onRefresh }) {
   const [deposits, setDeposits] = useState([]);
   const [depositsLoading, setDepositsLoading] = useState(true);
+  const [cashOnHand, setCashOnHand] = useState(0);
   const [showAllTips, setShowAllTips] = useState(false);
   const [showAllDeposits, setShowAllDeposits] = useState(false);
   const [openId, setOpenId] = useState(null);
@@ -82,33 +84,45 @@ export default function MobileTips({ transactions, loading, onBack, onEditTransa
   const [draft, setDraft] = useState({ amount: "", deposit_date: getToday() });
   const [saving, setSaving] = useState(false);
 
+  // Cash on hand comes from the server rather than being derived here: it's
+  // every tip ever earned minus every deposit, which this screen's month-scoped
+  // lists can't see. Deriving it locally gave a different number than the
+  // Income breakdown showed for the same thing (#67). Both requests share one
+  // loading flag so the hero stats appear together instead of the cash figure
+  // flashing $0 until its own response lands.
   function loadDeposits() {
     setDepositsLoading(true);
-    getTipDeposits()
-      .then((r) => setDeposits(r.data))
-      .catch(() => {})
-      .finally(() => setDepositsLoading(false));
+    Promise.all([
+      getTipDeposits().then((r) => setDeposits(r.data)).catch(() => {}),
+      getCashOnHand().then((r) => setCashOnHand(parseFloat(r.data.cash_on_hand))).catch(() => setCashOnHand(0)),
+    ]).finally(() => setDepositsLoading(false));
   }
   useEffect(() => { loadDeposits(); }, []);
 
   const thisMonth = getToday().slice(0, 7);
 
-  // Everything on this screen - the tips list, the deposits list, and the cash
-  // on hand / deposited split - is scoped to the current month. A tip earned in
-  // a prior month but deposited this month (or vice versa) falls out of view;
-  // that's an accepted tradeoff, not an oversight. (#56)
+  // The tips list, the deposits list and the earned/deposited stats are scoped
+  // to the current month. A tip earned in a prior month but deposited this
+  // month (or vice versa) falls out of these views; that's an accepted
+  // tradeoff, not an oversight (#56). Cash on hand deliberately isn't scoped -
+  // see the hero stats below.
   const tips = transactions
     .filter((t) => t.category === "TIPS" && t.transaction_date.slice(0, 7) === thisMonth)
     .sort((a, b) => b.transaction_date.localeCompare(a.transaction_date));
   const monthDeposits = deposits.filter((d) => d.deposit_date.slice(0, 7) === thisMonth);
 
-  // Cash on hand and deposited are independent sub-stats, not a split of one
-  // pool - a deposit isn't assumed to come out of this month's logged tips (it
-  // may be older/untracked cash), so it doesn't reduce cash on hand. The top
-  // number is their sum: cash on hand + deposited.
-  const cashOnHand = tips.reduce((s, t) => s + parseFloat(t.amount), 0);
+  // Three separate questions, three separate numbers (#67/#131):
+  //   monthlyEarned - tips logged this month. The headline, and what the
+  //                   period label above it refers to.
+  //   cashOnHand    - undeposited cash you're actually holding right now.
+  //                   All-time (earned minus deposited, server-side), because
+  //                   cash doesn't reset on the 1st.
+  //   monthDeposited - cash banked this month, which is the part that counts
+  //                   as income.
+  // These no longer sum into each other; the old top number added this month's
+  // tips to this month's deposits, which double-counted any tip that was both.
+  const monthlyEarned = tips.reduce((s, t) => s + parseFloat(t.amount), 0);
   const monthDepositedTotal = monthDeposits.reduce((s, d) => s + parseFloat(d.amount), 0);
-  const monthlyEarned = cashOnHand + monthDepositedTotal;
 
   const shownTips = showAllTips ? tips : tips.slice(0, TIPS_PAGE);
   const shownDeposits = showAllDeposits ? monthDeposits : monthDeposits.slice(0, DEPOSITS_PAGE);

@@ -17,10 +17,13 @@ import { useAuth } from "../context/AuthContext";
 import { getTransactions, deleteTransaction } from "../api/transactions";
 import { deleteRecurringPayment } from "../api/recurringPayments";
 import { getSpendableSurplus, getEstimatedSavings } from "../api/paychecks";
+import { getTipDeposits } from "../api/tipDeposits";
 import {
   CATEGORIES,
   CATEGORY_CONFIG,
   INCOME_TYPES,
+  MONEY_IN_TYPES,
+  MONEY_OUT_TYPES,
   fmt,
   fmtWhole,
 } from "../utils/finance";
@@ -35,8 +38,9 @@ import ChartCard from "../components/ChartCard";
 import TransactionTable from "../components/TransactionTable";
 import CategoryTrendPanel from "../components/CategoryTrendPanel";
 import CategoryDetailPanel from "../components/CategoryDetailPanel";
+import CategoryUpcomingPanel from "../components/CategoryUpcomingPanel";
 import EditTransactionModal from "../components/EditTransactionModal";
-import { BalanceBody, BillsBody, CashBody, SavingsBody } from "../components/OverviewBreakdownSheet";
+import { BalanceBody, BillsBody, CashBody, SavingsBody, IncomeBody, ExpensesBody } from "../components/OverviewBreakdownSheet";
 import Footer from "../components/Footer";
 
 // True when `range` is exactly one calendar month (the shape both
@@ -89,9 +93,9 @@ function TrendPill({ label, value, color }) {
   );
 }
 
-// "saved so far / target" as a stacked fraction (numerator, rule, denominator)
-// instead of a slash - reads better at the Estimated Savings column's smaller
-// size than a single "$X / $Y" line would.
+// "saved so far / projected ceiling" as a stacked fraction (numerator, rule,
+// denominator) instead of a slash - reads better at the Estimated Savings
+// column's smaller size than a single "$X / $Y" line would.
 function StackedFraction({ num, den, color }) {
   return (
     <span style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-start", lineHeight: 1.2 }}>
@@ -211,6 +215,8 @@ const OVERVIEW_DRAWER_TITLES = {
   bills: "Upcoming Bills",
   cash: "Available Cash",
   savings: "Estimated Savings",
+  income: "Income",
+  expenses: "Expenses",
 };
 // Sidebar Tools (Paychecks/Recurring Payments/Installments) - main-content
 // takeover page titles.
@@ -243,6 +249,9 @@ function loadTrendCategories() {
 export default function Dashboard() {
   const { isDemo } = useAuth();
   const [transactions, setTransactions] = useState([]);
+  // Tip deposits are income the moment cash reaches checking (#131), so the
+  // Income figures need them alongside transactions.
+  const [tipDeposits, setTipDeposits] = useState([]);
 
   // Moved up here (was declared much further down) - the picker block below
   // and trackedYears/trackedMonthsByYear both need it, and its init only
@@ -288,7 +297,7 @@ export default function Dashboard() {
   const [safeToSpendStatus, setSafeToSpendStatus] = useState("loading"); // loading | ok | no-balance | no-schedule | error
   const [savings, setSavings] = useState(null);
   const [savingsStatus, setSavingsStatus] = useState("loading"); // loading | ok | no-schedule | no-amounts | no-history | error
-  const [breakdownCell, setBreakdownCell] = useState(null); // null | balance | bills | cash | savings
+  const [breakdownCell, setBreakdownCell] = useState(null); // null | balance | bills | cash | savings | income | expenses
   // Staged close: content (and the active-card ring) stays put while the
   // drawer fades/slides out, then unmounts once the transition finishes -
   // otherwise it would just vanish instantly instead of animating closed.
@@ -591,6 +600,10 @@ export default function Dashboard() {
     }).catch(() => { setLoading(false); });
   }, []);
 
+  function loadTipDeposits() {
+    getTipDeposits().then((res) => setTipDeposits(res.data)).catch(() => setTipDeposits([]));
+  }
+
   function loadSafeToSpend() {
     getSpendableSurplus().then((res) => {
       setSafeToSpend(res.data);
@@ -618,7 +631,7 @@ export default function Dashboard() {
     });
   }
 
-  useEffect(() => { loadSafeToSpend(); loadSavings(); }, []);
+  useEffect(() => { loadSafeToSpend(); loadSavings(); loadTipDeposits(); }, []);
   useEffect(() => () => { clearTimeout(breakdownCloseTimer.current); clearTimeout(outgoingTimer.current); clearTimeout(toolCloseTimer.current); clearTimeout(categoryCloseTimer.current); }, []);
 
   function refreshTransactions() {
@@ -628,6 +641,7 @@ export default function Dashboard() {
     }).catch(() => {});
     loadSafeToSpend();
     loadSavings();
+    loadTipDeposits();
   }
 
   async function handleDelete(t) {
@@ -700,12 +714,48 @@ export default function Dashboard() {
     return result;
   }, [transactions, activeTab, dateRange, devForceEmpty]);
 
+  // Deposits inside an arbitrary date range - the desktop period picker isn't
+  // month-bound, so this takes the same from/to the transaction filter uses.
+  const depositsInRange = useCallback(
+    (from, to) =>
+      tipDeposits
+        .filter((d) => {
+          const dt = new Date(d.deposit_date + "T00:00:00");
+          if (from && dt < from) return false;
+          if (to && dt > to) return false;
+          return true;
+        })
+        .reduce((s, d) => s + parseFloat(d.amount), 0),
+    [tipDeposits],
+  );
+
+  const periodDeposits = useMemo(
+    () => depositsInRange(dateRange.from, dateRange.to),
+    [depositsInRange, dateRange],
+  );
+
+  // Per-category totals for the selected period, feeding the Income/Expenses
+  // drawers (#67). Deposits stay out: they aren't transactions, and the Income
+  // drawer takes them as their own row rather than folded into a category.
+  const categoryTotals = useMemo(() => {
+    const totals = {};
+    filtered.forEach((t) => {
+      totals[t.category] = (totals[t.category] ?? 0) + parseFloat(t.amount);
+    });
+    return totals;
+  }, [filtered]);
+
   const summary = useMemo(() => {
+    // MONEY_IN/MONEY_OUT rather than INCOME_TYPES and its complement: cash tips
+    // only count once banked (as periodDeposits, #131) and savings isn't
+    // spending (#69). Deposits are excluded on category tabs - they aren't
+    // transactions, so they'd otherwise leak into every category's figures.
     const totalIn = filtered
-      .filter((t) => INCOME_TYPES.has(t.category))
-      .reduce((sum, t) => sum + parseFloat(t.amount), 0);
+      .filter((t) => MONEY_IN_TYPES.has(t.category))
+      .reduce((sum, t) => sum + parseFloat(t.amount), 0)
+      + (activeTab === "ALL" ? periodDeposits : 0);
     const totalOut = filtered
-      .filter((t) => !INCOME_TYPES.has(t.category))
+      .filter((t) => MONEY_OUT_TYPES.has(t.category))
       .reduce((sum, t) => sum + parseFloat(t.amount), 0);
 
     const savingsRate =
@@ -728,11 +778,17 @@ export default function Dashboard() {
           const d = new Date(t.transaction_date + "T00:00:00");
           return d >= prevFrom && d < prevTo;
         });
+      // Same sets and same deposit handling as the current period, so the
+      // change badges compare like-for-like.
       const prevIn = prevFiltered
-        .filter((t) => INCOME_TYPES.has(t.category))
-        .reduce((s, t) => s + parseFloat(t.amount), 0);
+        .filter((t) => MONEY_IN_TYPES.has(t.category))
+        .reduce((s, t) => s + parseFloat(t.amount), 0)
+        // prevTo is the current period's start and prevFiltered treats it as
+        // exclusive, so step back a tick - a deposit dated exactly there
+        // belongs to the current period, not both.
+        + (activeTab === "ALL" ? depositsInRange(prevFrom, new Date(prevTo.getTime() - 1)) : 0);
       const prevOut = prevFiltered
-        .filter((t) => !INCOME_TYPES.has(t.category))
+        .filter((t) => MONEY_OUT_TYPES.has(t.category))
         .reduce((s, t) => s + parseFloat(t.amount), 0);
       if (prevIn > 0 && savingsRate !== null) {
         savingsRateDelta = savingsRate - ((prevIn - prevOut) / prevIn) * 100;
@@ -741,8 +797,11 @@ export default function Dashboard() {
       if (prevOut > 0) totalOutDelta = ((totalOut - prevOut) / prevOut) * 100;
     }
 
-    // Category-specific metrics (non-ALL tabs)
-    const categoryTotal = totalIn + totalOut;
+    // Category-specific metrics (non-ALL tabs). Summed straight off `filtered`
+    // rather than totalIn + totalOut: on the TIPS and SAVINGS tabs both of
+    // those are now zero by design, which would blank the whole page. On the
+    // ALL tab this is the same figure it always was.
+    const categoryTotal = filtered.reduce((s, t) => s + parseFloat(t.amount), 0);
     let categoryDelta = null;
     let pctOfTotal = null;
     if (activeTab !== "ALL") {
@@ -797,7 +856,7 @@ export default function Dashboard() {
       pctOfTotal,
       categoryDelta,
     };
-  }, [filtered, transactions, activeTab, dateRange]);
+  }, [filtered, transactions, activeTab, dateRange, periodDeposits, depositsInRange]);
 
   // Full-bleed ALL-tab trend chart - deliberately reads from `transactions`
   // (everything fetched), not `filtered`, so it's an independent macro view
@@ -1037,14 +1096,29 @@ export default function Dashboard() {
 
   let overviewSavings;
   if (savingsStatus === "ok" && savings) {
-    overviewSavings = {
-      // Kept as separate saved/estimated fields (not a single joined string)
-      // so the overview column can render them as a stacked fraction; the
-      // breakdown drawer's own SavingsBody still joins them with "/" itself.
-      saved: fmtWhole(savings.saved_so_far),
-      estimated: fmtWhole(savings.estimated_savings),
-      color: CATEGORY_ACCENT.SAVINGS,
-    };
+    // estimated_savings is the projected ceiling, floored at 0 rather than at
+    // saved_so_far (#130), so the saved figure can legitimately sit above it.
+    // That case still renders as a normal fraction in the savings tint - it
+    // needs no special colour or caption, it's just a month that went well.
+    // Only a zero ceiling with nothing saved drops the fraction, and the
+    // over-saved check has to come first or it would swallow that case too.
+    const savedSoFar = parseFloat(savings.saved_so_far);
+    const ceiling = parseFloat(savings.estimated_savings);
+    const overSaved = savedSoFar > ceiling;
+    overviewSavings = overSaved || ceiling > 0
+      ? {
+          // Kept as separate saved/estimated fields (not a single joined string)
+          // so the overview column can render them as a stacked fraction; the
+          // breakdown drawer's own SavingsBody still joins them with "/" itself.
+          saved: fmtWhole(savings.saved_so_far),
+          estimated: fmtWhole(savings.estimated_savings),
+          color: CATEGORY_ACCENT.SAVINGS,
+        }
+      : {
+          value: fmtWhole(savings.saved_so_far),
+          color: CATEGORY_ACCENT.SAVINGS,
+          caption: "No room to save this month",
+        };
   } else if (savingsStatus === "loading") {
     overviewSavings = { value: "—", color: muted };
   } else if (savingsStatus === "no-history") {
@@ -1131,6 +1205,15 @@ export default function Dashboard() {
         {cell === "bills" && <BillsBody safeToSpend={safeToSpend} status={safeToSpendStatus} />}
         {cell === "cash" && <CashBody safeToSpend={safeToSpend} status={safeToSpendStatus} />}
         {cell === "savings" && <SavingsBody savings={savings} status={savingsStatus} />}
+        {cell === "income" && (
+          <IncomeBody
+            categoryTotals={categoryTotals}
+            deposits={activeTab === "ALL" ? periodDeposits : 0}
+            total={summary.totalIn}
+            cashTips={categoryTotals.TIPS ?? 0}
+          />
+        )}
+        {cell === "expenses" && <ExpensesBody categoryTotals={categoryTotals} total={summary.totalOut} />}
       </>
     );
   }
@@ -1643,6 +1726,8 @@ export default function Dashboard() {
                 valueColor={HOME_INCOME}
                 changePct={summary.totalInDelta}
                 changeGoodWhenUp={true}
+                onClick={() => toggleBreakdown("income")}
+                active={breakdownCell === "income"}
               />
               <SummaryCard
                 hero
@@ -1652,6 +1737,8 @@ export default function Dashboard() {
                 changeGoodWhenUp={false}
                 activeColor={HOME_EXPENSE}
                 valueColor={HOME_EXPENSE}
+                onClick={() => toggleBreakdown("expenses")}
+                active={breakdownCell === "expenses"}
               />
             </div>
             {/* Overview panel (#123) — same four fields as mobile's Home
@@ -1706,13 +1793,20 @@ export default function Dashboard() {
                 reserves in the page flow, not just its own opacity. margin-top
                 rides the same transition so it collapses to 0 fully closed
                 instead of leaving a bare gap (overrides space-y-4's own
-                margin via inline style). */}
+                margin via inline style).
+
+                margin-bottom is on the same animation for the same reason, and
+                it has to be explicit: this is the last child of the space-y-4
+                stack, so nothing below it contributes a gap of its own and the
+                open drawer would otherwise sit right on top of the trend
+                legend beneath it. */}
             <div
               style={{
                 display: "grid",
                 gridTemplateRows: breakdownCell && !breakdownClosing ? "1fr" : "0fr",
                 marginTop: breakdownCell && !breakdownClosing ? 16 : 0,
-                transition: `grid-template-rows ${DRAWER_TRANSITION_MS}ms cubic-bezier(0.32,0.72,0,1), margin-top ${DRAWER_TRANSITION_MS}ms cubic-bezier(0.32,0.72,0,1)`,
+                marginBottom: breakdownCell && !breakdownClosing ? 24 : 0,
+                transition: `grid-template-rows ${DRAWER_TRANSITION_MS}ms cubic-bezier(0.32,0.72,0,1), margin-top ${DRAWER_TRANSITION_MS}ms cubic-bezier(0.32,0.72,0,1), margin-bottom ${DRAWER_TRANSITION_MS}ms cubic-bezier(0.32,0.72,0,1)`,
               }}
             >
               <div style={{ overflow: "hidden", minHeight: 0, position: "relative" }}>
@@ -2254,7 +2348,13 @@ export default function Dashboard() {
           {activeTab === "ALL" ? (
             <CategoryTrendPanel transactions={transactions} dateRange={dateRange} />
           ) : (
-            <CategoryDetailPanel category={activeTab} transactions={transactions} dateRange={dateRange} />
+            // Upcoming sits above the history panel: it's the part that can
+            // still be acted on, and it self-hides when the category has
+            // nothing scheduled (#127).
+            <div className="space-y-4">
+              <CategoryUpcomingPanel category={activeTab} onRefresh={refreshTransactions} />
+              <CategoryDetailPanel category={activeTab} transactions={transactions} dateRange={dateRange} />
+            </div>
           )}
         </div>
         )}

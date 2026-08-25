@@ -19,7 +19,8 @@ import MobileTransactionModal from "../components/MobileTransactionModal";
 import MobileDepositModal from "../components/MobileDepositModal";
 import {
   CATEGORY_CONFIG,
-  INCOME_TYPES,
+  MONEY_IN_TYPES,
+  MONEY_OUT_TYPES,
   lockedNameFor,
 } from "../utils/finance";
 import { useTheme } from "../hooks/useTheme";
@@ -209,7 +210,7 @@ export default function MobileDashboard() {
   const [installmentsAddSignal, setInstallmentsAddSignal] = useState(0);
   const [recurringAddSignal, setRecurringAddSignal] = useState(0);
   const [paychecksOpen, setPaychecksOpen] = useState(false);
-  const [breakdownCell, setBreakdownCell] = useState(null); // null | balance | bills | cash | savings
+  const [breakdownCell, setBreakdownCell] = useState(null); // null | balance | bills | cash | savings | income | expenses
   const [accountOpen, setAccountOpen] = useState(false);
   // Opening Account straight from the avatar icon (skipping Menu) shouldn't
   // play the drawer's internal Menu->Account horizontal slide - the inner
@@ -627,19 +628,30 @@ export default function MobileDashboard() {
     [depositsInRange, dashDateRange],
   );
 
+  // MONEY_IN/MONEY_OUT rather than INCOME_TYPES and its complement: cash tips
+  // are excluded from income until they're banked (they arrive here as
+  // dashMonthDeposits instead, #131) and savings is excluded from expenses
+  // (#69). See finance.js for why those two sit outside both totals.
   const dashSummary = useMemo(() => {
     const totalIn = dashFiltered
-      .filter((t) => INCOME_TYPES.has(t.category))
+      .filter((t) => MONEY_IN_TYPES.has(t.category))
       .reduce((s, t) => s + parseFloat(t.amount), 0) + dashMonthDeposits;
-    // SAVINGS excluded: money moved to savings isn't spent, it's still yours -
-    // counting it here would inflate Expenses and drag down Net for the same
-    // reason. (#69)
     const totalOut = dashFiltered
-      .filter((t) => !INCOME_TYPES.has(t.category) && t.category !== "SAVINGS")
+      .filter((t) => MONEY_OUT_TYPES.has(t.category))
       .reduce((s, t) => s + parseFloat(t.amount), 0);
     const net = totalIn - totalOut;
     return { totalIn, totalOut, net };
   }, [dashFiltered, dashMonthDeposits]);
+
+  // Cash tips logged this period, without the deposits dashCategoryTotals
+  // folds into its TIPS entry - this figure is specifically the cash that
+  // hasn't been banked, so a deposit must not inflate it (#67).
+  const dashCashTips = useMemo(
+    () => dashFiltered
+      .filter((t) => t.category === "TIPS")
+      .reduce((s, t) => s + parseFloat(t.amount), 0),
+    [dashFiltered],
+  );
 
   const dashCategoryTotals = useMemo(() => {
     const totals = {};
@@ -669,13 +681,13 @@ export default function MobileDashboard() {
     return d >= dashLastMonthRange.from && d <= dashLastMonthRange.to;
   }), [transactions, dashLastMonthRange]);
   const dashLastMonthSummary = useMemo(() => {
+    // Same sets as dashSummary, so both change-badges compare like-for-like
+    // across months (#69, #131).
     const totalIn = dashLastMonthTransactions
-      .filter((t) => INCOME_TYPES.has(t.category))
+      .filter((t) => MONEY_IN_TYPES.has(t.category))
       .reduce((s, t) => s + parseFloat(t.amount), 0) + dashLastMonthDeposits;
-    // Same SAVINGS exclusion as dashSummary.totalOut, so the Expenses
-    // change-badge compares like-for-like across months (#69).
     const totalOut = dashLastMonthTransactions
-      .filter((t) => !INCOME_TYPES.has(t.category) && t.category !== "SAVINGS")
+      .filter((t) => MONEY_OUT_TYPES.has(t.category))
       .reduce((s, t) => s + parseFloat(t.amount), 0);
     return { totalIn, totalOut };
   }, [dashLastMonthTransactions, dashLastMonthDeposits]);
@@ -1575,6 +1587,10 @@ export default function MobileDashboard() {
         safeToSpendStatus={safeToSpendStatus}
         savings={savings}
         savingsStatus={savingsStatus}
+        summary={dashSummary}
+        categoryTotals={dashCategoryTotals}
+        periodDeposits={dashMonthDeposits}
+        cashTips={dashCashTips}
       />
 
       {/* ── Recurring payments overlay ── */}

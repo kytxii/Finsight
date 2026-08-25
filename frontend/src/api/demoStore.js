@@ -824,6 +824,10 @@ const PAYCHECK_INCOME_CATEGORIES = new Set(["INCOME", "REIMBURSEMENT", "TIPS"]);
 // Estimated-savings spend/obligation categories exclude SAVINGS (saving, not
 // spending - surfaced separately as "saved so far").
 const NON_SAVINGS_EXPENSE_CATEGORIES = new Set(["EXPENSE", "BILL", "SUBSCRIPTION", "DEBT"]);
+// Money actually arriving. Narrower than PAYCHECK_INCOME_CATEGORIES, which is a
+// sign test and so includes TIPS - cash tips are tracked, not banked, and only
+// become income once deposited. Mirrors MONEY_IN_CATEGORIES server-side (#131).
+const MONEY_IN_CATEGORIES = new Set(["INCOME", "REIMBURSEMENT"]);
 const SAVINGS_HISTORY_MONTHS = 3;
 
 function toDateStr(d) {
@@ -1189,16 +1193,22 @@ export const getSpendableSurplus = () => {
   });
 };
 
-// Every dollar of income for [monthStart, monthEnd): real INCOME transactions
-// already logged (paycheck-linked or not - a manual entry like a freelance gig
-// counts the same as a formal paycheck) plus a projected amount for each
-// schedule's still-unfilled paycheck this month. Not a double count: a filled
-// paycheck's amount already exists as a linked INCOME transaction, so it's
-// covered by the actual-transactions sum. Mirrors _whole_month_income (#85).
+// Every dollar of income for [monthStart, monthEnd): real INCOME and
+// REIMBURSEMENT transactions already logged (paycheck-linked or not - a manual
+// entry like a freelance gig counts the same as a formal paycheck), cash banked
+// as tip deposits, plus a projected amount for each schedule's still-unfilled
+// paycheck this month. Cash tips are absent on purpose: a TIPS row is cash in
+// hand and moves nothing until it's deposited, so the deposit is the income
+// event (#131). Not a double count: a filled paycheck's amount already exists as
+// a linked INCOME transaction, so it's covered by the actual-transactions sum.
+// Mirrors _whole_month_income (#85).
 function computeWholeMonthIncome(schedules, monthStartStr, monthEndStr) {
   const actualIncome = getAll(TX_KEY)
-    .filter((t) => t.category === "INCOME" && t.transaction_date >= monthStartStr && t.transaction_date < monthEndStr)
-    .reduce((sum, t) => sum + parseFloat(t.amount), 0);
+    .filter((t) => MONEY_IN_CATEGORIES.has(t.category) && t.transaction_date >= monthStartStr && t.transaction_date < monthEndStr)
+    .reduce((sum, t) => sum + parseFloat(t.amount), 0)
+    + getAll(TD_KEY)
+      .filter((d) => d.deposit_date >= monthStartStr && d.deposit_date < monthEndStr)
+      .reduce((sum, d) => sum + parseFloat(d.amount), 0);
 
   if (schedules.length === 0) return actualIncome;
 
@@ -1302,8 +1312,12 @@ export const getEstimatedSavings = () => {
   const daysAfterToday = daysInMonth - today.getDate();
   const discretionaryProjectedRemaining = (monthlyDiscretionaryAvg / daysInMonth) * daysAfterToday;
 
+  // Floored at 0, not savedSoFar: the ceiling is the whole point of this calc,
+  // and clamping it to what's already been saved rendered as "$X / $X" and said
+  // nothing. savedSoFar may now exceed it - beating the projection is real
+  // (#130). Mirrors get_estimated_savings.
   const rawCeiling = wholeMonthIncome - committedRecurring - discretionarySpentSoFar - discretionaryProjectedRemaining;
-  const estimatedSavings = Math.max(rawCeiling, savedSoFar);
+  const estimatedSavings = Math.max(rawCeiling, 0);
 
   return respond({
     month_start: monthStartStr,

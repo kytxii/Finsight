@@ -289,14 +289,23 @@ function OverviewCard({
 
   let save;
   if (savingsStatus === "ok" && savings) {
-    // estimated_savings is floored at saved_so_far server-side, so the
-    // numerator can never exceed the denominator here - safe to show as a
-    // plain fraction again (#85).
+    // estimated_savings is the projected ceiling, floored at 0 rather than at
+    // saved_so_far (#130), so three things can happen: the normal case, beating
+    // the projection, and a month with no room to save at all.
+    const savedSoFar = parseFloat(savings.saved_so_far);
+    const ceiling = parseFloat(savings.estimated_savings);
+    const overSaved = savedSoFar > ceiling;
     save = {
       key: "savings",
       label: "Estimated Savings",
-      value: `${fmtWhole(savings.saved_so_far)} / ${fmtWhole(savings.estimated_savings)}`,
+      // Beating the projection wins over the zero-ceiling copy: a month whose
+      // income is fully accounted for can still have money put aside, and
+      // saying "no room to save" next to what was saved reads as a bug.
+      value: overSaved || ceiling > 0
+        ? `${fmtWhole(savings.saved_so_far)} / ${fmtWhole(savings.estimated_savings)}`
+        : fmtWhole(savings.saved_so_far),
       color: TILE_COLOR.SAVINGS,
+      caption: !overSaved && ceiling <= 0 ? "No room to save this month" : undefined,
     };
   } else if (savingsStatus === "loading") {
     save = { key: "savings", label: "Estimated Savings", color: HOME_MUTED, loading: true };
@@ -417,7 +426,12 @@ export default function MobileHome({
             </>
           ) : (
             <>
-              <div style={{ flex: 1, ...cardStyle, padding: "12px 14px 13px" }}>
+              <button
+                type="button"
+                onClick={() => onOpenBreakdown("income")}
+                className="text-left active:scale-[0.98] transition-transform"
+                style={{ flex: 1, ...cardStyle, padding: "12px 14px 13px", border: "none", font: "inherit", color: "inherit" }}
+              >
                 <div
                   style={{
                     display: "flex",
@@ -454,8 +468,13 @@ export default function MobileHome({
                 >
                   {fmt(dashSummary.totalIn)}
                 </p>
-              </div>
-              <div style={{ flex: 1, ...cardStyle, padding: "12px 14px 13px" }}>
+              </button>
+              <button
+                type="button"
+                onClick={() => onOpenBreakdown("expenses")}
+                className="text-left active:scale-[0.98] transition-transform"
+                style={{ flex: 1, ...cardStyle, padding: "12px 14px 13px", border: "none", font: "inherit", color: "inherit" }}
+              >
                 <div
                   style={{
                     display: "flex",
@@ -492,7 +511,7 @@ export default function MobileHome({
                 >
                   {fmt(dashSummary.totalOut)}
                 </p>
-              </div>
+              </button>
             </>
           )}
         </div>

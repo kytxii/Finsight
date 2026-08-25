@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import MobileActivity from "./MobileActivity";
 import Skel from "./Skel";
-import { CATEGORY_CONFIG, INCOME_TYPES, fmt } from "../utils/finance";
+import { CATEGORY_CONFIG, MONEY_IN_TYPES, MONEY_OUT_TYPES, fmt } from "../utils/finance";
 import { getNow } from "../utils/time";
 import {
   HOME_TEXT, HOME_MUTED, HOME_SURFACE, HOME_DIVIDER, HOME_INCOME, HOME_EXPENSE, HOME_ACCENT,
@@ -201,7 +201,9 @@ export default function MobileAnalytics({ transactions, deposits = [], loading, 
 
   // ── Income vs. expense, last 6 months. SAVINGS excluded from "expense" -
   // money moved to savings isn't spent (same definition as #69's Home fix,
-  // applied here from the start rather than repeating the bug).
+  // applied here from the start rather than repeating the bug). Cash tips are
+  // excluded from both sides and enter as deposits once banked (#131), so the
+  // trend matches Home's Income/Expenses rather than telling a second story.
   const months = useMemo(() => lastMonths(TREND_MONTHS), []);
   // One extra month before the trend window, purely so the first displayed
   // month has a prior month to compare against for the savings % change below.
@@ -215,12 +217,18 @@ export default function MobileAnalytics({ transactions, deposits = [], loading, 
       const bucket = byMonth[key];
       if (!bucket) return; // outside the trend window
       const amt = parseFloat(t.amount);
-      if (INCOME_TYPES.has(t.category)) bucket.income += amt;
+      if (MONEY_IN_TYPES.has(t.category)) bucket.income += amt;
       else if (t.category === "SAVINGS") bucket.savings += amt;
-      else bucket.expense += amt;
+      else if (MONEY_OUT_TYPES.has(t.category)) bucket.expense += amt;
+      // TIPS deliberately falls through: cash in hand is neither income nor
+      // expense here, it lands below as a deposit once it's actually banked.
+    });
+    deposits.forEach((d) => {
+      const bucket = byMonth[monthKey(d.deposit_date)];
+      if (bucket) bucket.income += parseFloat(d.amount);
     });
     return byMonth;
-  }, [transactions, extendedMonths]);
+  }, [transactions, deposits, extendedMonths]);
 
   const trendMax = useMemo(
     () => Math.max(1, ...months.map((m) => Math.max(monthlyTotals[m.key].income, monthlyTotals[m.key].expense))),
