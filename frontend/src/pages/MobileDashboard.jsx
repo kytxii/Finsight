@@ -14,9 +14,9 @@ import {
 import { getSpendableSurplus, getEstimatedSavings } from "../api/paychecks";
 import { getUpcomingRecurringPayments } from "../api/recurringPayments";
 import { getTipDeposits, deleteTipDeposit } from "../api/tipDeposits";
-import CurrencyInput from "../components/CurrencyInput";
-import MobileTransactionModal from "../components/MobileTransactionModal";
-import MobileDepositModal from "../components/MobileDepositModal";
+import CurrencyInput from "../components/shared/CurrencyInput";
+import MobileTransactionModal from "../components/mobile/MobileTransactionModal";
+import MobileDepositModal from "../components/mobile/MobileDepositModal";
 import {
   CATEGORY_CONFIG,
   MONEY_IN_TYPES,
@@ -25,27 +25,27 @@ import {
 } from "../utils/finance";
 import { useTheme } from "../hooks/useTheme";
 import { useAuth } from "../context/AuthContext";
-import { getPresetRange } from "../components/DateRangeFilter";
+import { getPresetRange } from "../components/mobile/DateRangeFilter";
 import { getToday, getNow } from "../utils/time";
 import { errorMessage } from "../utils/errors";
-import MobilePageSlide from "../components/MobilePageSlide";
-import MobileScreen from "../components/MobileScreen";
+import MobilePageSlide from "../components/mobile/MobilePageSlide";
+import MobileScreen from "../components/mobile/MobileScreen";
 import { useSheetDrag } from "../hooks/useSheetDrag";
-import Footer from "../components/Footer";
-import AccountPanel from "../components/AccountPanel";
-import OverviewBreakdownSheet from "../components/OverviewBreakdownSheet";
-import MobileHome from "../components/MobileHome";
-import MobileTopbar from "../components/MobileTopbar";
-import MobileCategory from "../components/MobileCategory";
-import MobileTips from "../components/MobileTips";
-import MobilePaychecks from "../components/MobilePaychecks";
-import MobileRecurring from "../components/MobileRecurring";
-import MobileInstallments from "../components/MobileInstallments";
-import MobileAnalytics from "../components/MobileAnalytics";
-import ImportPanel from "../components/ImportPanel";
-import { HOME_BG, HOME_TEXT, HOME_MUTED, HOME_DIVIDER, HOME_SURFACE, HOME_INCOME, HOME_EXPENSE, ACCENT, TILE_COLOR } from "../components/categoryVisuals";
-import CategoryPicker from "../components/CategoryPicker";
-import CompactDateField from "../components/CompactDateField";
+import Footer from "../components/shared/Footer";
+import AccountPanel from "../components/shared/AccountPanel";
+import OverviewBreakdownSheet from "../components/desktop/OverviewBreakdownSheet";
+import MobileHome from "../components/mobile/MobileHome";
+import MobileTopbar from "../components/mobile/MobileTopbar";
+import MobileCategory from "../components/mobile/MobileCategory";
+import MobileTips from "../components/mobile/MobileTips";
+import MobilePaychecks from "../components/mobile/MobilePaychecks";
+import MobileRecurring from "../components/mobile/MobileRecurring";
+import MobileInstallments from "../components/mobile/MobileInstallments";
+import MobileAnalytics from "../components/mobile/MobileAnalytics";
+import ImportPanel from "../components/desktop/ImportPanel";
+import { HOME_BG, HOME_TEXT, HOME_MUTED, HOME_DIVIDER, HOME_SURFACE, HOME_INCOME, HOME_EXPENSE, ACCENT, TILE_COLOR } from "../components/shared/categoryVisuals";
+import CategoryPicker from "../components/mobile/CategoryPicker";
+import CompactDateField from "../components/mobile/CompactDateField";
 
 // ── Icons ────────────────────────────────────────────────────────────────────
 
@@ -179,14 +179,12 @@ export default function MobileDashboard() {
   const text = dark ? "var(--dark-text)" : "var(--light-text)";
   const muted = `color-mix(in srgb, ${text} 50%, transparent)`;
 
-  // ── Navigation
   const [navTab, setNavTab] = useState("dashboard");
   const [categoryView, setCategoryView] = useState(null);
   const mainRef = useRef(null);
 
-  // Slide direction is derived from these. Tabs sit at whole numbers in bottom-nav
-  // order; a category detail sits just past the dashboard it was pushed from, so
-  // pushing reads as forward and going back reads as back. (#46)
+  // Slide direction comes from these positions - tabs are whole numbers in
+  // bottom-nav order, a category sits just past the dashboard that pushed it (#46).
   const NAV_ORDER = { dashboard: 0, activity: 1, ai: 2 };
   const pageKey = categoryView ? `category:${categoryView}` : navTab;
   const pageOrder = categoryView ? NAV_ORDER.dashboard + 0.5 : NAV_ORDER[navTab] ?? 0;
@@ -197,7 +195,6 @@ export default function MobileDashboard() {
   const [addSheetOpen, setAddSheetOpen] = useState(false);
   const [entrySheetOpen, setEntrySheetOpen] = useState(false);
 
-  // ── Drawer / Recurring / Account
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [devOpen, setDevOpen] = useState(false);
   const [devForceEmpty, setDevForceEmpty] = useState(false);
@@ -212,20 +209,10 @@ export default function MobileDashboard() {
   const [paychecksOpen, setPaychecksOpen] = useState(false);
   const [breakdownCell, setBreakdownCell] = useState(null); // null | balance | bills | cash | savings | income | expenses
   const [accountOpen, setAccountOpen] = useState(false);
-  // Opening Account straight from the avatar icon (skipping Menu) shouldn't
-  // play the drawer's internal Menu->Account horizontal slide - the inner
-  // track sits at rest on Menu the whole time the sheet is closed, so
-  // flipping accountOpen still animates it across even though the user never
-  // saw Menu (#107). Only set true by that one entry point; navigating to
-  // Account from within an already-open Menu leaves this false, so that
-  // slide-over still plays as real in-drawer navigation.
   const [skipAccountSlide, setSkipAccountSlide] = useState(false);
   useEffect(() => {
     if (!skipAccountSlide) return;
-    // Double rAF: let the browser paint one frame with the track already in
-    // position and no transition, then re-enable the transition for any
-    // subsequent in-drawer navigation - re-adding `transition` doesn't itself
-    // animate anything since the transform value isn't changing here.
+  // Double rAF: paints one frame with no transition, then re-enables it for later.
     const id = requestAnimationFrame(() => {
       requestAnimationFrame(() => setSkipAccountSlide(false));
     });
@@ -238,7 +225,6 @@ export default function MobileDashboard() {
     onSave: null,
   });
 
-  // ── Data
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [tipDeposits, setTipDeposits] = useState([]);
@@ -246,9 +232,6 @@ export default function MobileDashboard() {
   const [safeToSpendStatus, setSafeToSpendStatus] = useState("loading"); // loading | ok | no-balance | no-schedule | error
   const [savings, setSavings] = useState(null);
   const [savingsStatus, setSavingsStatus] = useState("loading"); // loading | ok | no-schedule | no-amounts | no-history | error
-  // Rest-of-month recurring-payment occurrences (#60), unfiltered by category -
-  // MobileHome derives its pending count from this, MobileCategory filters it
-  // per category page.
   const [upcomingItems, setUpcomingItems] = useState([]);
 
   async function devFetch() {
@@ -302,11 +285,6 @@ export default function MobileDashboard() {
       setLoading(false);
       setDevLastFetch(new Date());
     }).catch(() => {
-      // Stay in the loading state rather than flipping to "loaded with zero
-      // transactions" - transactions never got set, so every stat derived
-      // from it (dashSummary, dashCategoryTotals, ...) would otherwise
-      // render as real $0.00/-$0.00 values indistinguishable from an
-      // account that's genuinely empty, instead of skeletons.
     });
     loadSafeToSpend();
     loadSavings();
@@ -315,11 +293,7 @@ export default function MobileDashboard() {
   }, []);
 
   function refresh() {
-    // setLoading(false) here is a no-op for the normal silent-refresh caller
-    // (already false, React bails out) - it only matters for Dev Tools'
-    // "Re-fetch" button, which sets loading=true before calling this to
-    // re-test the skeleton flow; without it, a successful re-fetch through
-    // that button would leave skeletons stuck on regardless of outcome.
+    // A no-op on a normal refresh - only matters for Dev Tools' Re-fetch.
     devFetch().then((res) => {
       setTransactions(res.data);
       setLoading(false);
@@ -344,7 +318,6 @@ export default function MobileDashboard() {
     refresh();
   };
 
-  // ── Quick entry
   const [quickCat, setQuickCat] = useState("EXPENSE");
   const [quickForm, setQuickForm] = useState({
     name: "",
@@ -359,11 +332,8 @@ export default function MobileDashboard() {
   const quickNameRef = useRef(null);
   const quickAmountRef = useRef(null);
 
-  // The entry sheet stays mounted across open/close (translateY, not a
-  // conditional render), so autoFocus - which only fires on mount - wouldn't
-  // refire on reopen (#114, same fix as MobileTopbar's search field). Name is
-  // the default target; locked-name categories (tips, savings) skip straight
-  // to amount since there's nothing to type in name.
+  // The sheet stays mounted, so autoFocus wouldn't refire on reopen without
+  // this (#114). Locked-name categories focus amount instead.
   useEffect(() => {
     if (!entrySheetOpen) return;
     (lockedNameFor(quickCat) ? quickAmountRef : quickNameRef).current?.focus();
@@ -453,15 +423,8 @@ export default function MobileDashboard() {
   // ── Dashboard state (fixed to current month - no picker on the Home tab)
   const dashDateRange = useMemo(() => getPresetRange("Current Month"), []);
 
-  // ── Analytics tab: jump-to-transaction request from Home's search dropdown,
-  // passed through MobileAnalytics to the Activity section within it.
-  // { id, token } - token changes on every pick so the effect in
-  // MobileActivity always re-fires, even for the same transaction twice.
-  // Everything else about Activity (search/chip/sort/scroll) is local state
-  // owned by MobileActivity itself, not lifted here (#29).
   const [activityJump, setActivityJump] = useState(null);
 
-  // ── Search
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
@@ -476,9 +439,8 @@ export default function MobileDashboard() {
   });
   const { onTouchStart: onSheetTouchStart, onTouchMove: onSheetTouchMove, onTouchEnd: onSheetTouchEnd } =
     sheetDragHandlers;
-  // Separate drag instance for the drawer - its own dismiss target
-  // (Menu/Account, not Add/Entry/Batch), kept independent of the shared one
-  // above so the two sheets' drag states can't clash.
+  // A separate drag instance for the drawer, so its state can't clash with the
+  // add-sheet's drag above.
   const { dragY: drawerDragY, handlers: drawerDragHandlers } = useSheetDrag(() => {
     setDrawerOpen(false);
     setAccountOpen(false);
@@ -526,13 +488,8 @@ export default function MobileDashboard() {
     });
   };
 
-  // Click/tap off the search bar minimizes it entirely, not just the
-  // suggestions dropdown - matches handleToggleSearch's own "already open"
-  // branch. Excludes the toggle button itself (searchToggleRef) since that's
-  // outside searchContainerRef's subtree - without the exclusion, tapping the
-  // toggle to close would race this handler: mousedown fires first and closes
-  // via this effect, then the click's onToggleSearch reads the now-stale
-  // "was open" state and immediately reopens it.
+  // Tapping off minimizes the whole search bar. Excludes the toggle button, or
+  // mousedown closes here and the click reopens off stale state.
   useEffect(() => {
     function onMouseDown(e) {
       if (
@@ -566,10 +523,8 @@ export default function MobileDashboard() {
       .slice(0, 5);
   }, [debouncedQuery, transactions]);
 
-  // Selecting a search result opens the detail modal directly (#27) instead
-  // of jumping to the Activity tab and scrolling/highlighting the row -
-  // that scroll+highlight flow still exists (MobileActivity's `jump` effect)
-  // but is now reached via the modal's own locate action, not automatically.
+  // Search results open the detail modal (#27); the scroll+highlight flow is
+  // now reached via its locate action.
   const handleSelectTransaction = useCallback((t) => {
     setQuery("");
     setDebouncedQuery("");
@@ -577,11 +532,7 @@ export default function MobileDashboard() {
     setEditingTransaction(t);
   }, []);
 
-  // Locate action from within MobileTransactionModal: close the modal, switch
-  // to Activity, and hand off to MobileActivity's existing jump-to-transaction
-  // effect (reset filters, expand pagination/collapse to the target's month,
-  // scroll it into view, highlight it) - unchanged from before #27, just no
-  // longer the only way to reach a transaction from search.
+  // Close, switch to Activity, hand off to its jump-to-transaction effect.
   const handleLocateTransaction = useCallback((t) => {
     setEditingTransaction(null);
     setNavTab("activity");
@@ -607,9 +558,8 @@ export default function MobileDashboard() {
       ),
     [dashFiltered],
   );
-  // Tip deposits add to Tips/Income on top of the logged tip transactions -
-  // they aren't a subset of them, mirroring MobileTips.jsx's own cash-on-hand
-  // + deposited = total split (#56).
+  // Deposits add to Tips/Income on top of logged tips, not a subset of them,
+  // mirroring MobileTips.jsx (#56).
   const depositsInRange = useCallback(
     (from, to) =>
       tipDeposits
@@ -628,10 +578,8 @@ export default function MobileDashboard() {
     [depositsInRange, dashDateRange],
   );
 
-  // MONEY_IN/MONEY_OUT rather than INCOME_TYPES and its complement: cash tips
-  // are excluded from income until they're banked (they arrive here as
-  // dashMonthDeposits instead, #131) and savings is excluded from expenses
-  // (#69). See finance.js for why those two sit outside both totals.
+  // MONEY_IN/OUT, not INCOME_TYPES: cash tips count only once banked (#131) and
+  // savings isn't spending (#69). See finance.js.
   const dashSummary = useMemo(() => {
     const totalIn = dashFiltered
       .filter((t) => MONEY_IN_TYPES.has(t.category))
@@ -643,9 +591,6 @@ export default function MobileDashboard() {
     return { totalIn, totalOut, net };
   }, [dashFiltered, dashMonthDeposits]);
 
-  // Cash tips logged this period, without the deposits dashCategoryTotals
-  // folds into its TIPS entry - this figure is specifically the cash that
-  // hasn't been banked, so a deposit must not inflate it (#67).
   const dashCashTips = useMemo(
     () => dashFiltered
       .filter((t) => t.category === "TIPS")
@@ -662,8 +607,8 @@ export default function MobileDashboard() {
     return totals;
   }, [dashFiltered, dashMonthDeposits]);
 
-  // Count of this-month recurring items awaiting a confirm/skip (#58), surfaced
-  // as a small addition to the Home overview's "Upcoming Bills" caption.
+  // This month's recurring items awaiting confirm/skip, shown in the Upcoming
+  // Bills caption (#58).
   const pendingBillsCount = useMemo(
     () => upcomingItems.filter((i) => i.status === "pending").length,
     [upcomingItems],
@@ -681,8 +626,6 @@ export default function MobileDashboard() {
     return d >= dashLastMonthRange.from && d <= dashLastMonthRange.to;
   }), [transactions, dashLastMonthRange]);
   const dashLastMonthSummary = useMemo(() => {
-    // Same sets as dashSummary, so both change-badges compare like-for-like
-    // across months (#69, #131).
     const totalIn = dashLastMonthTransactions
       .filter((t) => MONEY_IN_TYPES.has(t.category))
       .reduce((s, t) => s + parseFloat(t.amount), 0) + dashLastMonthDeposits;
@@ -692,10 +635,7 @@ export default function MobileDashboard() {
     return { totalIn, totalOut };
   }, [dashLastMonthTransactions, dashLastMonthDeposits]);
 
-  // ── Rolling N-month window for MobileCategory's bar history (#108) - oldest
-  // to newest, last entry is always the current (in-progress) month. Slides
-  // forward automatically since it's built off getNow() each render, not a
-  // fixed calendar anchor.
+  // Rolling N-month window, oldest first, last entry the current month (#108).
   const CATEGORY_HISTORY_MONTHS = 6;
   const dashCategoryHistory = useMemo(() => {
     const now = getNow();
@@ -737,10 +677,6 @@ export default function MobileDashboard() {
       style={{ backgroundColor: navTab === "dashboard" || navTab === "activity" ? HOME_BG : bg, color: text }}
     >
 
-      {/* ── Topbar - avatar/add/search - a true sibling of <main>, not nested
-          inside the sliding page content, so it stays fixed in place across
-          every tab and every page transition instead of unmounting/jumping
-          with them (#29). */}
       <MobileTopbar
         user={user}
         onOpenAccount={() => { setSkipAccountSlide(true); setDrawerOpen(true); setAccountOpen(true); }}
@@ -852,7 +788,7 @@ export default function MobileDashboard() {
         </MobilePageSlide>
       </main>
 
-      {/* ── Bottom nav — full-width liquid-glass bar, ported from the Cranberry project's BottomNav ── */}
+      {/* ── Bottom nav ── */}
       <nav
         className="fixed bottom-0 left-0 right-0 z-30 flex px-4 pointer-events-none"
         style={{ paddingBottom: "max(7px, calc(env(safe-area-inset-bottom, 0px) / 2))" }}
@@ -867,13 +803,6 @@ export default function MobileDashboard() {
             boxShadow: "0 10px 34px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.3), inset 0 -1px 0 rgba(255,255,255,0.04)",
           }}
         >
-          {/* Padding lives on the outer glass shell above; this inner element
-              carries no box-model offsets of its own, so the absolutely
-              positioned highlight slot below shares the exact same coordinate
-              space as the flex buttons (position:absolute resolves against
-              the padding box of the nearest positioned ancestor — if that
-              ancestor also had the padding, the slot's 0/100% math would be
-              measured against a wider box than the buttons actually occupy). */}
           <div className="relative flex items-center w-full">
           {(() => {
             const items = [
@@ -886,10 +815,8 @@ export default function MobileDashboard() {
             return (
               <>
                 {activeIndex !== -1 && (
-                  // Outer slot exactly matches one flex-1 button's box (same left/width math
-                  // the buttons use), so translateX(N * 100%) — relative to the slot's own
-                  // width — lines up perfectly with the Nth button. The inner div is purely
-                  // cosmetic inset, kept off the positioned box so it can't skew the math.
+                  // Slot matches one button's box, so translateX(N * 100%) lands on the
+                  // Nth button. The inner div is cosmetic inset, kept off the math.
                   <div
                     aria-hidden
                     style={{
@@ -1192,10 +1119,6 @@ export default function MobileDashboard() {
       </div>
 
       {/* ── Batch add sheet ── */}
-      {/* Backdrop is the shared Add-sheet overlay above (like Entry) - addSheetOpen
-          stays true while this is open so the back button returns to the Add
-          picker instead of closing outright; a dedicated overlay here would
-          double-stack on top of that one. */}
       <div
         className="fixed bottom-0 left-0 right-0 z-50 rounded-t-2xl flex flex-col"
         style={{
@@ -1265,10 +1188,8 @@ export default function MobileDashboard() {
         </div>
         <div ref={batchListRef} className="flex-1 overflow-y-auto px-4 py-3">
           {batchItems.map((item, idx) => {
-            // TILE_COLOR (pinned), not the `--category-*` CSS var - that var
-            // resolves to the .dark block's pastel shades when the light/dark
-            // toggle is dark, which read as washed-out on a solid fill (those
-            // pastels are tuned for colored text on a dark bg, not tiles).
+            // TILE_COLOR, not the `--category-*` var - its dark pastels wash out on a
+            // solid fill.
             const catColor = TILE_COLOR[item.category];
             return (
               <div
@@ -1703,13 +1624,7 @@ export default function MobileDashboard() {
       )}
 
       {/* ── Drawer (menu + account as sliding track) ── */}
-      {/* Bottom sheet, same shape as MobileTransactionModal's detail sheet
-          (rounded top, capped height, backdrop dim) rather than a full-screen
-          page push or the old right-side drawer. The Menu/Account/Dev-Tools
-          sub-navigation inside stays a horizontal (translateX) track,
-          independent of this outer vertical open/close transform - capped
-          height + internal scroll per sub-panel covers Account/Dev Tools'
-          longer content since all three share one fixed-height container. */}
+      {/* Bottom sheet, same shape as MobileTransactionModal's detail sheet. */}
       <div
         className="fixed bottom-0 left-0 right-0 z-50"
         style={{
@@ -1743,11 +1658,7 @@ export default function MobileDashboard() {
             transition: skipAccountSlide ? "none" : "transform 250ms ease",
           }}
         >
-          {/* Menu panel - account/profile, tool shortcuts, and app settings.
-              Paychecks/Recurring Payments/Installments duplicate Home's Tools
-              card entries by request - kept here too as a second access point.
-              Light/dark toggle dropped, mobile is pinned dark everywhere else
-              at this point so it barely changed anything visible. */}
+          {/* Menu panel */}
           <div
             style={{
               width: "33.333%",
@@ -2027,9 +1938,7 @@ export default function MobileDashboard() {
             <AccountPanel onSaveStateChange={setAcctSave} />
           </div>
 
-          {/* Dev tools panel - lowest priority of the drawer surfaces (#30),
-              light pass: swap the theme-toggle colors for the pinned-dark
-              ones, no structural changes. */}
+          {/* Dev tools panel */}
           <div style={{ width: "33.333%", height: "100%", display: "flex", flexDirection: "column" }}>
             <div
               className="px-5 py-4 flex items-center gap-2 border-b shrink-0"

@@ -1,18 +1,11 @@
-// Mirrors app/services/installment_service.py exactly (flat division, gauge
-// thresholds) so demo mode and the live term-hint chips stay in lockstep with
-// the real backend. Single source of truth on the frontend - both demoStore.js
-// and the installment components import from here rather than duplicating
-// the formulas.
+// Mirrors app/services/installment_service.py. Single source of truth on the
+// frontend - demoStore.js and the installment components both import this.
 
 export const CANDIDATE_TERM_MONTHS = [3, 6, 12, 24, 36, 48];
 
-// Cash-flow impact tiers, not an affordability judgement - how much of the
-// user's currently-free cash a payment consumes, not whether they can afford
-// it. Very low (<=10%, "dark_green"), low (10-15%, "green"), moderate
-// (15-20%, "yellow"), high (20-25%, "orange"), very high (25%+, "red") - red
-// covers everything past 25%, no further tier. See the backend's
-// compute_gauge_status for why these particular cutoffs, and the caveat on
-// them.
+// Cash-flow impact tiers - how much free cash a payment consumes, not whether
+// it's affordable. <=10% dark_green, 10-15% green, 15-20% yellow, 20-25% orange,
+// 25%+ red. See compute_gauge_status for the reasoning.
 const DARK_GREEN_MAX_RATIO = 0.10;
 const GREEN_MAX_RATIO = 0.15;
 const YELLOW_MAX_RATIO = 0.20;
@@ -22,7 +15,7 @@ function cents(value) {
   return Math.round(value * 100) / 100;
 }
 
-// Flat division only - total_amount / period_months, rounded to the cent.
+// total_amount / period_months, rounded to the cent.
 export function computeMonthlyPayment(totalAmount, periodMonths) {
   const total = parseFloat(totalAmount);
   const months = parseInt(periodMonths, 10);
@@ -30,9 +23,8 @@ export function computeMonthlyPayment(totalAmount, periodMonths) {
   return cents(total / months);
 }
 
-// Live "term hint" chips shown under the Term field - purely local math (no
-// network round trip needed now that there's no interest to amortize), so
-// they can recompute on every keystroke as the user types an amount.
+// Term-hint chips under the Term field. Local math, so they recompute on
+// every keystroke.
 export function computeTermOptions(totalAmount) {
   const total = parseFloat(totalAmount);
   if (!(total > 0)) return [];
@@ -42,9 +34,8 @@ export function computeTermOptions(totalAmount) {
   }));
 }
 
-// Returns { status, ratio } - status is "dark_green" | "green" | "yellow" |
-// "orange" | "red", ratio is null when there's no headroom to divide by
-// (matches the backend's InstallmentInsightsResponse shape).
+// Returns { status, ratio }. ratio is null with no headroom to divide by.
+// Matches the backend's InstallmentInsightsResponse shape.
 export function computeGaugeStatus(monthlyPayment, availableCash) {
   const payment = parseFloat(monthlyPayment);
   const cash = parseFloat(availableCash);

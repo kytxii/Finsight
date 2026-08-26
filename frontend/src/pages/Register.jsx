@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import client from "../api/client";
-import { HOME_BG, HOME_SURFACE, HOME_TEXT, HOME_MUTED, HOME_DIVIDER } from "../components/categoryVisuals";
+import { HOME_BG, HOME_SURFACE, HOME_TEXT, HOME_MUTED, HOME_DIVIDER } from "../components/shared/categoryVisuals";
 import { LOADING_SYMBOLS as SYMBOLS, LOADING_PHRASES as PHRASES } from "../utils/authFlavor";
-import { Wordmark } from "../components/Logo";
+import { Wordmark } from "../components/shared/Logo";
 
 // Dark-only, pinned to the app's jade/teal theme (matches Login + the mobile
 // dashboard). No light/dark branching on these pages by design.
@@ -149,9 +149,6 @@ export default function Register() {
             animation: "finsight-grid-fade 8s ease-in-out infinite",
           }}
         />
-        {/* Glow blobs use fixed px sizes + corner-anchored px offsets so the
-            ambient background reads the same on a phone and a 4K monitor
-            (vw units made them balloon/shrink per screen). */}
         {/* Jade glow, top-right */}
         <div style={{ position: "absolute", top: "-160px", right: "-160px", width: "620px", height: "620px", borderRadius: "50%", background: `radial-gradient(circle, ${ACCENT}24 0%, transparent 70%)`, filter: "blur(48px)", animation: "finsight-float-1 18s ease-in-out infinite" }} />
         {/* Deep-teal glow, bottom-left */}

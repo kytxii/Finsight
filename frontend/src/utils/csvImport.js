@@ -1,24 +1,19 @@
-// Shared CSV-import heuristics for demo mode (client-side only — there's no
-// backend to hit). Mirrors app/services/import_service.py on the backend;
-// keep the two in sync if the detection/dedup/categorization logic changes.
 
 const DATE_KEYWORDS = ["date", "posted", "post date", "transaction date"];
 const AMOUNT_KEYWORDS = ["amount", "debit", "credit", "value"];
 const NAME_KEYWORDS = ["description", "merchant", "payee", "name", "memo"];
 
-// Tried in order until one parses; all normalize to "YYYY-MM-DD".
+// Tried in order until one parses. All normalize to "YYYY-MM-DD".
 const DATE_FORMATS = ["MM/DD/YYYY", "YYYY-MM-DD", "MM/DD/YY", "DD/MM/YYYY", "MM-DD-YYYY"];
 
 export function normalizeName(name) {
   return name.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
-// Loose duplicate check for rows that already match on date + amount: one
-// normalized name containing the other catches cases like a manually entered
-// "Cobblestone" not exact-matching an imported "Cobblestone Auto Spa".
-// Guarded by a minimum length on the shorter name so short names (e.g.
-// "Cash") don't trivially match everything sharing that date+amount. Mirrors
-// _names_are_similar in import_service.py.
+// For rows that already match on date and amount: catches a manually entered
+// "Cobblestone" against an imported "Cobblestone Auto Spa" by checking if one
+// name contains the other. Short names are excluded so "Cash" doesn't match
+// everything. Mirrors _names_are_similar.
 export function namesAreSimilar(a, b) {
   if (!a || !b) return false;
   const [shorter, longer] = a.length <= b.length ? [a, b] : [b, a];
@@ -26,46 +21,33 @@ export function namesAreSimilar(a, b) {
   return longer.includes(shorter);
 }
 
-// ACH/NACHA batch text ("DES:PAYROLL ID:... INDN:... CO ID:...") and debit-card
-// noise (type+date prefix, trailing reference numbers) obscure the actual
-// merchant/employer name — mirrors clean_display_name in import_service.py.
+// Strips ACH batch codes and debit-card reference numbers that obscure the
+// real merchant name. Mirrors clean_display_name.
 const DES_SPLIT_RE = /\s+DES:/i;
 const CARD_PREFIX_RE = /^(CHECKCARD|PURCHASE|MOBILE PURCHASE)\s+\d{4}\s+/i;
 const TRAILING_REF_RE = /\s+\d{8,}(\s+RECURRING)?$/i;
 const ATM_DEPOSIT_RE = /\bATM\b.*\bDEPOSIT\b/i;
 
-// A "payment to CRD" row often bundles several unrelated purchases into one
-// lump sum — flagged so the review UI can offer splitting it into itemized
-// sub-transactions. Mirrors CRD_PAYMENT_RE in import_service.py.
 const CRD_PAYMENT_RE = /\bpayment\s+to\s+CRD\b/i;
 
-// POS terminals often print the merchant twice with a date+reference+"PURCHASE"
-// sandwiched in between — see clean_display_name in import_service.py for the
-// full rationale; keep the two in sync.
+// POS terminals often print the merchant twice with noise in between - mirrors
+// clean_display_name.
 const MIDDLE_PURCHASE_RE = /^(.*?)\s+\d{2}\/\d{2}\s+#\d+\s+PURCHASE\s+(.*)$/i;
 
-// Some rows put the transaction date + action keyword *after* the merchant
-// name instead of as a leading prefix — see clean_display_name in
-// import_service.py for the full rationale; keep the two in sync.
 const TRAILING_DATE_ACTION_RE = /\s+\d{2}\/\d{2}\s+(?:MOBILE\s+)?(?:PURCHASE|REFUND)\b.*$/i;
 
-// Amazon's per-order code + domain suffix is unique per purchase and never
-// worth keeping — if the name starts with Amazon, it's Amazon.
+// Amazon's per-order code is unique every time and never worth keeping.
 const AMAZON_RE = /^AMAZON\b/i;
 
-// Zelle rows carry the sender/recipient name, which is rarely worth keeping —
-// collapse to "Zelle" or, with a memo, "Zelle (Memo)". The memo isn't always
-// quoted in the wild ('for "Rent"' vs 'for Rent') — the optional quotes here
-// handle both. Mirrors _clean_zelle_name in import_service.py.
+// Collapses to "Zelle" or "Zelle (Memo)" - the sender/recipient name is rarely
+// worth keeping. Handles both quoted and unquoted memos. Mirrors _clean_zelle_name.
 const ZELLE_RE = /^Zelle\b/i;
 const ZELLE_CONF_RE = /\s*;?\s*Conf#\s*\S+\s*$/i;
 const ZELLE_MEMO_RE = /\bfor\s+"?([^"]+?)"?\s*$/i;
 
-// Known merchants whose raw text (post store-number/date/location stripping)
-// obscures the actual brand name or keeps a per-location store number that's
-// never useful for a personal expense tracker. Necessarily a curated,
-// incomplete list — add to it as new merchants show up, same as BILL_KEYWORDS.
-// Mirrors MERCHANT_ALIASES in import_service.py.
+// Known merchants whose raw text still obscures the real brand name after
+// cleanup. A curated, incomplete list - add to it as new ones show up.
+// Mirrors MERCHANT_ALIASES.
 const MERCHANT_ALIASES = [
   [/^WAL[- ]?MART\b.*$/i, "Walmart"],
   [/^BESTBUYCOM\d*$/i, "Best Buy"],
@@ -80,15 +62,11 @@ const MERCHANT_ALIASES = [
   [/^THE ESTANCIA CLUB,?\s*INC\.?$/i, "The Estancia Club"],
 ];
 
-// A dangling trailing dash (some merchants print "NAME - <phone/address>" and
-// the location gets stripped, leaving the dash orphaned) is just noise.
+// Strips a leftover dash when "NAME - <address>" has its address already stripped.
 const TRAILING_DASH_RE = /\s+-+\s*$/;
 
-// A trailing "<City> <ST>" is location noise for a personal expense tracker —
-// strip it if the last token is a real state abbreviation. Known limitation:
-// can't tell a real trailing noise word ("ONLINE UC") from part of the
-// business name without understanding the text, so this only strips the
-// city+state pair itself, not other trailing cruft.
+// Strips a trailing "<City> <State>" if it ends in a real state abbreviation.
+// Doesn't catch other trailing noise like "ONLINE UC".
 const US_STATE_ABBREVIATIONS = new Set([
   "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID", "IL", "IN", "IA",
   "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ",
@@ -97,28 +75,14 @@ const US_STATE_ABBREVIATIONS = new Set([
 ]);
 const TRAILING_CITY_STATE_RE = /\s+([A-Za-z][A-Za-z.\-']*(?:\s+[A-Za-z][A-Za-z.\-']*){0,2})\s+([A-Z]{2})$/;
 
-// Merchants whose incoming payments are virtually always a reimbursement
-// (a refund, a friend paying you back) rather than real income — matched
-// against the first word, since Zelle/Venmo/Amazon lines keep varying
-// amounts of text after the merchant name. Only applied when there's no
-// learned history for this merchant yet.
 const REIMBURSEMENT_MERCHANT_PREFIXES = new Set(["amazon", "venmo", "zelle"]);
 const FROM_SAVINGS_RE = /\bfrom\s+SAV\b/i;
 
-// The mirror image of FROM_SAVINGS_RE: money moving out of checking and into
-// savings isn't an expense, it's a savings transfer.
+// The reverse of FROM_SAVINGS_RE - money moving into savings isn't an expense.
 const TO_SAVINGS_RE = /\bto\s+SAV\b/i;
 
-// Venmo/Zelle are peer-to-peer apps, not merchants — the sign alone (not
-// learned history) should decide reimbursement vs. expense for these, since
-// both directions collapse to the same bare display name. Amazon is
-// excluded: it's a real merchant where learned history is still the better
-// signal. Mirrors PERSON_TO_PERSON_PREFIXES in import_service.py.
 const PERSON_TO_PERSON_PREFIXES = new Set(["venmo", "zelle"]);
 
-// A word only gets title-cased if it has no uppercase letter past its first
-// character — an intentional mixed-case brand ("LinkedIn") shouldn't be
-// retitled to "Linkedin". Mirrors _smart_title_case in import_service.py.
 function smartTitleCaseWord(word) {
   if (word.length > 1 && /[A-Z]/.test(word.slice(1))) return word;
   return word.slice(0, 1).toUpperCase() + word.slice(1).toLowerCase();
@@ -128,9 +92,7 @@ function smartTitleCase(text) {
   return text.split(" ").map((w) => (w ? smartTitleCaseWord(w) : w)).join(" ");
 }
 
-// Recurring bills whose cleaned name reliably contains one of these words/
-// abbreviations (rent, utility, cable/internet providers) — expand as more
-// come up rather than trying to guess every provider up front.
+// Words that reliably show up in recurring-bill names. Expand as new ones come up.
 const BILL_KEYWORDS = ["rent", "aps", "cox"];
 const BILL_KEYWORD_RE = new RegExp(`\\b(?:${BILL_KEYWORDS.join("|")})\\b`, "i");
 
@@ -151,9 +113,8 @@ export function isPersonToPersonTransfer(cleanedName) {
   return PERSON_TO_PERSON_PREFIXES.has(firstWord);
 }
 
-// True for *either* direction of an internal savings transfer — used to
-// decide whether the display name collapses to the direction-agnostic
-// "Savings". Mirrors is_savings_related in import_service.py.
+// True for either direction of a savings transfer, to collapse the display
+// name to "Savings". Mirrors is_savings_related.
 export function isSavingsRelated(name) {
   return FROM_SAVINGS_RE.test(name) || TO_SAVINGS_RE.test(name);
 }
@@ -218,9 +179,8 @@ export function isCreditCardPayment(name) {
   return CRD_PAYMENT_RE.test(name);
 }
 
-// Some exports (Bank of America) include a "Beginning balance as of ..." row
-// inside the transaction table itself — a running-balance marker, not a real
-// transaction (no amount) — mirrors is_balance_marker_row in import_service.py.
+// Some exports include a "Beginning balance" row that isn't a real transaction.
+// Mirrors is_balance_marker_row.
 const BALANCE_MARKER_RE = /^(?:beginning|ending) balance as of \d{1,2}\/\d{1,2}\/\d{2,4}$/i;
 
 export function isBalanceMarkerRow(name) {
@@ -236,9 +196,8 @@ function findHeader(headers, keywords) {
   return headers[0] || "";
 }
 
-// Some real-world exports prefix the actual transaction table with a summary
-// block (beginning/ending balance, total credits/debits) before the real
-// header row — mirrors _find_header_row_index in import_service.py.
+// Some exports prefix the table with a summary block before the real header
+// row. Mirrors _find_header_row_index.
 function findHeaderRowIndex(rows) {
   for (let i = 0; i < rows.length; i++) {
     const lowered = rows[i].map((c) => c.trim().toLowerCase());
@@ -297,7 +256,7 @@ export function parseAmountFlexible(raw) {
   return negative ? -value : value;
 }
 
-// Minimal RFC4180-ish CSV parser (handles quoted fields, embedded commas/quotes).
+// A minimal CSV parser that handles quoted fields and embedded commas.
 export function parseCsvText(text) {
   const rows = [];
   let row = [];
@@ -330,8 +289,7 @@ export function parseCsvText(text) {
   return { headers, rows: dataRows };
 }
 
-// Annotates raw CSV rows with parsed amount/date/category plus duplicate
-// flags, comparing against the user's existing transactions.
+// Adds parsed amount, date, category, and duplicate flags to each raw row.
 export function annotateImportRows(rawRows, mapping, dateFormat, signConvention, existingTransactions) {
   const dedupMap = new Map();
   const byDateAmount = new Map();
@@ -356,13 +314,9 @@ export function annotateImportRows(rawRows, mapping, dateFormat, signConvention,
     const isTipDepositCandidate = isAtmDeposit(rawName);
     if (isTipDepositCandidate) rawName = "Cash";
 
-    // Category hints must be read *before* the savings-transfer display
-    // collapse below reduces the name to the direction-agnostic "Savings" —
-    // otherwise the from/to distinction that decides REIMBURSEMENT vs
-    // SAVINGS is already gone by the time we'd try to read it. Both that
-    // collapse and the Zelle/Venmo collapse in cleanDisplayName lose a signal
-    // learned history can't recover, so these rows must never be
-    // re-categorized from history afterward — the hint always wins.
+    // Category hints have to be read before the name collapses to "Savings" below,
+    // or the from/to distinction that decides REIMBURSEMENT vs. SAVINGS is gone.
+    // These rows keep the hint and are never re-categorized from history.
     const reimbursementHint = isReimbursementHint(rawName);
     const savingsTransferHint = isSavingsTransferHint(rawName);
     const historyLocked = isPersonToPersonTransfer(rawName) || isSavingsRelated(rawName);
@@ -416,9 +370,8 @@ export function annotateImportRows(rawRows, mapping, dateFormat, signConvention,
           isDuplicate = true;
           duplicateTransaction = dedupMap.get(key);
         } else {
-          // Same date and amount but no exact name match — check for a
-          // looser match (e.g. a manually entered "Cobblestone" against an
-          // imported "Cobblestone Auto Spa") before ruling out a duplicate.
+          // Same date and amount, no exact name match - try a looser match before
+          // ruling out a duplicate.
           const candidates = byDateAmount.get(`${parsedDate}|${amount}`) || [];
           for (const candidate of candidates) {
             if (namesAreSimilar(normName, normalizeName(candidate.name))) {
