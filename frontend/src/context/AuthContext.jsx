@@ -28,7 +28,9 @@ export function AuthProvider({ children }) {
     const stored = localStorage.getItem("user");
     return stored ? JSON.parse(stored) : null;
   });
-  const [initializing, setInitializing] = useState(!localStorage.getItem("token") && localStorage.getItem("demo") !== "true");
+  const [initializing, setInitializing] = useState(
+    !localStorage.getItem("token") && localStorage.getItem("demo") !== "true",
+  );
 
   const _setSession = (newToken, userData) => {
     localStorage.setItem("token", newToken);
@@ -46,7 +48,7 @@ export function AuthProvider({ children }) {
     try {
       await client.post("/auth/logout");
     } catch {
-      // best-effort — clear client state regardless
+      // clear client state
     }
     clearDemo();
     localStorage.removeItem("token");
@@ -100,7 +102,16 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider
-      value={{ token, user, setUser, login, logout, enterDemoMode, isDemo, initializing }}
+      value={{
+        token,
+        user,
+        setUser,
+        login,
+        logout,
+        enterDemoMode,
+        isDemo,
+        initializing,
+      }}
     >
       {children}
     </AuthContext.Provider>

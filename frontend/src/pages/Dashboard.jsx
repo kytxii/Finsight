@@ -1,6 +1,26 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { HOME_BG, HOME_SURFACE, HOME_DIVIDER, HOME_TEXT, HOME_MUTED, HOME_INCOME, HOME_EXPENSE, ACCENT, ACCENT_DEEP, ACCENT_TEXT, CATEGORY_ACCENT, CATEGORY_ICON } from "../components/categoryVisuals";
-import Skel from "../components/Skel";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  HOME_BG,
+  HOME_SURFACE,
+  HOME_DIVIDER,
+  HOME_TEXT,
+  HOME_MUTED,
+  HOME_INCOME,
+  HOME_EXPENSE,
+  ACCENT,
+  ACCENT_DEEP,
+  ACCENT_TEXT,
+  CATEGORY_ACCENT,
+  CATEGORY_ICON,
+} from "../components/shared/categoryVisuals";
+import Skel from "../components/shared/Skel";
 import {
   Cell,
   Tooltip,
@@ -22,102 +42,211 @@ import {
   CATEGORIES,
   CATEGORY_CONFIG,
   INCOME_TYPES,
+  matchesTransaction,
   MONEY_IN_TYPES,
   MONEY_OUT_TYPES,
   fmt,
   fmtWhole,
 } from "../utils/finance";
 import { getNow } from "../utils/time";
-import Navbar from "../components/Navbar";
-import AddTransactionPage from "../components/AddTransactionPage";
-import PaychecksPanel from "../components/PaychecksPanel";
-import RecurringPaymentsModal from "../components/RecurringPaymentsModal";
-import InstallmentsPanel from "../components/InstallmentsPanel";
-import SummaryCard from "../components/SummaryCard";
-import ChartCard from "../components/ChartCard";
-import TransactionTable from "../components/TransactionTable";
-import CategoryTrendPanel from "../components/CategoryTrendPanel";
-import CategoryDetailPanel from "../components/CategoryDetailPanel";
-import CategoryUpcomingPanel from "../components/CategoryUpcomingPanel";
-import EditTransactionModal from "../components/EditTransactionModal";
-import { BalanceBody, BillsBody, CashBody, SavingsBody, IncomeBody, ExpensesBody } from "../components/OverviewBreakdownSheet";
-import Footer from "../components/Footer";
+import Navbar from "../components/desktop/Navbar";
+import AddTransactionPage from "../components/desktop/AddTransactionPage";
+import PaychecksPanel from "../components/desktop/PaychecksPanel";
+import RecurringPaymentsModal from "../components/desktop/RecurringPaymentsModal";
+import InstallmentsPanel from "../components/desktop/InstallmentsPanel";
+import SummaryCard from "../components/desktop/SummaryCard";
+import ChartCard from "../components/shared/ChartCard";
+import TransactionTable from "../components/desktop/TransactionTable";
+import CategoryTrendPanel from "../components/desktop/CategoryTrendPanel";
+import CategoryDetailPanel from "../components/desktop/CategoryDetailPanel";
+import CategoryUpcomingPanel from "../components/desktop/CategoryUpcomingPanel";
+import EditTransactionModal from "../components/desktop/EditTransactionModal";
+import {
+  BalanceBody,
+  BillsBody,
+  CashBody,
+  SavingsBody,
+  IncomeBody,
+  ExpensesBody,
+} from "../components/desktop/OverviewBreakdownSheet";
+import Footer from "../components/shared/Footer";
 
-// True when `range` is exactly one calendar month (the shape both
-// "Current Month"/"Last Month" presets and the month-stepper produce) -
-// drives whether the page header shows a month title with prev/next arrows
-// or a plain preset label.
+// Shows the month title with arrows when the range is a single month.
 function isSingleMonthRange(range) {
   if (!range.from || !range.to) return false;
   const { from, to } = range;
   if (from.getDate() !== 1 || from.getHours() !== 0) return false;
-  const expectedTo = new Date(from.getFullYear(), from.getMonth() + 1, 0, 23, 59, 59, 999);
-  return to.getFullYear() === expectedTo.getFullYear()
-    && to.getMonth() === expectedTo.getMonth()
-    && to.getDate() === expectedTo.getDate();
+  const expectedTo = new Date(
+    from.getFullYear(),
+    from.getMonth() + 1,
+    0,
+    23,
+    59,
+    59,
+    999,
+  );
+  return (
+    to.getFullYear() === expectedTo.getFullYear() &&
+    to.getMonth() === expectedTo.getMonth() &&
+    to.getDate() === expectedTo.getDate()
+  );
 }
 
-// Sidebar Tools icon - the exact tile mobile uses: #c7c7cc glyph on a fixed
-// #2a2a2e dark-grey square (MobileHome.jsx's IconGray + its icon-tile div),
-// dropped into the desktop button as-is rather than recolored to track the
-// button's own muted/active state.
 function IconToolTile({ children }) {
   return (
-    <div style={{
-      width: 30, height: 30, borderRadius: 9, flexShrink: 0, background: "#2a2a2e",
-      display: "flex", alignItems: "center", justifyContent: "center",
-      boxShadow: "inset 0 1px 0 rgba(255,255,255,0.12)",
-    }}>
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#c7c7cc" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+    <div
+      style={{
+        width: 30,
+        height: 30,
+        borderRadius: 9,
+        flexShrink: 0,
+        background: "#2a2a2e",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.12)",
+      }}
+    >
+      <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="#c7c7cc"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
         {children}
       </svg>
     </div>
   );
 }
 
-// A floating stat chip for the borderless trend section - a subtle glass
-// tint is enough to read as "a card" without the section itself needing a
-// background of its own.
-//
-// Dot, name and amount on one line. Never shrinks and never truncates - a
-// legend whose labels are clipped to "Subscri..." has stopped doing the one
-// job it has - so the strip it sits in wraps instead when the categories
-// won't fit on a line.
 function TrendPill({ label, value, color }) {
   return (
-    <div style={{ flex: "0 0 auto", display: "flex", alignItems: "center", gap: 6, padding: "6px 11px", borderRadius: 999, backgroundColor: "rgba(255,255,255,0.05)" }}>
-      <span style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: color, flexShrink: 0 }} />
-      <span style={{ whiteSpace: "nowrap", fontSize: 13, fontWeight: 600, color: HOME_MUTED }}>{label}</span>
-      <span style={{ whiteSpace: "nowrap", fontSize: 13, fontWeight: 700, color: HOME_TEXT, fontVariantNumeric: "tabular-nums" }}>{value}</span>
+    <div
+      style={{
+        flex: "0 0 auto",
+        display: "flex",
+        alignItems: "center",
+        gap: 6,
+        padding: "6px 11px",
+        borderRadius: 999,
+        backgroundColor: "rgba(255,255,255,0.05)",
+      }}
+    >
+      <span
+        style={{
+          width: 8,
+          height: 8,
+          borderRadius: "50%",
+          backgroundColor: color,
+          flexShrink: 0,
+        }}
+      />
+      <span
+        style={{
+          whiteSpace: "nowrap",
+          fontSize: 13,
+          fontWeight: 600,
+          color: HOME_MUTED,
+        }}
+      >
+        {label}
+      </span>
+      <span
+        style={{
+          whiteSpace: "nowrap",
+          fontSize: 13,
+          fontWeight: 700,
+          color: HOME_TEXT,
+          fontVariantNumeric: "tabular-nums",
+        }}
+      >
+        {value}
+      </span>
     </div>
   );
 }
 
-// "saved so far / projected ceiling" as a stacked fraction (numerator, rule,
-// denominator) instead of a slash - reads better at the Estimated Savings
-// column's smaller size than a single "$X / $Y" line would.
 function StackedFraction({ num, den, color }) {
   return (
-    <span style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-start", lineHeight: 1.2 }}>
-      <span style={{ fontSize: 20, fontWeight: 700, color, fontVariantNumeric: "tabular-nums" }}>{num}</span>
-      <span style={{ width: "100%", borderTop: `1.5px solid color-mix(in srgb, ${color} 45%, transparent)`, margin: "3px 0" }} />
-      <span style={{ fontSize: 13, fontWeight: 600, color: HOME_MUTED, fontVariantNumeric: "tabular-nums" }}>{den}</span>
+    <span
+      style={{
+        display: "inline-flex",
+        flexDirection: "column",
+        alignItems: "flex-start",
+        lineHeight: 1.2,
+      }}
+    >
+      <span
+        style={{
+          fontSize: 20,
+          fontWeight: 700,
+          color,
+          fontVariantNumeric: "tabular-nums",
+        }}
+      >
+        {num}
+      </span>
+      <span
+        style={{
+          width: "100%",
+          borderTop: `1.5px solid color-mix(in srgb, ${color} 45%, transparent)`,
+          margin: "3px 0",
+        }}
+      />
+      <span
+        style={{
+          fontSize: 13,
+          fontWeight: 600,
+          color: HOME_MUTED,
+          fontVariantNumeric: "tabular-nums",
+        }}
+      >
+        {den}
+      </span>
     </span>
   );
 }
 
-// One quarter of the unified overview panel (#123) - same click-to-expand
-// affordance the old standalone SummaryCard gave Balance/Bills/Cash/Savings
-// (chevron flips, ring highlight while its drawer is open below), just laid
-// out as a column inside one shared surface instead of four separate card
-// shells side by side.
-function OverviewColumn({ label, value, valueNode, color, caption, onClick, active, first }) {
+function OverviewPanelSkeleton({ surface, border }) {
+  return (
+    <div
+      className="grid grid-cols-4 rounded-2xl overflow-hidden"
+      style={{ backgroundColor: surface }}
+    >
+      {[...Array(4)].map((_, i) => (
+        <div
+          key={i}
+          style={{
+            padding: "16px 20px",
+            borderLeft: i === 0 ? "none" : `1px solid ${border}`,
+          }}
+        >
+          <Skel h={14} w="55%" />
+          <Skel h={28} w="70%" style={{ marginTop: 8 }} />
+          <Skel h={12} w="62%" style={{ marginTop: 7 }} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// One column of the unified overview panel (#123).
+function OverviewColumn({
+  label,
+  value,
+  valueNode,
+  color,
+  caption,
+  onClick,
+  active,
+  first,
+}) {
   const [hovered, setHovered] = useState(false);
   const tint = color ?? HOME_TEXT;
-  // Category pages reuse this same column for read-only stats. With nothing
-  // to open there's no chevron to point at a drawer and no hover tint to
-  // promise one, and it renders as a div so it isn't a tab stop that does
-  // nothing when you activate it.
   const interactive = onClick != null;
   const Tag = interactive ? "button" : "div";
   return (
@@ -128,88 +257,138 @@ function OverviewColumn({ label, value, valueNode, color, caption, onClick, acti
       onMouseLeave={interactive ? () => setHovered(false) : undefined}
       className={`text-left transition-all duration-150 ${interactive ? "cursor-pointer active:scale-[0.98]" : ""}`}
       style={{
-        flex: 1, minWidth: 0, padding: "16px 20px", border: "none", borderRadius: 0,
+        flex: 1,
+        minWidth: 0,
+        padding: "16px 20px",
+        border: "none",
+        borderRadius: 0,
         borderLeft: first ? "none" : `1px solid ${HOME_DIVIDER}`,
         backgroundColor: active
           ? `color-mix(in srgb, ${tint} 12%, transparent)`
           : hovered
             ? `color-mix(in srgb, ${tint} 7%, transparent)`
             : "transparent",
-        font: "inherit", color: "inherit",
+        font: "inherit",
+        color: "inherit",
       }}
     >
       <div className="flex items-center justify-between gap-2">
-        <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: HOME_MUTED, margin: 0 }}>{label}</p>
+        <p
+          style={{
+            fontSize: 11,
+            fontWeight: 700,
+            letterSpacing: "0.06em",
+            textTransform: "uppercase",
+            color: HOME_MUTED,
+            margin: 0,
+          }}
+        >
+          {label}
+        </p>
         {interactive && (
           <svg
-            xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none"
-            stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+            xmlns="http://www.w3.org/2000/svg"
+            width="13"
+            height="13"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
             style={{
-              color: active || hovered ? tint : HOME_MUTED, flexShrink: 0,
-              transform: active ? "rotate(180deg)" : "none", transition: "transform 200ms ease, color 150ms ease",
+              color: active || hovered ? tint : HOME_MUTED,
+              flexShrink: 0,
+              transform: active ? "rotate(180deg)" : "none",
+              transition: "transform 200ms ease, color 150ms ease",
             }}
           >
             <path d="M6 9l6 6 6-6" />
           </svg>
         )}
       </div>
-      {valueNode ?? <p style={{ fontSize: 22, fontWeight: 700, color, margin: "6px 0 0", fontVariantNumeric: "tabular-nums" }}>{value}</p>}
-      {caption != null && <p style={{ fontSize: 11, fontWeight: 600, color: HOME_MUTED, margin: "5px 0 0" }}>{caption}</p>}
+      {valueNode ?? (
+        <p
+          style={{
+            fontSize: 22,
+            fontWeight: 700,
+            color,
+            margin: "6px 0 0",
+            fontVariantNumeric: "tabular-nums",
+          }}
+        >
+          {value}
+        </p>
+      )}
+      {caption != null && (
+        <p
+          style={{
+            fontSize: 11,
+            fontWeight: 600,
+            color: HOME_MUTED,
+            margin: "5px 0 0",
+          }}
+        >
+          {caption}
+        </p>
+      )}
     </Tag>
   );
 }
 
-// Neither PRESETS nor getPresetRange generalize past "this month" / "last
-// month relative to today" - the arrows need to walk to an arbitrary month
-// relative to whatever's currently showing, so this steps off `range.from`
-// instead of `now`.
+// Steps from the month being viewed, not from today.
 function stepMonth(range, dir) {
   const anchor = range.from ?? getNow();
-  const from = new Date(anchor.getFullYear(), anchor.getMonth() + dir, 1, 0, 0, 0, 0);
-  const to = new Date(anchor.getFullYear(), anchor.getMonth() + dir + 1, 0, 23, 59, 59, 999);
+  const from = new Date(
+    anchor.getFullYear(),
+    anchor.getMonth() + dir,
+    1,
+    0,
+    0,
+    0,
+    0,
+  );
+  const to = new Date(
+    anchor.getFullYear(),
+    anchor.getMonth() + dir + 1,
+    0,
+    23,
+    59,
+    59,
+    999,
+  );
   return { from, to };
 }
 
-// Same shape stepMonth produces, but jumping straight to an arbitrary
-// year/month instead of stepping relative to the current one - what the
-// header's month/year picker (#124) uses once a specific one is clicked.
 function monthRangeFor(year, month) {
   const from = new Date(year, month, 1, 0, 0, 0, 0);
   const to = new Date(year, month + 1, 0, 23, 59, 59, 999);
   return { from, to };
 }
 
-const MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const MONTH_ABBR = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
 
-// "ALL" is no longer a destination of its own - the dashboard *is* the
-// all-categories view, and picking a category opens that category's own page
-// over it (the same takeover the sidebar Tools use). It survives only as the
-// internal "no category page open" value of `activeTab`, so every list the
-// user actually sees is built from the real categories.
-//
-// CATEGORIES itself still carries "ALL" because mobile's MobileActivity
-// cycles through it as a filter; that's a separate surface with a separate
-// interaction, so it isn't touched here.
+// "ALL" is a UI state, not a real category.
 const REAL_CATEGORIES = CATEGORIES.filter((c) => c !== "ALL");
-// Same list, named for how the trend chart reads it - one series per category.
 const TREND_CATEGORIES = REAL_CATEGORIES;
-// Target point count for the full-bleed trend chart's day buckets - stays
-// daily up to ~45 days (covers every 1M view, even a 31-day month) and
-// widens the bucket for longer ranges so the chart doesn't get noisier as
-// the window grows.
+// The chart aims for this many points, whatever the date range.
 const TREND_TARGET_POINTS = 45;
-// Legend pills per row before breaking to the next one. Eight categories -
-// the maximum - lands as 4x2.
 const TREND_LEGEND_PER_ROW = 4;
-// Scales with viewport height instead of a fixed 560px, which looked right
-// on the screen it was tuned on but way oversized on shorter displays (a
-// 1366x768 laptop, a browser window that isn't maximized) - 45vh keeps it
-// proportionate, clamped so it's never too cramped or too dominant.
 const TREND_CHART_HEIGHT = "clamp(320px, 45vh, 560px)";
 
-// Titles for the shared overview-card drawer (brainstorm option 2) - matches
-// OverviewBreakdownSheet's own TITLES copy, kept local since that file can
-// only export components (react-refresh/only-export-components).
 const OVERVIEW_DRAWER_TITLES = {
   balance: "Current Balance",
   bills: "Upcoming Bills",
@@ -218,8 +397,6 @@ const OVERVIEW_DRAWER_TITLES = {
   income: "Income",
   expenses: "Expenses",
 };
-// Sidebar Tools (Paychecks/Recurring Payments/Installments) - main-content
-// takeover page titles.
 const TOOL_TITLES = {
   paychecks: "Paychecks",
   recurring: "Recurring Payments",
@@ -228,9 +405,6 @@ const TOOL_TITLES = {
 };
 const TOOL_TRANSITION_MS = 280;
 const DRAWER_TRANSITION_MS = 380;
-// Shorter than DRAWER_TRANSITION_MS on purpose - swapping content in an
-// already-open drawer only needs a quick crossfade (the drawer itself isn't
-// moving), not the full open/close duration.
 const SWITCH_TRANSITION_MS = 180;
 const TREND_CATEGORIES_KEY = "dashboardTrendCategories";
 const DEFAULT_TREND_CATEGORIES = ["INCOME", "EXPENSE"];
@@ -249,13 +423,8 @@ function loadTrendCategories() {
 export default function Dashboard() {
   const { isDemo } = useAuth();
   const [transactions, setTransactions] = useState([]);
-  // Tip deposits are income the moment cash reaches checking (#131), so the
-  // Income figures need them alongside transactions.
   const [tipDeposits, setTipDeposits] = useState([]);
 
-  // Moved up here (was declared much further down) - the picker block below
-  // and trackedYears/trackedMonthsByYear both need it, and its init only
-  // depends on getNow(), so there's no ordering reason for it to sit later.
   const [dateRange, setDateRange] = useState(() => {
     const now = getNow();
     const from = new Date(now);
@@ -267,21 +436,15 @@ export default function Dashboard() {
     return { from, to };
   });
 
-  // Years the header's year picker offers (#124) - only ones with at least
-  // one transaction, not every year since account creation. `transactions`
-  // is the whole unfiltered history (date-range filtering happens client-side
-  // below), so this doesn't need its own fetch. Declared up here, ahead of
-  // the picker's own state block, since its effects reference this.
+  // Only years that have transactions show in the year picker (#124).
   const trackedYears = useMemo(() => {
-    const years = new Set(transactions.map((t) => Number(t.transaction_date.slice(0, 4))));
+    const years = new Set(
+      transactions.map((t) => Number(t.transaction_date.slice(0, 4))),
+    );
     return [...years].sort((a, b) => a - b);
   }, [transactions]);
 
-  // Same idea, per year - the month picker only offers months that year
-  // actually has a transaction in, not every month of the calendar. Keyed
-  // by year since the same month index means something different depending
-  // on which year is selected (e.g. 2025 might skip Jan-Mar while 2026 has
-  // them).
+  // Only months that have transactions, grouped by year.
   const trackedMonthsByYear = useMemo(() => {
     const map = {};
     for (const t of transactions) {
@@ -298,15 +461,7 @@ export default function Dashboard() {
   const [savings, setSavings] = useState(null);
   const [savingsStatus, setSavingsStatus] = useState("loading"); // loading | ok | no-schedule | no-amounts | no-history | error
   const [breakdownCell, setBreakdownCell] = useState(null); // null | balance | bills | cash | savings | income | expenses
-  // Staged close: content (and the active-card ring) stays put while the
-  // drawer fades/slides out, then unmounts once the transition finishes -
-  // otherwise it would just vanish instantly instead of animating closed.
   const [breakdownClosing, setBreakdownClosing] = useState(false);
-  // Switching from one already-open card to a different one: breakdownCell
-  // moves to the new cell immediately, and the *previous* cell's key sits
-  // here just long enough to render as a second, absolutely-positioned layer
-  // fading out while the new content (a fresh key={breakdownCell} mount)
-  // fades in on top of it - a real crossfade, not a fade-to-blank-then-back.
   const [outgoingCell, setOutgoingCell] = useState(null);
   const outgoingTimer = useRef(null);
   const breakdownCloseTimer = useRef(null);
@@ -316,34 +471,27 @@ export default function Dashboard() {
   const [devForceError, setDevForceError] = useState(false);
   const [devLastFetch, setDevLastFetch] = useState(null);
   const devForceErrorRef = useRef(false);
-  const [activeTab, setActiveTab] = useState("ALL"); // "ALL" = dashboard; any category = that category's page
+  const [activeTab, setActiveTab] = useState("ALL"); // "ALL" | any category
   const [categoryClosing, setCategoryClosing] = useState(false);
   const categoryCloseTimer = useRef(null);
-  const [trendMonths, setTrendMonths] = useState(1); // 1 | 3 | 6 | 12 | "all" - full-bleed trend chart's own window
-  // The range toggle's selected pill is one shared element that slides between
-  // options rather than a background colour switching on each button, so the
-  // selection reads as moving instead of teleporting. The options are
-  // different widths ("1M" vs "Lifetime"), so the target has to be measured
-  // off the real DOM rather than computed from an index.
-  //
-  // Null until measured: mounting the indicator already at the right place
-  // means the browser has nothing to animate from on first paint, which is
-  // what stops it sliding in from the left edge on load.
+  const [trendMonths, setTrendMonths] = useState(1); // 1 | 3 | 6 | 12 | "all"
   const trendRangeRef = useRef(null);
   const [rangeIndicator, setRangeIndicator] = useState(null);
   const [rangeHovered, setRangeHovered] = useState(null); // which range pill (1|3|6|12|"all") is hovered, or null
-  const [visibleCategories, setVisibleCategories] = useState(() => loadTrendCategories());
+  const [visibleCategories, setVisibleCategories] = useState(() =>
+    loadTrendCategories(),
+  );
 
-  // Layout effect, not a plain one, so the measurement lands before paint and
-  // the pill never shows at a stale position for a frame. The observer covers
-  // the cases that change a button's width without changing the selection -
-  // a webfont finishing load, browser zoom.
   useLayoutEffect(() => {
     const wrap = trendRangeRef.current;
     if (!wrap) return;
     const measure = () => {
       const active = wrap.querySelector('[data-range-active="true"]');
-      if (active) setRangeIndicator({ left: active.offsetLeft, width: active.offsetWidth });
+      if (active)
+        setRangeIndicator({
+          left: active.offsetLeft,
+          width: active.offsetWidth,
+        });
     };
     measure();
     const ro = new ResizeObserver(measure);
@@ -354,26 +502,6 @@ export default function Dashboard() {
   const [categoriesHovered, setCategoriesHovered] = useState(false);
   const [categoriesSaved, setCategoriesSaved] = useState(false);
   const categoriesPanelRef = useRef(null);
-  // Header's month/year picker (#124) - null | "month" | "year". The strip
-  // of choices opens inline next to the title, pushing the next-month arrow
-  // right as it grows, instead of overlaying a dropdown on top of the page.
-  // Animated via `max-width` rather than `grid-template-columns: 0fr->1fr` -
-  // that trick reads fine for a single already-known-size drawer (see
-  // OverviewBreakdownSheet's grid-template-rows use), but interpolating a
-  // grid track's `fr` unit isn't reliably animatable the way plain length
-  // properties are, and it showed up here as the close snapping shut
-  // instantly instead of sliding. `max-width` doesn't have that problem, but
-  // needs an actual pixel target instead of `1fr` - `pickerWidth` below is
-  // that target, measured off the real content each time it changes.
-  //
-  // `datePicker` is the requested/target state (what the click asked for);
-  // `renderPicker` is what's actually mounted right now and can lag behind
-  // it, so content stays visible/measured before the width transition plays
-  // rather than the two racing in the same paint. `pickerOpen` drives the
-  // max-width transition itself, kept as its own boolean so switching
-  // straight from month to year (still "open" the whole time datePicker-wise)
-  // still goes through a real close-then-reopen instead of the content just
-  // cutting over mid-strip.
   const [datePicker, setDatePicker] = useState(null);
   const [renderPicker, setRenderPicker] = useState(null);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -382,27 +510,17 @@ export default function Dashboard() {
   const pickerContentRef = useRef(null);
   const datePickerRef = useRef(null);
   const PICKER_TRANSITION_MS = 320;
-  // The drawer's own cubic-bezier(0.32,0.72,0,1) is heavily front-loaded -
-  // 72% of the motion lands in the first third of the duration, which reads
-  // as a near-instant snap rather than a visible slide on a strip this
-  // small/short-lived. An even, standard ease reads as actual motion here.
   const PICKER_EASE = "cubic-bezier(0.4, 0, 0.2, 1)";
 
-  // Blocks a new open/close/switch request until the current one has fully
-  // finished animating - spamming Month/Year otherwise re-triggers the
-  // effect below mid-transition, cancelling and restarting it every click
-  // instead of ever letting the slide actually play out. A plain ref (not
-  // state) since it only ever gates click handlers, never drives a render.
   const pickerBusyRef = useRef(false);
   const pickerBusyTimerRef = useRef(null);
   function lockPicker(ms) {
     pickerBusyRef.current = true;
     clearTimeout(pickerBusyTimerRef.current);
-    pickerBusyTimerRef.current = setTimeout(() => { pickerBusyRef.current = false; }, ms);
+    pickerBusyTimerRef.current = setTimeout(() => {
+      pickerBusyRef.current = false;
+    }, ms);
   }
-  // Toggling closed re-checks the button clicked rather than always the
-  // opposite of open, so a click while busy (ignored below) can't leave a
-  // stale toggle target for the next click that lands after the lock clears.
   function requestPicker(next) {
     if (pickerBusyRef.current) return;
     setDatePicker((p) => (p === next ? null : next));
@@ -411,97 +529,69 @@ export default function Dashboard() {
   useEffect(() => {
     clearTimeout(pickerTimerRef.current);
     if (datePicker == null) {
-      // Closing - collapse first, unmount the strip's content only once
-      // that's finished so it's visibly still there while it shrinks
-      // (mirrors opening, where content is already there as it grows).
       if (renderPicker != null) lockPicker(PICKER_TRANSITION_MS + 60);
       setPickerOpen(false);
-      pickerTimerRef.current = setTimeout(() => setRenderPicker(null), PICKER_TRANSITION_MS);
+      pickerTimerRef.current = setTimeout(
+        () => setRenderPicker(null),
+        PICKER_TRANSITION_MS,
+      );
     } else if (renderPicker == null) {
-      // Opening from fully closed - mount the new content but stay closed
-      // (max-width 0) for this render; the layout-effect below measures it,
-      // and the plain effect after that opens it only once that measurement
-      // has actually painted, so the transition has a real "before" to
-      // animate from instead of both changes landing in the same frame.
       lockPicker(PICKER_TRANSITION_MS + 60);
       setRenderPicker(datePicker);
     } else if (renderPicker !== datePicker) {
-      // Switching between month and year while already open - collapse the
-      // old content first, then swap and reopen, instead of the buttons
-      // just cutting over mid-strip with no transition at all. Two transition
-      // windows back-to-back, so the lock covers both.
       lockPicker(PICKER_TRANSITION_MS * 2 + 60);
       setPickerOpen(false);
-      pickerTimerRef.current = setTimeout(() => setRenderPicker(datePicker), PICKER_TRANSITION_MS);
+      pickerTimerRef.current = setTimeout(
+        () => setRenderPicker(datePicker),
+        PICKER_TRANSITION_MS,
+      );
     }
-    // renderPicker deliberately excluded - it's only ever changed by this
-    // same effect, and reacting to it too would refire this on its own updates.
+    // renderPicker is set by this effect, so watching it would loop.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [datePicker]);
 
-  useEffect(() => () => {
-    clearTimeout(pickerTimerRef.current);
-    clearTimeout(pickerBusyTimerRef.current);
-  }, []);
+  useEffect(
+    () => () => {
+      clearTimeout(pickerTimerRef.current);
+      clearTimeout(pickerBusyTimerRef.current);
+    },
+    [],
+  );
 
-  // Measures the just-mounted strip before it's opened (see above) - runs
-  // synchronously after the DOM update but before the browser paints, so the
-  // 0-width state below never actually flashes on screen with the wrong
-  // target baked in.
   useLayoutEffect(() => {
     if (renderPicker && pickerContentRef.current) {
       setPickerWidth(pickerContentRef.current.scrollWidth);
     }
-    // Re-measure if the strip's own item count can change under it - a new
-    // tracked year/month, or (month strip specifically) the selected year
-    // changing which months that year actually has data for.
+    // Re-measures whenever the number of choices can change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [renderPicker, trackedYears.length, dateRange.from.getFullYear()]);
 
-  // Opens the strip once it's mounted, measured, and actually matches what
-  // was requested - deliberately a normal (post-paint) effect, not the
-  // layout one above, so the closed/0 state gets a real paint first and the
-  // max-width transition has something to animate from.
   useEffect(() => {
     if (renderPicker && renderPicker === datePicker) {
       setPickerOpen(true);
     }
   }, [renderPicker, datePicker, pickerWidth]);
-  // Sidebar tools (replaces the old PERIOD section) - Paychecks/Recurring/
-  // Installments/Add take over the main content pane instead of opening
-  // Navbar's separate drawer or ballooning the sidebar.
   const [toolMode, setToolMode] = useState(null); // null | "paychecks" | "recurring" | "installments" | "add"
-  // Staged close so the page can slide back out instead of just vanishing -
-  // toolMode stays set (still rendering the same page) through the slide,
-  // and only clears once the transition finishes. Switching directly from
-  // one tool to another (not via close) skips this - it's a swap, not an
-  // exit, so it doesn't need the slide.
   const [toolClosing, setToolClosing] = useState(false);
   const toolCloseTimer = useRef(null);
-  // Which tools have ever been opened this session - gates lazy-mounting
-  // each panel (no reason to fetch Paychecks/Recurring/Installments data
-  // before the user asks for it), but once a tool's in here it stays
-  // mounted for the rest of the session so closing/reopening never refetches.
   const [openedTools, setOpenedTools] = useState(new Set());
-  const [recurringSaveState, setRecurringSaveState] = useState({ isDirty: false, isSaving: false, saveStatus: "idle", onSave: null });
-  // Same "bump a counter, child watches it" signal MobileDashboard already
-  // uses for its own Recurring/Installments "+" buttons - the add UI lives
-  // inside each panel (a new draft card, a form), not here, so this is just
-  // how the page-level header button reaches in and triggers it.
+  const [recurringSaveState, setRecurringSaveState] = useState({
+    isDirty: false,
+    isSaving: false,
+    saveStatus: "idle",
+    onSave: null,
+  });
   const [recurringAddSignal, setRecurringAddSignal] = useState(0);
   const [installmentsAddSignal, setInstallmentsAddSignal] = useState(0);
   function openTool(mode) {
     clearTimeout(toolCloseTimer.current);
     setToolClosing(false);
     setToolMode(mode);
-    setOpenedTools(prev => prev.has(mode) ? prev : new Set(prev).add(mode));
+    setOpenedTools((prev) => (prev.has(mode) ? prev : new Set(prev).add(mode)));
   }
   function closeTool() {
-    // No tool open means there's nothing to slide out - and setting
-    // toolClosing anyway would flip `(toolMode || toolClosing)` below true
-    // for a full TOOL_TRANSITION_MS, unmounting the whole dashboard <main>
-    // and remounting it when the timer clears. That read as the entire page
-    // refreshing every time a tool switch called through to here.
+    // Setting toolClosing with no tool open remounts the page, which looks
+    // like a full refresh.
     if (toolMode == null) return;
     clearTimeout(toolCloseTimer.current);
     setToolClosing(true);
@@ -511,19 +601,11 @@ export default function Dashboard() {
     }, TOOL_TRANSITION_MS);
   }
 
-  // Category pages are the same takeover the Tools use, just driven by
-  // `activeTab` instead of `toolMode` - "ALL" is the closed state (the
-  // dashboard), any real category is an open page with a back button.
-  // categoryClosing mirrors toolClosing: activeTab stays on the category
-  // through the slide-out so the page is still rendering its own content
-  // while it animates, and only drops back to "ALL" once that finishes.
+  // Opens the same way Tools do, but keyed to `activeTab`. "ALL" means closed.
   function openCategory(cat) {
     clearTimeout(categoryCloseTimer.current);
     clearTimeout(toolCloseTimer.current);
     setCategoryClosing(false);
-    // A category and a tool occupy the same slot, so this is a swap, not an
-    // exit - same reasoning as tool-to-tool switching, which also skips the
-    // close animation rather than playing it into the incoming page.
     setToolClosing(false);
     setToolMode(null);
     setActiveTab(cat);
@@ -538,24 +620,31 @@ export default function Dashboard() {
     }, TOOL_TRANSITION_MS);
   }
   const [editingTransaction, setEditingTransaction] = useState(null);
-  // Tracks whether the detail modal was opened from a search result (in
-  // which case it offers a Locate action) vs. from the table's own edit
-  // pencil (where the row is already in view, so Locate would be a no-op).
   const [editingFromSearch, setEditingFromSearch] = useState(false);
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(10);
   const [typeFilter, setTypeFilter] = useState(null);
+  const [tableQuery, setTableQuery] = useState("");
   const [sortColumn, setSortColumn] = useState("date");
   const [sortDir, setSortDir] = useState("desc");
 
   function handleSort(col) {
     if (col === "date") {
-      if (sortColumn === "date") setSortDir(d => d === "asc" ? "desc" : "asc");
-      else { setSortColumn("date"); setSortDir("desc"); }
+      if (sortColumn === "date")
+        setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+      else {
+        setSortColumn("date");
+        setSortDir("desc");
+      }
     } else {
-      if (sortColumn !== col) { setSortColumn(col); setSortDir("asc"); }
-      else if (sortDir === "asc") setSortDir("desc");
-      else { setSortColumn("date"); setSortDir("desc"); }
+      if (sortColumn !== col) {
+        setSortColumn(col);
+        setSortDir("asc");
+      } else if (sortDir === "asc") setSortDir("desc");
+      else {
+        setSortColumn("date");
+        setSortDir("desc");
+      }
     }
   }
   const [highlightId, setHighlightId] = useState(null);
@@ -570,13 +659,17 @@ export default function Dashboard() {
 
   function gotoMonth(monthIndex) {
     setActivePreset(null);
-    setDateRange((prev) => monthRangeFor((prev.from ?? getNow()).getFullYear(), monthIndex));
+    setDateRange((prev) =>
+      monthRangeFor((prev.from ?? getNow()).getFullYear(), monthIndex),
+    );
     setDatePicker(null);
   }
 
   function gotoYear(year) {
     setActivePreset(null);
-    setDateRange((prev) => monthRangeFor(year, (prev.from ?? getNow()).getMonth()));
+    setDateRange((prev) =>
+      monthRangeFor(year, (prev.from ?? getNow()).getMonth()),
+    );
     setDatePicker(null);
   }
 
@@ -588,57 +681,86 @@ export default function Dashboard() {
       setDevForceError(false);
       throw new Error("Forced error");
     }
-    if (devDelay > 0) await new Promise(r => setTimeout(r, devDelay));
+    if (devDelay > 0) await new Promise((r) => setTimeout(r, devDelay));
     return getTransactions();
   }
 
   useEffect(() => {
-    devFetch().then((res) => {
-      setTransactions(res.data);
-      setLoading(false);
-      setDevLastFetch(new Date());
-    }).catch(() => { setLoading(false); });
+    devFetch()
+      .then((res) => {
+        setTransactions(res.data);
+        setLoading(false);
+        setDevLastFetch(new Date());
+      })
+      .catch(() => {
+        setLoading(false);
+      });
   }, []);
 
   function loadTipDeposits() {
-    getTipDeposits().then((res) => setTipDeposits(res.data)).catch(() => setTipDeposits([]));
+    getTipDeposits()
+      .then((res) => setTipDeposits(res.data))
+      .catch(() => setTipDeposits([]));
   }
 
   function loadSafeToSpend() {
-    getSpendableSurplus().then((res) => {
-      setSafeToSpend(res.data);
-      setSafeToSpendStatus("ok");
-    }).catch((err) => {
-      const detail = err.response?.data?.detail;
-      setSafeToSpend(null);
-      if (detail === "No starting balance set") setSafeToSpendStatus("no-balance");
-      else if (detail === "No active paycheck schedule found") setSafeToSpendStatus("no-schedule");
-      else setSafeToSpendStatus("error");
-    });
+    getSpendableSurplus()
+      .then((res) => {
+        setSafeToSpend(res.data);
+        setSafeToSpendStatus("ok");
+      })
+      .catch((err) => {
+        const detail = err.response?.data?.detail;
+        setSafeToSpend(null);
+        if (detail === "No starting balance set")
+          setSafeToSpendStatus("no-balance");
+        else if (detail === "No active paycheck schedule found")
+          setSafeToSpendStatus("no-schedule");
+        else setSafeToSpendStatus("error");
+      });
   }
 
   function loadSavings() {
-    getEstimatedSavings().then((res) => {
-      setSavings(res.data);
-      setSavingsStatus("ok");
-    }).catch((err) => {
-      const detail = err.response?.data?.detail;
-      setSavings(null);
-      if (detail === "No active paycheck schedule found") setSavingsStatus("no-schedule");
-      else if (detail === "No paycheck amounts yet") setSavingsStatus("no-amounts");
-      else if (detail === "Not enough spending history") setSavingsStatus("no-history");
-      else setSavingsStatus("error");
-    });
+    getEstimatedSavings()
+      .then((res) => {
+        setSavings(res.data);
+        setSavingsStatus("ok");
+      })
+      .catch((err) => {
+        const detail = err.response?.data?.detail;
+        setSavings(null);
+        if (detail === "No active paycheck schedule found")
+          setSavingsStatus("no-schedule");
+        else if (detail === "No paycheck amounts yet")
+          setSavingsStatus("no-amounts");
+        else if (detail === "Not enough spending history")
+          setSavingsStatus("no-history");
+        else setSavingsStatus("error");
+      });
   }
 
-  useEffect(() => { loadSafeToSpend(); loadSavings(); loadTipDeposits(); }, []);
-  useEffect(() => () => { clearTimeout(breakdownCloseTimer.current); clearTimeout(outgoingTimer.current); clearTimeout(toolCloseTimer.current); clearTimeout(categoryCloseTimer.current); }, []);
+  useEffect(() => {
+    loadSafeToSpend();
+    loadSavings();
+    loadTipDeposits();
+  }, []);
+  useEffect(
+    () => () => {
+      clearTimeout(breakdownCloseTimer.current);
+      clearTimeout(outgoingTimer.current);
+      clearTimeout(toolCloseTimer.current);
+      clearTimeout(categoryCloseTimer.current);
+    },
+    [],
+  );
 
   function refreshTransactions() {
-    devFetch().then((res) => {
-      setTransactions(res.data);
-      setDevLastFetch(new Date());
-    }).catch(() => {});
+    devFetch()
+      .then((res) => {
+        setTransactions(res.data);
+        setDevLastFetch(new Date());
+      })
+      .catch(() => {});
     loadSafeToSpend();
     loadSavings();
     loadTipDeposits();
@@ -646,9 +768,11 @@ export default function Dashboard() {
 
   async function handleDelete(t) {
     if (t.recurring_payment_id) {
-      // Stop future recurrences too, but only remove the transaction actually
-      // clicked - recurring payment deletion now deactivates (preserves history).
-      await Promise.all([deleteRecurringPayment(t.recurring_payment_id), deleteTransaction(t.id)]);
+      // Stops future repeats, but only deletes the transaction that was clicked.
+      await Promise.all([
+        deleteRecurringPayment(t.recurring_payment_id),
+        deleteTransaction(t.id),
+      ]);
       setTransactions((prev) => prev.filter((tx) => tx.id !== t.id));
     } else {
       await deleteTransaction(t.id);
@@ -656,22 +780,15 @@ export default function Dashboard() {
     }
   }
 
-  // Selecting a search result opens the transaction detail modal (#81)
-  // instead of scrolling the table into view.
   const handleSelectTransaction = useCallback((t) => {
     setEditingTransaction(t);
     setEditingFromSearch(true);
   }, []);
 
-  // The old scroll-to-row-and-highlight behavior isn't gone, it's now the
-  // modal's "Locate" action — closes the modal, then jumps to the row in
-  // the table the same way search-select used to do automatically.
   const handleLocateTransaction = useCallback(
     (t) => {
       setEditingTransaction(null);
       setEditingFromSearch(false);
-      // Jump straight to the dashboard - no slide-out, since this is a
-      // "take me to that row" action, not a back-navigation.
       clearTimeout(categoryCloseTimer.current);
       setCategoryClosing(false);
       setActiveTab("ALL");
@@ -714,8 +831,6 @@ export default function Dashboard() {
     return result;
   }, [transactions, activeTab, dateRange, devForceEmpty]);
 
-  // Deposits inside an arbitrary date range - the desktop period picker isn't
-  // month-bound, so this takes the same from/to the transaction filter uses.
   const depositsInRange = useCallback(
     (from, to) =>
       tipDeposits
@@ -734,9 +849,8 @@ export default function Dashboard() {
     [depositsInRange, dateRange],
   );
 
-  // Per-category totals for the selected period, feeding the Income/Expenses
-  // drawers (#67). Deposits stay out: they aren't transactions, and the Income
-  // drawer takes them as their own row rather than folded into a category.
+  // Totals per category for the Income and Expenses drawers (#67). Deposits
+  // aren't transactions, so they're added separately there.
   const categoryTotals = useMemo(() => {
     const totals = {};
     filtered.forEach((t) => {
@@ -746,14 +860,11 @@ export default function Dashboard() {
   }, [filtered]);
 
   const summary = useMemo(() => {
-    // MONEY_IN/MONEY_OUT rather than INCOME_TYPES and its complement: cash tips
-    // only count once banked (as periodDeposits, #131) and savings isn't
-    // spending (#69). Deposits are excluded on category tabs - they aren't
-    // transactions, so they'd otherwise leak into every category's figures.
-    const totalIn = filtered
-      .filter((t) => MONEY_IN_TYPES.has(t.category))
-      .reduce((sum, t) => sum + parseFloat(t.amount), 0)
-      + (activeTab === "ALL" ? periodDeposits : 0);
+    const totalIn =
+      filtered
+        .filter((t) => MONEY_IN_TYPES.has(t.category))
+        .reduce((sum, t) => sum + parseFloat(t.amount), 0) +
+      (activeTab === "ALL" ? periodDeposits : 0);
     const totalOut = filtered
       .filter((t) => MONEY_OUT_TYPES.has(t.category))
       .reduce((sum, t) => sum + parseFloat(t.amount), 0);
@@ -761,9 +872,7 @@ export default function Dashboard() {
     const savingsRate =
       totalIn > 0 ? ((totalIn - totalOut) / totalIn) * 100 : null;
 
-    // Previous period savings rate delta, plus the same "vs. last period"
-    // percent change for the hero Income/Expenses cards themselves (mirrors
-    // MobileHome's ChangeBadge - up is only "good" for Income).
+    // Change vs. the period before. Going up is only good news for Income.
     let savingsRateDelta = null;
     let totalInDelta = null;
     let totalOutDelta = null;
@@ -778,15 +887,15 @@ export default function Dashboard() {
           const d = new Date(t.transaction_date + "T00:00:00");
           return d >= prevFrom && d < prevTo;
         });
-      // Same sets and same deposit handling as the current period, so the
-      // change badges compare like-for-like.
-      const prevIn = prevFiltered
-        .filter((t) => MONEY_IN_TYPES.has(t.category))
-        .reduce((s, t) => s + parseFloat(t.amount), 0)
-        // prevTo is the current period's start and prevFiltered treats it as
-        // exclusive, so step back a tick - a deposit dated exactly there
-        // belongs to the current period, not both.
-        + (activeTab === "ALL" ? depositsInRange(prevFrom, new Date(prevTo.getTime() - 1)) : 0);
+      const prevIn =
+        prevFiltered
+          .filter((t) => MONEY_IN_TYPES.has(t.category))
+          .reduce((s, t) => s + parseFloat(t.amount), 0) +
+        // The end date is exclusive above, so step back a millisecond or a
+        // deposit on that exact day gets counted in both periods.
+        (activeTab === "ALL"
+          ? depositsInRange(prevFrom, new Date(prevTo.getTime() - 1))
+          : 0);
       const prevOut = prevFiltered
         .filter((t) => MONEY_OUT_TYPES.has(t.category))
         .reduce((s, t) => s + parseFloat(t.amount), 0);
@@ -797,11 +906,10 @@ export default function Dashboard() {
       if (prevOut > 0) totalOutDelta = ((totalOut - prevOut) / prevOut) * 100;
     }
 
-    // Category-specific metrics (non-ALL tabs). Summed straight off `filtered`
-    // rather than totalIn + totalOut: on the TIPS and SAVINGS tabs both of
-    // those are now zero by design, which would blank the whole page. On the
-    // ALL tab this is the same figure it always was.
-    const categoryTotal = filtered.reduce((s, t) => s + parseFloat(t.amount), 0);
+    const categoryTotal = filtered.reduce(
+      (s, t) => s + parseFloat(t.amount),
+      0,
+    );
     let categoryDelta = null;
     let pctOfTotal = null;
     if (activeTab !== "ALL") {
@@ -856,50 +964,57 @@ export default function Dashboard() {
       pctOfTotal,
       categoryDelta,
     };
-  }, [filtered, transactions, activeTab, dateRange, periodDeposits, depositsInRange]);
+  }, [
+    filtered,
+    transactions,
+    activeTab,
+    dateRange,
+    periodDeposits,
+    depositsInRange,
+  ]);
 
-  // Full-bleed ALL-tab trend chart - deliberately reads from `transactions`
-  // (everything fetched), not `filtered`, so it's an independent macro view
-  // rather than reacting to the page's own category tab / month navigator.
-  // Anchored to today, not to whatever month the header is currently on.
-  // One field per real category (not just income/expense) so any subset can
-  // be toggled on as its own line via the Categories panel.
-  //
-  // Bucketed by day (never by calendar month - that made "1M" collapse to a
-  // single point, nothing for a line to connect), but the bucket *width*
-  // scales with the range so the chart stays around TREND_TARGET_POINTS
-  // points regardless of span. Daily buckets at 1M (the case that needed
-  // fixing - a bucket per day means Income's 2 paychecks show as 2 visible
-  // dots, and every empty day is already 0 so the line starts/ends at the
-  // axis without synthetic anchor points), widening to multi-day buckets by
-  // 6M/1Y/Lifetime - otherwise a dense category like Expenses turns into a
-  // jittery single-day sawtooth, and a sparse spike (paycheck in, $0 around
-  // it) reads as a near-vertical needle once a year's worth of days get
-  // squeezed into the same chart width.
   const trendData = useMemo(() => {
     const now = getNow();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     let start;
     if (trendMonths === "all") {
-      start = transactions.length === 0
-        ? today
-        : transactions.reduce((min, t) => {
-            const d = new Date(t.transaction_date + "T00:00:00");
-            return d < min ? d : min;
-          }, new Date(transactions[0].transaction_date + "T00:00:00"));
+      start =
+        transactions.length === 0
+          ? today
+          : transactions.reduce(
+              (min, t) => {
+                const d = new Date(t.transaction_date + "T00:00:00");
+                return d < min ? d : min;
+              },
+              new Date(transactions[0].transaction_date + "T00:00:00"),
+            );
     } else {
-      start = new Date(today.getFullYear(), today.getMonth() - trendMonths + 1, 1);
+      start = new Date(
+        today.getFullYear(),
+        today.getMonth() - trendMonths + 1,
+        1,
+      );
     }
     const showYear = start.getFullYear() !== today.getFullYear();
     const dayCount = Math.max(1, Math.round((today - start) / 86400000) + 1);
     const bucketDays = Math.max(1, Math.ceil(dayCount / TREND_TARGET_POINTS));
     const bucketCount = Math.ceil(dayCount / bucketDays);
-    const fmtOpts = showYear ? { month: "short", day: "numeric", year: "2-digit" } : { month: "short", day: "numeric" };
+    const fmtOpts = showYear
+      ? { month: "short", day: "numeric", year: "2-digit" }
+      : { month: "short", day: "numeric" };
 
     const buckets = Array.from({ length: bucketCount }, (_, i) => {
-      const bucketStart = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i * bucketDays);
-      const bucket = { label: bucketStart.toLocaleDateString("en-US", fmtOpts) };
-      TREND_CATEGORIES.forEach((cat) => { bucket[cat] = 0; });
+      const bucketStart = new Date(
+        start.getFullYear(),
+        start.getMonth(),
+        start.getDate() + i * bucketDays,
+      );
+      const bucket = {
+        label: bucketStart.toLocaleDateString("en-US", fmtOpts),
+      };
+      TREND_CATEGORIES.forEach((cat) => {
+        bucket[cat] = 0;
+      });
       return bucket;
     });
     transactions.forEach((t) => {
@@ -911,32 +1026,38 @@ export default function Dashboard() {
     });
     return buckets.map((b) => {
       const rounded = { label: b.label };
-      TREND_CATEGORIES.forEach((cat) => { rounded[cat] = parseFloat((b[cat] ?? 0).toFixed(2)); });
+      TREND_CATEGORIES.forEach((cat) => {
+        rounded[cat] = parseFloat((b[cat] ?? 0).toFixed(2));
+      });
       return rounded;
     });
   }, [transactions, trendMonths]);
 
   const trendTotals = useMemo(() => {
     const totals = {};
-    TREND_CATEGORIES.forEach((cat) => { totals[cat] = 0; });
-    trendData.forEach((d) => { TREND_CATEGORIES.forEach((cat) => { totals[cat] += d[cat]; }); });
+    TREND_CATEGORIES.forEach((cat) => {
+      totals[cat] = 0;
+    });
+    trendData.forEach((d) => {
+      TREND_CATEGORIES.forEach((cat) => {
+        totals[cat] += d[cat];
+      });
+    });
     return totals;
   }, [trendData]);
 
-  // Ordered list of the series actually on the chart - the legend needs both
-  // the items and the count (to pick its column count), so it's derived once
-  // rather than filtered twice inline.
   const visibleTrendCategories = useMemo(
     () => TREND_CATEGORIES.filter((cat) => visibleCategories.has(cat)),
     [visibleCategories],
   );
 
-  // Chunked into rows of TREND_LEGEND_PER_ROW for the legend strip - see the
-  // note at the render site for why the break is explicit rather than left to
-  // flex-wrap.
   const trendLegendRows = useMemo(() => {
     const rows = [];
-    for (let i = 0; i < visibleTrendCategories.length; i += TREND_LEGEND_PER_ROW) {
+    for (
+      let i = 0;
+      i < visibleTrendCategories.length;
+      i += TREND_LEGEND_PER_ROW
+    ) {
       rows.push(visibleTrendCategories.slice(i, i + TREND_LEGEND_PER_ROW));
     }
     return rows;
@@ -947,10 +1068,7 @@ export default function Dashboard() {
     [trendData],
   );
 
-  // Top merchants by name, category-tab view only - the ALL-tab monthly
-  // income/expense shape this used to also produce moved to `trendData`
-  // above (the full-bleed trend chart), which reads unfiltered transactions
-  // instead of the page's current filter/tab.
+  // Biggest merchants by name. Category tabs only.
   const barData = useMemo(() => {
     if (activeTab === "ALL") return [];
     const grouped = {};
@@ -960,7 +1078,8 @@ export default function Dashboard() {
     const entries = Object.entries(grouped)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 12);
-    const START = 100, END = 30;
+    const START = 100,
+      END = 30;
     const step = entries.length > 1 ? (START - END) / (entries.length - 1) : 0;
     return entries.map(([name, total], i) => ({
       month: name,
@@ -986,27 +1105,43 @@ export default function Dashboard() {
 
   const sorted = useMemo(() => {
     let arr = [...filtered];
-    if (typeFilter === "income") arr = arr.filter(t => INCOME_TYPES.has(t.category));
-    else if (typeFilter === "expense") arr = arr.filter(t => !INCOME_TYPES.has(t.category));
+    if (tableQuery.trim())
+      arr = arr.filter((t) => matchesTransaction(t, tableQuery));
+    if (typeFilter === "income")
+      arr = arr.filter((t) => INCOME_TYPES.has(t.category));
+    else if (typeFilter === "expense")
+      arr = arr.filter((t) => !INCOME_TYPES.has(t.category));
     const dir = sortDir === "asc" ? 1 : -1;
-    if (sortColumn === "name")   return arr.sort((a, b) => dir * a.name.localeCompare(b.name));
-    if (sortColumn === "amount") return arr.sort((a, b) => dir * (parseFloat(a.amount) - parseFloat(b.amount)));
-    if (sortColumn === "date")   return arr.sort((a, b) => dir * (new Date(a.transaction_date) - new Date(b.transaction_date)));
-    return arr.sort((a, b) => new Date(b.transaction_date) - new Date(a.transaction_date));
-  }, [filtered, typeFilter, sortColumn, sortDir]);
+    if (sortColumn === "name")
+      return arr.sort((a, b) => dir * a.name.localeCompare(b.name));
+    if (sortColumn === "amount")
+      return arr.sort(
+        (a, b) => dir * (parseFloat(a.amount) - parseFloat(b.amount)),
+      );
+    if (sortColumn === "date")
+      return arr.sort(
+        (a, b) =>
+          dir * (new Date(a.transaction_date) - new Date(b.transaction_date)),
+      );
+    return arr.sort(
+      (a, b) => new Date(b.transaction_date) - new Date(a.transaction_date),
+    );
+  }, [filtered, tableQuery, typeFilter, sortColumn, sortDir]);
 
   const totalPages = Math.max(1, Math.ceil(sorted.length / perPage));
   const paginated = sorted.slice((page - 1) * perPage, page * perPage);
 
   useEffect(() => {
     setPage(1);
-  }, [filtered, perPage, typeFilter, sortColumn, sortDir]);
-
+  }, [filtered, perPage, tableQuery, typeFilter, sortColumn, sortDir]);
 
   useEffect(() => {
     if (!categoriesOpen) return;
     function handleOutsideClick(e) {
-      if (categoriesPanelRef.current && !categoriesPanelRef.current.contains(e.target)) {
+      if (
+        categoriesPanelRef.current &&
+        !categoriesPanelRef.current.contains(e.target)
+      ) {
         setCategoriesOpen(false);
       }
     }
@@ -1026,8 +1161,6 @@ export default function Dashboard() {
     return () => document.removeEventListener("mousedown", handleOutsideClick);
   }, [datePicker]);
 
-  // Toggling previews on the chart immediately; Save just persists that
-  // selection to localStorage so it's remembered next visit.
   function toggleTrendCategory(cat) {
     setVisibleCategories((prev) => {
       const next = new Set(prev);
@@ -1039,32 +1172,31 @@ export default function Dashboard() {
   }
 
   function handleSaveTrendCategories() {
-    localStorage.setItem(TREND_CATEGORIES_KEY, JSON.stringify([...visibleCategories]));
+    localStorage.setItem(
+      TREND_CATEGORIES_KEY,
+      JSON.stringify([...visibleCategories]),
+    );
     setCategoriesSaved(true);
     setTimeout(() => setCategoriesSaved(false), 2000);
   }
 
   const activeColor = CATEGORY_ACCENT[activeTab];
-  // Whether this category's move against the previous period is the direction
-  // you'd want: up is good for the income-side categories, down for spending.
-  // null when there's no previous period to compare against, which the column
-  // renders muted rather than picking a colour that would imply a judgement.
-  const categoryDeltaGood = summary.categoryDelta == null
-    ? null
-    : INCOME_TYPES.has(activeTab)
-      ? summary.categoryDelta >= 0
-      : summary.categoryDelta <= 0;
-  const text    = HOME_TEXT;
-  const muted   = HOME_MUTED;
-  const bg      = HOME_BG;
-  const border  = HOME_DIVIDER;
+  // Going up is good for income and bad for spending. null when there's no
+  // earlier period to compare against.
+  const categoryDeltaGood =
+    summary.categoryDelta == null
+      ? null
+      : INCOME_TYPES.has(activeTab)
+        ? summary.categoryDelta >= 0
+        : summary.categoryDelta <= 0;
+  const text = HOME_TEXT;
+  const muted = HOME_MUTED;
+  const bg = HOME_BG;
+  const border = HOME_DIVIDER;
   const surface = HOME_SURFACE;
 
-  // Overview fields (Current Balance / Upcoming Bills / Available Cash /
-  // Estimated Savings) - same field semantics and copy as mobile's
-  // MobileHome.jsx OverviewCard, reading from the same safeToSpend/savings
-  // fetches desktop already makes. free_to_allocate (not spendable_surplus)
-  // for Available Cash - it's already net of the spending reserve.
+  // Available Cash reads free_to_allocate, which already has the spending
+  // reserve taken out.
   let overviewBalance, overviewBills, overviewCash;
   if (safeToSpendStatus === "ok" && safeToSpend) {
     overviewBalance = { value: fmt(safeToSpend.running_balance), color: text };
@@ -1075,20 +1207,27 @@ export default function Dashboard() {
       color: freeToAllocate >= 0 ? HOME_INCOME : HOME_EXPENSE,
     };
     overviewBills = {
-      value: parseFloat(safeToSpend.bills_before_next_payday) > 0 ? `-${fmt(safeToSpend.bills_before_next_payday)}` : fmt(safeToSpend.bills_before_next_payday),
+      value:
+        parseFloat(safeToSpend.bills_before_next_payday) > 0
+          ? `-${fmt(safeToSpend.bills_before_next_payday)}`
+          : fmt(safeToSpend.bills_before_next_payday),
       color: CATEGORY_ACCENT.BILL,
-      caption: billCount > 0 ? `${billCount} bill${billCount !== 1 ? "s" : ""} due` : "No bills due",
+      caption:
+        billCount > 0
+          ? `${billCount} bill${billCount !== 1 ? "s" : ""} due`
+          : "No bills due",
     };
   } else if (safeToSpendStatus === "loading") {
     overviewBalance = { value: "—", color: muted };
     overviewCash = { value: "—", color: muted };
     overviewBills = { value: "—", color: muted };
   } else {
-    const prompt = safeToSpendStatus === "no-balance"
-      ? "Set a starting balance"
-      : safeToSpendStatus === "no-schedule"
-        ? "Set up a paycheck schedule"
-        : "Unavailable";
+    const prompt =
+      safeToSpendStatus === "no-balance"
+        ? "Set a starting balance"
+        : safeToSpendStatus === "no-schedule"
+          ? "Set up a paycheck schedule"
+          : "Unavailable";
     overviewBalance = { value: "Not set up", color: muted, caption: prompt };
     overviewCash = { value: "Not set up", color: muted, caption: prompt };
     overviewBills = { value: "—", color: muted };
@@ -1096,42 +1235,37 @@ export default function Dashboard() {
 
   let overviewSavings;
   if (savingsStatus === "ok" && savings) {
-    // estimated_savings is the projected ceiling, floored at 0 rather than at
-    // saved_so_far (#130), so the saved figure can legitimately sit above it.
-    // That case still renders as a normal fraction in the savings tint - it
-    // needs no special colour or caption, it's just a month that went well.
-    // Only a zero ceiling with nothing saved drops the fraction, and the
-    // over-saved check has to come first or it would swallow that case too.
     const savedSoFar = parseFloat(savings.saved_so_far);
     const ceiling = parseFloat(savings.estimated_savings);
     const overSaved = savedSoFar > ceiling;
-    overviewSavings = overSaved || ceiling > 0
-      ? {
-          // Kept as separate saved/estimated fields (not a single joined string)
-          // so the overview column can render them as a stacked fraction; the
-          // breakdown drawer's own SavingsBody still joins them with "/" itself.
-          saved: fmtWhole(savings.saved_so_far),
-          estimated: fmtWhole(savings.estimated_savings),
-          color: CATEGORY_ACCENT.SAVINGS,
-        }
-      : {
-          value: fmtWhole(savings.saved_so_far),
-          color: CATEGORY_ACCENT.SAVINGS,
-          caption: "No room to save this month",
-        };
+    overviewSavings =
+      overSaved || ceiling > 0
+        ? {
+            saved: fmtWhole(savings.saved_so_far),
+            estimated: fmtWhole(savings.estimated_savings),
+            color: CATEGORY_ACCENT.SAVINGS,
+          }
+        : {
+            value: fmtWhole(savings.saved_so_far),
+            color: CATEGORY_ACCENT.SAVINGS,
+            caption: "No room to save this month",
+          };
   } else if (savingsStatus === "loading") {
     overviewSavings = { value: "—", color: muted };
   } else if (savingsStatus === "no-history") {
-    overviewSavings = { value: "—", color: muted, caption: "Needs 3 months of history" };
+    overviewSavings = {
+      value: "—",
+      color: muted,
+      caption: "Needs 3 months of history",
+    };
   } else {
-    overviewSavings = { value: "—", color: muted, caption: "Add a paycheck amount" };
+    overviewSavings = {
+      value: "—",
+      color: muted,
+      caption: "Add a paycheck amount",
+    };
   }
 
-  // Clicking the already-open card (or its own cell again) closes it;
-  // clicking a different card while one is already open crossfades to the
-  // new content (both the old and new content visible/animating at once -
-  // see outgoingCell above) instead of snapping instantly or doing a full
-  // close/reopen; clicking from fully-closed just opens.
   function toggleBreakdown(cell) {
     clearTimeout(breakdownCloseTimer.current);
     if (breakdownCell === cell) {
@@ -1149,7 +1283,10 @@ export default function Dashboard() {
       clearTimeout(outgoingTimer.current);
       setOutgoingCell(breakdownCell);
       setBreakdownCell(cell);
-      outgoingTimer.current = setTimeout(() => setOutgoingCell(null), SWITCH_TRANSITION_MS);
+      outgoingTimer.current = setTimeout(
+        () => setOutgoingCell(null),
+        SWITCH_TRANSITION_MS,
+      );
     }
   }
 
@@ -1164,11 +1301,6 @@ export default function Dashboard() {
     }, DRAWER_TRANSITION_MS);
   }
 
-  // Same color as whichever overview card a cell belongs to - ties the
-  // drawer back to the card that opened it via a matching dot next to the
-  // title (brainstorm option 3), regardless of grid breakpoint/reflow. A
-  // function (not a single lookup) because the crossfade below renders two
-  // cells' worth of content at once - the incoming one and the outgoing one.
   function drawerColorFor(cell) {
     return {
       balance: overviewBalance.color,
@@ -1178,33 +1310,76 @@ export default function Dashboard() {
     }[cell];
   }
 
-  // The drawer's title+body for a given cell - shared between the current
-  // (incoming) layer and the outgoing one fading out beneath it during a
-  // switch, so both render identically apart from which cell they show.
   function renderDrawerBody(cell, { showClose = false } = {}) {
     return (
       <>
-        <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
-          <h3 style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 15, fontWeight: 700, color: text, margin: 0 }}>
-            <span style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: drawerColorFor(cell), flexShrink: 0 }} />
+        <div
+          className="flex items-center justify-between"
+          style={{ marginBottom: 10 }}
+        >
+          <h3
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              fontSize: 15,
+              fontWeight: 700,
+              color: text,
+              margin: 0,
+            }}
+          >
+            <span
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: "50%",
+                backgroundColor: drawerColorFor(cell),
+                flexShrink: 0,
+              }}
+            />
             {OVERVIEW_DRAWER_TITLES[cell]}
           </h3>
           {showClose && (
             <button
               onClick={closeBreakdown}
               aria-label="Close"
-              style={{ background: "none", border: "none", cursor: "pointer", color: muted, display: "flex", padding: 2 }}
+              style={{
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                color: muted,
+                display: "flex",
+                padding: 2,
+              }}
             >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
                 <path d="M18 6 6 18M6 6l12 12" />
               </svg>
             </button>
           )}
         </div>
-        {cell === "balance" && <BalanceBody safeToSpend={safeToSpend} status={safeToSpendStatus} />}
-        {cell === "bills" && <BillsBody safeToSpend={safeToSpend} status={safeToSpendStatus} />}
-        {cell === "cash" && <CashBody safeToSpend={safeToSpend} status={safeToSpendStatus} />}
-        {cell === "savings" && <SavingsBody savings={savings} status={savingsStatus} />}
+        {cell === "balance" && (
+          <BalanceBody safeToSpend={safeToSpend} status={safeToSpendStatus} />
+        )}
+        {cell === "bills" && (
+          <BillsBody safeToSpend={safeToSpend} status={safeToSpendStatus} />
+        )}
+        {cell === "cash" && (
+          <CashBody safeToSpend={safeToSpend} status={safeToSpendStatus} />
+        )}
+        {cell === "savings" && (
+          <SavingsBody savings={savings} status={savingsStatus} />
+        )}
         {cell === "income" && (
           <IncomeBody
             categoryTotals={categoryTotals}
@@ -1213,7 +1388,12 @@ export default function Dashboard() {
             cashTips={categoryTotals.TIPS ?? 0}
           />
         )}
-        {cell === "expenses" && <ExpensesBody categoryTotals={categoryTotals} total={summary.totalOut} />}
+        {cell === "expenses" && (
+          <ExpensesBody
+            categoryTotals={categoryTotals}
+            total={summary.totalOut}
+          />
+        )}
       </>
     );
   }
@@ -1230,1186 +1410,1984 @@ export default function Dashboard() {
   };
 
   return (
-    <div
-      className="h-dvh flex flex-col"
-      style={{ backgroundColor: bg }}
-    >
+    <div className="h-dvh flex flex-col" style={{ backgroundColor: bg }}>
       <Navbar
         transactions={transactions}
         onSelectTransaction={handleSelectTransaction}
         onDeleteRecurringPayment={refreshTransactions}
         onSaveRecurringPayment={refreshTransactions}
         onPaycheckSaved={refreshTransactions}
-        onCommand={(cmd, val) => { if (cmd === "devtools") setDevMenuOpen(val); }}
+        onCommand={(cmd, val) => {
+          if (cmd === "devtools") setDevMenuOpen(val);
+        }}
       />
 
-      {/* Sidebar + main content share the remaining viewport height below the
-          navbar; the sidebar is a normal flex sibling (not position:fixed)
-          so it can't drift out of alignment at odd zoom/DPI combos (#11), and
-          its own overflow-y scrolls independently while main content scrolls
-          in its own pane. */}
       <div className="flex-1 flex min-h-0">
-        {/* ── Filter sidebar ── */}
-        <aside style={{
-          position: "relative",
-          flexShrink: 0,
-          width: "16.5rem",
-          borderRight: `1px solid ${border}`,
-          backgroundColor: surface,
-          overflow: "hidden",
-        }}>
-          <div style={{ position: "absolute", inset: 0, overflowY: "auto", padding: "20px 10px", display: "flex", flexDirection: "column", gap: 28 }}>
-
-          {/* Add Transaction - opens the same main-content takeover Tools
-              use below (toolMode "add"), which renders AddTransactionPage's
-              3-card chooser. Single/Batch/Import all live on that page now,
-              not as nested sidebar reveals. */}
-          <button
-            onClick={() => openTool("add")}
-            onMouseEnter={e => {
-              e.currentTarget.style.backgroundColor = `color-mix(in srgb, ${HOME_INCOME} 80%, black)`;
-              e.currentTarget.style.boxShadow = "0 2px 6px rgba(0,0,0,0.35)";
-              e.currentTarget.style.transform = "translateY(-1px)";
-            }}
-            onMouseLeave={e => {
-              e.currentTarget.style.backgroundColor = HOME_INCOME;
-              e.currentTarget.style.boxShadow = "none";
-              e.currentTarget.style.transform = "translateY(0)";
-            }}
+        <aside
+          style={{
+            position: "relative",
+            flexShrink: 0,
+            width: "16.5rem",
+            borderRight: `1px solid ${border}`,
+            backgroundColor: surface,
+            overflow: "hidden",
+          }}
+        >
+          {/* scrollbarGutter reserves the scrollbar's width, or content reflows
+              narrower the moment the list overflows (#11). */}
+          <div
             style={{
-              width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-              padding: "9px 0", borderRadius: 10, border: "none", cursor: "pointer",
-              backgroundColor: HOME_INCOME, color: "#000",
-              fontSize: 13, fontWeight: 700,
-              transition: "background-color 150ms ease, box-shadow 150ms ease, transform 150ms ease",
+              position: "absolute",
+              inset: 0,
+              overflowY: "auto",
+              scrollbarGutter: "stable",
+              padding: "20px 10px",
+              display: "flex",
+              flexDirection: "column",
+              gap: 28,
             }}
           >
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M5 12h14M12 5v14" />
-            </svg>
-            Add Transaction
-          </button>
+            {/* Opens the same main-content takeover Tools use (toolMode "add"). */}
+            <button
+              onClick={() => openTool("add")}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = `color-mix(in srgb, ${HOME_INCOME} 80%, black)`;
+                e.currentTarget.style.boxShadow = "0 2px 6px rgba(0,0,0,0.35)";
+                e.currentTarget.style.transform = "translateY(-1px)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = HOME_INCOME;
+                e.currentTarget.style.boxShadow = "none";
+                e.currentTarget.style.transform = "translateY(0)";
+              }}
+              style={{
+                width: "100%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+                padding: "9px 0",
+                borderRadius: 10,
+                border: "none",
+                cursor: "pointer",
+                backgroundColor: HOME_INCOME,
+                color: "#000",
+                fontSize: 13,
+                fontWeight: 700,
+                transition:
+                  "background-color 150ms ease, box-shadow 150ms ease, transform 150ms ease",
+              }}
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M5 12h14M12 5v14" />
+              </svg>
+              Add Transaction
+            </button>
 
-          {/* Category */}
-          <div>
-            <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", color: muted, marginBottom: 6, paddingLeft: 10 }}>CATEGORY</p>
-            <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-            {REAL_CATEGORIES.map(cat => {
-              const catColor = CATEGORY_ACCENT[cat];
-              const isActive = activeTab === cat;
-              const isHov = catHov === cat;
-              const Icon = CATEGORY_ICON[cat];
-              return (
-                <button key={cat} onClick={() => openCategory(cat)}
-                  onMouseEnter={() => setCatHov(cat)} onMouseLeave={() => setCatHov(null)}
-                  style={{
-                    display: "flex", alignItems: "center", gap: 11, width: "100%", textAlign: "left",
-                    padding: "8px 11px", borderRadius: 12, border: "none", cursor: "pointer",
-                    fontSize: 15, fontWeight: isActive ? 700 : 500,
-                    color: isActive ? text : muted,
-                    backgroundColor: isActive ? `color-mix(in srgb, ${catColor} 14%, transparent)` : isHov ? `color-mix(in srgb, ${catColor} 8%, transparent)` : "transparent",
-                    transition: "background-color 120ms, color 120ms",
-                  }}
-                >
-                  <span style={{
-                    width: 30, height: 30, borderRadius: 9, flexShrink: 0,
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    backgroundColor: catColor,
-                    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.12)",
-                  }}>
-                    <Icon />
-                  </span>
-                  {CATEGORY_CONFIG[cat].label}
-                </button>
-              );
-            })}
+            <div>
+              <p
+                style={{
+                  fontSize: 10,
+                  fontWeight: 700,
+                  letterSpacing: "0.1em",
+                  color: muted,
+                  marginBottom: 6,
+                  paddingLeft: 10,
+                }}
+              >
+                CATEGORY
+              </p>
+              <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                {REAL_CATEGORIES.map((cat) => {
+                  const catColor = CATEGORY_ACCENT[cat];
+                  const isActive = activeTab === cat;
+                  const isHov = catHov === cat;
+                  const Icon = CATEGORY_ICON[cat];
+                  return (
+                    <button
+                      key={cat}
+                      onClick={() => openCategory(cat)}
+                      onMouseEnter={() => setCatHov(cat)}
+                      onMouseLeave={() => setCatHov(null)}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 11,
+                        width: "100%",
+                        textAlign: "left",
+                        padding: "8px 11px",
+                        borderRadius: 12,
+                        border: "none",
+                        cursor: "pointer",
+                        fontSize: 15,
+                        fontWeight: isActive ? 700 : 500,
+                        color: isActive ? text : muted,
+                        backgroundColor: isActive
+                          ? `color-mix(in srgb, ${catColor} 14%, transparent)`
+                          : isHov
+                            ? `color-mix(in srgb, ${catColor} 8%, transparent)`
+                            : "transparent",
+                        transition: "background-color 120ms, color 120ms",
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: 30,
+                          height: 30,
+                          borderRadius: 9,
+                          flexShrink: 0,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          backgroundColor: catColor,
+                          boxShadow: "inset 0 1px 0 rgba(255,255,255,0.12)",
+                        }}
+                      >
+                        <Icon />
+                      </span>
+                      {CATEGORY_CONFIG[cat].label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Tools */}
+            <div>
+              <p
+                style={{
+                  fontSize: 10,
+                  fontWeight: 700,
+                  letterSpacing: "0.1em",
+                  color: muted,
+                  marginBottom: 6,
+                  paddingLeft: 10,
+                }}
+              >
+                TOOLS
+              </p>
+              <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                {[
+                  {
+                    key: "paychecks",
+                    label: "Paychecks",
+                    icon: (
+                      <>
+                        <rect x="3" y="6.5" width="18" height="11" rx="2.2" />
+                        <circle cx="12" cy="12" r="2.3" />
+                      </>
+                    ),
+                  },
+                  {
+                    key: "recurring",
+                    label: "Recurring Payments",
+                    icon: (
+                      <>
+                        <path d="M17 3.5l3 3-3 3" />
+                        <path d="M20 6.5H8.5a4.5 4.5 0 0 0-4.5 4.5" />
+                        <path d="M7 20.5l-3-3 3-3" />
+                        <path d="M4 17.5h11.5a4.5 4.5 0 0 0 4.5-4.5" />
+                      </>
+                    ),
+                  },
+                  {
+                    key: "installments",
+                    label: "Installments",
+                    icon: (
+                      <>
+                        <line x1="19" y1="5" x2="5" y2="19" />
+                        <circle cx="6.5" cy="6.5" r="2.5" />
+                        <circle cx="17.5" cy="17.5" r="2.5" />
+                      </>
+                    ),
+                  },
+                ].map((tool) => {
+                  const isActive = toolMode === tool.key;
+                  const isHov = toolHov === tool.key;
+                  return (
+                    <button
+                      key={tool.key}
+                      onClick={() => openTool(tool.key)}
+                      onMouseEnter={() => setToolHov(tool.key)}
+                      onMouseLeave={() => setToolHov(null)}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 11,
+                        width: "100%",
+                        textAlign: "left",
+                        padding: "8px 11px",
+                        borderRadius: 12,
+                        border: "none",
+                        cursor: "pointer",
+                        fontSize: 15,
+                        fontWeight: isActive ? 700 : 500,
+                        color: isActive ? text : muted,
+                        backgroundColor: isActive
+                          ? `color-mix(in srgb, ${text} 10%, transparent)`
+                          : isHov
+                            ? `color-mix(in srgb, ${text} 6%, transparent)`
+                            : "transparent",
+                        transition: "background-color 120ms, color 120ms",
+                      }}
+                    >
+                      <IconToolTile>{tool.icon}</IconToolTile>
+                      {tool.label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
-
-          {/* Tools - desktop's own pill-button list style (matches Category
-              above), with mobile's icon tile (IconToolTile above: grey glyph
-              on a #2a2a2e square) dropped in as the icon. */}
-          <div>
-            <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", color: muted, marginBottom: 6, paddingLeft: 10 }}>TOOLS</p>
-            <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-            {[
-              {
-                key: "paychecks", label: "Paychecks",
-                icon: <><rect x="3" y="6.5" width="18" height="11" rx="2.2" /><circle cx="12" cy="12" r="2.3" /></>,
-              },
-              {
-                key: "recurring", label: "Recurring Payments",
-                icon: (
-                  <>
-                    <path d="M17 3.5l3 3-3 3" /><path d="M20 6.5H8.5a4.5 4.5 0 0 0-4.5 4.5" />
-                    <path d="M7 20.5l-3-3 3-3" /><path d="M4 17.5h11.5a4.5 4.5 0 0 0 4.5-4.5" />
-                  </>
-                ),
-              },
-              {
-                key: "installments", label: "Installments",
-                icon: <><line x1="19" y1="5" x2="5" y2="19" /><circle cx="6.5" cy="6.5" r="2.5" /><circle cx="17.5" cy="17.5" r="2.5" /></>,
-              },
-            ].map((tool) => {
-              const isActive = toolMode === tool.key;
-              const isHov = toolHov === tool.key;
-              return (
-                <button key={tool.key} onClick={() => openTool(tool.key)}
-                  onMouseEnter={() => setToolHov(tool.key)} onMouseLeave={() => setToolHov(null)}
-                  style={{
-                    display: "flex", alignItems: "center", gap: 11, width: "100%", textAlign: "left",
-                    padding: "8px 11px", borderRadius: 12, border: "none", cursor: "pointer",
-                    fontSize: 15, fontWeight: isActive ? 700 : 500,
-                    color: isActive ? text : muted,
-                    backgroundColor: isActive ? `color-mix(in srgb, ${text} 10%, transparent)` : isHov ? `color-mix(in srgb, ${text} 6%, transparent)` : "transparent",
-                    transition: "background-color 120ms, color 120ms",
-                  }}
-                >
-                  <IconToolTile>{tool.icon}</IconToolTile>
-                  {tool.label}
-                </button>
-              );
-            })}
-            </div>
-          </div>
-
-          </div>
-
         </aside>
 
-        {/* ── Main content ── */}
-        {/* flex flex-col + flex-1 on the content below makes Footer a real
-            sticky footer - it sits right after whatever content there is
-            instead of floating mid-page with a dead gap underneath on short
-            pages (the tool pages, or a mostly-empty table), which read as
-            "the footer is huge" even though Footer.jsx itself is a fixed
-            small height. */}
         <div className="flex-1 min-w-0 overflow-y-auto flex flex-col">
-        <style>{`
+          <style>{`
           @keyframes skel-pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
           @keyframes breakdown-fade-in { from { opacity: 0; } to { opacity: 1; } }
           @keyframes breakdown-fade-out { from { opacity: 1; } to { opacity: 0; } }
           @keyframes tool-page-in { from { opacity: 0; transform: translateX(-32px); } to { opacity: 1; transform: translateX(0); } }
         `}</style>
-        {(toolMode || toolClosing) ? (
-          <div
-            className="px-6 py-6 flex-1"
-            style={{
-              opacity: toolClosing ? 0 : 1,
-              transform: toolClosing ? "translateX(-32px)" : "translateX(0)",
-              transition: `opacity ${TOOL_TRANSITION_MS}ms ease, transform ${TOOL_TRANSITION_MS}ms ease`,
-              animation: toolClosing ? undefined : `tool-page-in ${TOOL_TRANSITION_MS}ms ease`,
-            }}
-          >
-            <div className="flex items-center gap-3" style={{ marginBottom: 20 }}>
-              <button
-                onClick={closeTool}
-                aria-label="Back"
-                className="rounded-lg cursor-pointer transition-colors"
-                style={{ padding: 6, color: muted }}
-                onMouseEnter={e => e.currentTarget.style.color = text}
-                onMouseLeave={e => e.currentTarget.style.color = muted}
+          {toolMode || toolClosing ? (
+            <div
+              className="px-6 py-6 flex-1"
+              style={{
+                opacity: toolClosing ? 0 : 1,
+                transform: toolClosing ? "translateX(-32px)" : "translateX(0)",
+                transition: `opacity ${TOOL_TRANSITION_MS}ms ease, transform ${TOOL_TRANSITION_MS}ms ease`,
+                animation: toolClosing
+                  ? undefined
+                  : `tool-page-in ${TOOL_TRANSITION_MS}ms ease`,
+              }}
+            >
+              <div
+                className="flex items-center gap-3"
+                style={{ marginBottom: 20 }}
               >
-                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
-              </button>
-              <h1 className="text-3xl font-bold tracking-tight" style={{ color: text }}>{TOOL_TITLES[toolMode]}</h1>
-              {(toolMode === "recurring" || toolMode === "installments") && (
-                <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
-                  {toolMode === "recurring" && recurringSaveState.saveStatus === "saved" && (
-                    <span style={{ fontSize: 12, color: HOME_INCOME }}>Saved</span>
-                  )}
-                  {toolMode === "recurring" && (
-                    <button
-                      onClick={recurringSaveState.onSave}
-                      disabled={!recurringSaveState.isDirty || recurringSaveState.isSaving}
-                      style={{ padding: "6px 14px", borderRadius: 8, border: `1px solid ${HOME_INCOME}`, color: HOME_INCOME, backgroundColor: `color-mix(in srgb, ${HOME_INCOME} 12%, transparent)`, fontSize: 13, fontWeight: 600, cursor: recurringSaveState.isDirty && !recurringSaveState.isSaving ? "pointer" : "default", opacity: !recurringSaveState.isDirty || recurringSaveState.isSaving ? 0.4 : 1, transition: "opacity 150ms ease" }}
-                    >
-                      {recurringSaveState.isSaving ? "Saving…" : "Save"}
-                    </button>
-                  )}
-                  {/* Same circular "+" mobile already uses in its own Recurring/
-                      Installments headers (MobileDashboard.jsx) - the add UI
-                      itself lives in the panel, this just signals it open. */}
-                  <button
-                    onClick={() => toolMode === "recurring" ? setRecurringAddSignal(n => n + 1) : setInstallmentsAddSignal(n => n + 1)}
-                    aria-label={toolMode === "recurring" ? "Add recurring payment" : "Add installment"}
+                <button
+                  onClick={closeTool}
+                  aria-label="Back"
+                  className="rounded-lg cursor-pointer transition-colors"
+                  style={{ padding: 6, color: muted }}
+                  onMouseEnter={(e) => (e.currentTarget.style.color = text)}
+                  onMouseLeave={(e) => (e.currentTarget.style.color = muted)}
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="22"
+                    height="22"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M15 18l-6-6 6-6" />
+                  </svg>
+                </button>
+                <h1
+                  className="text-3xl font-bold tracking-tight"
+                  style={{ color: text }}
+                >
+                  {TOOL_TITLES[toolMode]}
+                </h1>
+                {(toolMode === "recurring" || toolMode === "installments") && (
+                  <div
                     style={{
-                      width: 36, height: 36, borderRadius: "50%", flexShrink: 0, cursor: "pointer",
-                      background: surface, border: "1px solid rgba(255,255,255,0.07)",
-                      display: "flex", alignItems: "center", justifyContent: "center", color: "#fff",
+                      marginLeft: "auto",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
                     }}
                   >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-                    </svg>
-                  </button>
+                    {toolMode === "recurring" &&
+                      recurringSaveState.saveStatus === "saved" && (
+                        <span style={{ fontSize: 12, color: HOME_INCOME }}>
+                          Saved
+                        </span>
+                      )}
+                    {toolMode === "recurring" && (
+                      <button
+                        onClick={recurringSaveState.onSave}
+                        disabled={
+                          !recurringSaveState.isDirty ||
+                          recurringSaveState.isSaving
+                        }
+                        style={{
+                          padding: "6px 14px",
+                          borderRadius: 8,
+                          border: `1px solid ${HOME_INCOME}`,
+                          color: HOME_INCOME,
+                          backgroundColor: `color-mix(in srgb, ${HOME_INCOME} 12%, transparent)`,
+                          fontSize: 13,
+                          fontWeight: 600,
+                          cursor:
+                            recurringSaveState.isDirty &&
+                            !recurringSaveState.isSaving
+                              ? "pointer"
+                              : "default",
+                          opacity:
+                            !recurringSaveState.isDirty ||
+                            recurringSaveState.isSaving
+                              ? 0.4
+                              : 1,
+                          transition: "opacity 150ms ease",
+                        }}
+                      >
+                        {recurringSaveState.isSaving ? "Saving…" : "Save"}
+                      </button>
+                    )}
+                    {/* Same circular "+" mobile uses; the add UI lives in the panel. */}
+                    <button
+                      onClick={() =>
+                        toolMode === "recurring"
+                          ? setRecurringAddSignal((n) => n + 1)
+                          : setInstallmentsAddSignal((n) => n + 1)
+                      }
+                      aria-label={
+                        toolMode === "recurring"
+                          ? "Add recurring payment"
+                          : "Add installment"
+                      }
+                      style={{
+                        width: 36,
+                        height: 36,
+                        borderRadius: "50%",
+                        flexShrink: 0,
+                        cursor: "pointer",
+                        background: surface,
+                        border: "1px solid rgba(255,255,255,0.07)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        color: "#fff",
+                      }}
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="19"
+                        height="19"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <line x1="12" y1="5" x2="12" y2="19" />
+                        <line x1="5" y1="12" x2="19" y2="12" />
+                      </svg>
+                    </button>
+                  </div>
+                )}
+              </div>
+              {/* Mounted once, then toggled with display - reopening keeps its data. */}
+              {openedTools.has("paychecks") && (
+                <div
+                  style={{
+                    display: toolMode === "paychecks" ? "block" : "none",
+                  }}
+                >
+                  <PaychecksPanel desktop onSaved={refreshTransactions} />
+                </div>
+              )}
+              {openedTools.has("recurring") && (
+                <div
+                  style={{
+                    display: toolMode === "recurring" ? "block" : "none",
+                  }}
+                >
+                  <RecurringPaymentsModal
+                    desktop
+                    addSignal={recurringAddSignal}
+                    onSaveStateChange={setRecurringSaveState}
+                    onDelete={refreshTransactions}
+                    onSaved={refreshTransactions}
+                  />
+                </div>
+              )}
+              {openedTools.has("installments") && (
+                <div
+                  style={{
+                    display: toolMode === "installments" ? "block" : "none",
+                  }}
+                >
+                  <InstallmentsPanel
+                    desktop
+                    addSignal={installmentsAddSignal}
+                    onSaved={refreshTransactions}
+                  />
+                </div>
+              )}
+              {openedTools.has("add") && (
+                <div style={{ display: toolMode === "add" ? "block" : "none" }}>
+                  <AddTransactionPage
+                    onSaved={refreshTransactions}
+                    onImported={(newTxs) =>
+                      setTransactions((prev) => [...(newTxs || []), ...prev])
+                    }
+                  />
                 </div>
               )}
             </div>
-            {/* Each panel mounts once (the first time its tool is opened,
-                openedTools below) and then stays mounted for good, just
-                toggling display instead of unmounting - closing/switching no
-                longer throws away its loaded data or refetches from
-                scratch, so reopening is instant instead of skeletons again. */}
-            {openedTools.has("paychecks") && (
-              <div style={{ display: toolMode === "paychecks" ? "block" : "none" }}>
-                <PaychecksPanel desktop onSaved={refreshTransactions} />
-              </div>
-            )}
-            {openedTools.has("recurring") && (
-              <div style={{ display: toolMode === "recurring" ? "block" : "none" }}>
-                <RecurringPaymentsModal desktop addSignal={recurringAddSignal} onSaveStateChange={setRecurringSaveState} onDelete={refreshTransactions} onSaved={refreshTransactions} />
-              </div>
-            )}
-            {openedTools.has("installments") && (
-              <div style={{ display: toolMode === "installments" ? "block" : "none" }}>
-                <InstallmentsPanel desktop addSignal={installmentsAddSignal} onSaved={refreshTransactions} />
-              </div>
-            )}
-            {openedTools.has("add") && (
-              <div style={{ display: toolMode === "add" ? "block" : "none" }}>
-                <AddTransactionPage
-                  onSaved={refreshTransactions}
-                  onImported={(newTxs) => setTransactions(prev => [...(newTxs || []), ...prev])}
-                />
-              </div>
-            )}
-          </div>
-        ) : (
-        <main className="px-6 py-6 flex-1">
-        {/* Keyed on which page is showing so opening or leaving a category
-            remounts this subtree and replays tool-page-in - the same entrance
-            the Tools takeover gets. transform stays `none` when idle rather
-            than translateX(0): a non-none transform makes this a containing
-            block for every descendant, and the entrance is the keyframe's job
-            anyway, so the transition here only ever needs to drive the
-            slide-out. */}
-        <div
-          key={activeTab === "ALL" ? "dashboard" : activeTab}
-          className="space-y-5"
-          style={{
-            opacity: categoryClosing ? 0 : 1,
-            transform: categoryClosing ? "translateX(-32px)" : "none",
-            transition: `opacity ${TOOL_TRANSITION_MS}ms ease, transform ${TOOL_TRANSITION_MS}ms ease`,
-            animation: categoryClosing ? undefined : `tool-page-in ${TOOL_TRANSITION_MS}ms ease`,
-          }}
-        >
-
-        {/* Period header - a big month title with prev/next arrows when the
-            current range is exactly one calendar month (the common case:
-            "Current Month"/"Last Month" presets and the arrows themselves
-            all produce this shape), otherwise the active multi-month/all-time
-            preset's own label, since stepping doesn't make sense for those. */}
-        {/* On the dashboard the navigator is the only thing in this row and
-            simply sits at the left, where a page title belongs. A category
-            page adds two flex:1 side zones around it instead - equal shares of
-            whatever the navigator doesn't take - which centres it between the
-            back arrow and the right edge, and keeps it centred *while* the
-            month/year strip expands, since the growth comes out of both sides
-            evenly. */}
-        <div className="flex items-center gap-3">
-          {/* Left zone - the back arrow and the category's own name, same
-              shape as the Tools takeover. min-width:0 plus an ellipsis on the
-              title so a long name gives way instead of shoving the navigator
-              off centre. */}
-          {activeTab !== "ALL" && (
-            <div className="flex items-center gap-3" style={{ flex: 1, minWidth: 0 }}>
-              <button
-                onClick={closeCategory}
-                aria-label="Back to dashboard"
-                className="rounded-lg cursor-pointer transition-colors"
-                style={{ padding: 6, color: muted, flexShrink: 0 }}
-                onMouseEnter={e => e.currentTarget.style.color = text}
-                onMouseLeave={e => e.currentTarget.style.color = muted}
+          ) : (
+            <main className="px-6 py-6 flex-1">
+              {/* Keyed so changing page replays tool-page-in. transform stays `none`
+            when idle - a non-none transform becomes a containing block. */}
+              <div
+                key={activeTab === "ALL" ? "dashboard" : activeTab}
+                className="space-y-5"
+                style={{
+                  opacity: categoryClosing ? 0 : 1,
+                  transform: categoryClosing ? "translateX(-32px)" : "none",
+                  transition: `opacity ${TOOL_TRANSITION_MS}ms ease, transform ${TOOL_TRANSITION_MS}ms ease`,
+                  animation: categoryClosing
+                    ? undefined
+                    : `tool-page-in ${TOOL_TRANSITION_MS}ms ease`,
+                }}
               >
-                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
-              </button>
-              <h1
-                className="text-3xl font-bold tracking-tight"
-                style={{ color: activeColor, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-              >
-                {CATEGORY_CONFIG[activeTab].label}
-              </h1>
-            </div>
-          )}
-
-          {/* The navigator itself. */}
-          <div className="flex items-center gap-3" style={{ flexShrink: 0 }}>
-          {isSingleMonthRange(dateRange) ? (
-            <>
-              <button
-                onClick={() => handleStepMonth(-1)}
-                aria-label="Previous month"
-                className="rounded-lg cursor-pointer transition-colors"
-                style={{ padding: 6, color: muted }}
-                onMouseEnter={e => e.currentTarget.style.color = text}
-                onMouseLeave={e => e.currentTarget.style.color = muted}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
-              </button>
-              {/* Clicking Month or Year opens a strip of choices right next
-                  to the title - grid-template-columns 0fr->1fr smoothly
-                  opens the space for it and pushes the next-month arrow
-                  right as it grows (#124), instead of overlaying a dropdown
-                  on top of the page. Year only ever offers years that
-                  actually have a transaction. */}
-              <div ref={datePickerRef} className="flex items-center">
-                <div className="flex items-center" style={{ gap: 10 }}>
-                  <button
-                    onClick={() => requestPicker("month")}
-                    className="text-3xl font-bold tracking-tight cursor-pointer transition-colors"
-                    style={{ color: datePicker === "month" ? ACCENT : text, background: "none", border: "none", padding: 0 }}
-                    onMouseEnter={e => e.currentTarget.style.color = datePicker === "month" ? ACCENT_DEEP : ACCENT}
-                    onMouseLeave={e => e.currentTarget.style.color = datePicker === "month" ? ACCENT : text}
-                  >
-                    {dateRange.from.toLocaleDateString("en-US", { month: "long" })}
-                  </button>
-                  <button
-                    onClick={() => requestPicker("year")}
-                    className="text-3xl font-bold tracking-tight cursor-pointer transition-colors"
-                    style={{ color: datePicker === "year" ? ACCENT : text, background: "none", border: "none", padding: 0 }}
-                    onMouseEnter={e => e.currentTarget.style.color = datePicker === "year" ? ACCENT_DEEP : ACCENT}
-                    onMouseLeave={e => e.currentTarget.style.color = datePicker === "year" ? ACCENT : text}
-                  >
-                    {dateRange.from.getFullYear()}
-                  </button>
-                </div>
-
-                <div style={{
-                  overflow: "hidden",
-                  maxWidth: pickerOpen ? pickerWidth : 0,
-                  transition: `max-width ${PICKER_TRANSITION_MS}ms ${PICKER_EASE}`,
-                }}>
-                  <div ref={pickerContentRef} className="flex items-center" style={{ gap: 4, paddingLeft: 16, width: "max-content" }}>
-                      {renderPicker === "month" && (() => {
-                        const trackedMonths = trackedMonthsByYear[dateRange.from.getFullYear()];
-                        if (!trackedMonths || trackedMonths.size === 0) {
-                          return <span style={{ fontSize: 12.5, color: muted, whiteSpace: "nowrap" }}>No tracked months this year</span>;
+                <div className="flex items-center gap-3">
+                  {activeTab !== "ALL" && (
+                    <div
+                      className="flex items-center gap-3"
+                      style={{ flex: 1, minWidth: 0 }}
+                    >
+                      <button
+                        onClick={closeCategory}
+                        aria-label="Back to dashboard"
+                        className="rounded-lg cursor-pointer transition-colors"
+                        style={{ padding: 6, color: muted, flexShrink: 0 }}
+                        onMouseEnter={(e) =>
+                          (e.currentTarget.style.color = text)
                         }
-                        return MONTH_ABBR.map((m, i) => {
-                          if (!trackedMonths.has(i)) return null;
-                          const active = i === dateRange.from.getMonth();
-                          // Today's real month gets its own ring regardless of
-                          // which month is being viewed, so "jump back to now"
-                          // stays a glance instead of a count - active fills
-                          // solid, current-but-not-active just gets outlined.
-                          const isCurrentMonth = i === getNow().getMonth() && dateRange.from.getFullYear() === getNow().getFullYear();
-                          return (
-                          <button
-                            key={m}
-                            onClick={() => gotoMonth(i)}
-                            className="transition-colors"
-                            style={{
-                              padding: "6px 10px", borderRadius: 999, cursor: "pointer",
-                              fontSize: 13, fontWeight: 700, whiteSpace: "nowrap",
-                              border: isCurrentMonth && !active ? `1.5px solid ${text}` : "1.5px solid transparent",
-                              color: active ? ACCENT_TEXT : muted,
-                              backgroundColor: active ? ACCENT : "rgba(255,255,255,0.05)",
-                            }}
-                            onMouseEnter={e => {
-                              e.currentTarget.style.backgroundColor = active ? ACCENT_DEEP : `color-mix(in srgb, ${ACCENT} 22%, transparent)`;
-                              if (!active) e.currentTarget.style.color = ACCENT;
-                            }}
-                            onMouseLeave={e => {
-                              e.currentTarget.style.backgroundColor = active ? ACCENT : "rgba(255,255,255,0.05)";
-                              if (!active) e.currentTarget.style.color = muted;
-                            }}
-                          >
-                            {m}
-                          </button>
-                          );
-                        });
-                      })()}
-                      {renderPicker === "year" && (trackedYears.length === 0 ? (
-                        <span style={{ fontSize: 12.5, color: muted, whiteSpace: "nowrap" }}>No tracked years yet</span>
-                      ) : trackedYears.map(y => {
-                        const active = y === dateRange.from.getFullYear();
-                        const isCurrentYear = y === getNow().getFullYear();
-                        return (
-                          <button
-                            key={y}
-                            onClick={() => gotoYear(y)}
-                            className="transition-colors"
-                            style={{
-                              padding: "6px 14px", borderRadius: 999, cursor: "pointer",
-                              fontSize: 13, fontWeight: 700, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap",
-                              border: isCurrentYear && !active ? `1.5px solid ${text}` : "1.5px solid transparent",
-                              color: active ? ACCENT_TEXT : muted,
-                              backgroundColor: active ? ACCENT : "rgba(255,255,255,0.05)",
-                            }}
-                            onMouseEnter={e => {
-                              e.currentTarget.style.backgroundColor = active ? ACCENT_DEEP : `color-mix(in srgb, ${ACCENT} 22%, transparent)`;
-                              if (!active) e.currentTarget.style.color = ACCENT;
-                            }}
-                            onMouseLeave={e => {
-                              e.currentTarget.style.backgroundColor = active ? ACCENT : "rgba(255,255,255,0.05)";
-                              if (!active) e.currentTarget.style.color = muted;
-                            }}
-                          >
-                            {y}
-                          </button>
-                        );
-                      }))}
-                  </div>
-                </div>
-              </div>
-              <button
-                onClick={() => handleStepMonth(1)}
-                aria-label="Next month"
-                className="rounded-lg cursor-pointer transition-colors"
-                style={{ padding: 6, color: muted }}
-                onMouseEnter={e => e.currentTarget.style.color = text}
-                onMouseLeave={e => e.currentTarget.style.color = muted}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6" /></svg>
-              </button>
-            </>
-          ) : (
-            <h1 className="text-3xl font-bold tracking-tight" style={{ color: text }}>
-              {activePreset === "All" ? "All Time" : activePreset ?? "Custom Range"}
-            </h1>
-          )}
-          </div>
-
-          {/* Right zone - empty, and that's its whole job: it mirrors the left
-              zone's flex:1 so the navigator lands on the row's midpoint. Both
-              side zones are absent on the dashboard, which is what leaves the
-              navigator left-aligned there. */}
-          {activeTab !== "ALL" && <div style={{ flex: 1, minWidth: 0 }} />}
-        </div>
-
-        {loading ? (
-          activeTab === "ALL" ? (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                {[...Array(2)].map((_, i) => (
-                  <div key={i} className="rounded-2xl px-6 py-6" style={{ backgroundColor: surface }}>
-                    <Skel h={20} w="35%" />
-                    <Skel h={44} w="55%" style={{ marginTop: 10 }} />
-                  </div>
-                ))}
-              </div>
-              <div className="grid grid-cols-4 gap-4">
-                {[...Array(4)].map((_, i) => (
-                  <div key={i} className="rounded-2xl px-5 py-5" style={{ backgroundColor: surface }}>
-                    <Skel h={16} w="45%" />
-                    <Skel h={34} w="62%" style={{ marginTop: 8 }} />
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : (
-            /* Mirrors the unified panel this stands in for - one surface with
-               internal dividers, and OverviewColumn's own 16px/20px padding
-               and 11/22/11 type sizes - so the skeleton doesn't resolve into a
-               differently-shaped block. */
-            <div className="grid grid-cols-4 rounded-2xl overflow-hidden" style={{ backgroundColor: surface }}>
-              {[...Array(4)].map((_, i) => (
-                <div key={i} style={{ padding: "16px 20px", borderLeft: i === 0 ? "none" : `1px solid ${border}` }}>
-                  <Skel h={14} w="55%" />
-                  <Skel h={28} w="70%" style={{ marginTop: 8 }} />
-                  <Skel h={12} w="62%" style={{ marginTop: 7 }} />
-                </div>
-              ))}
-            </div>
-          )
-        ) : activeTab === "ALL" ? (
-          <div className="space-y-4">
-            {/* Hero pair — the two headline figures get the primary billing,
-                same treatment mobile gives Income/Expense at the top of Home. */}
-            <div className="grid grid-cols-2 gap-4">
-              <SummaryCard
-                hero
-                label="INCOME"
-                value={fmt(summary.totalIn)}
-                activeColor={HOME_INCOME}
-                valueColor={HOME_INCOME}
-                changePct={summary.totalInDelta}
-                changeGoodWhenUp={true}
-                onClick={() => toggleBreakdown("income")}
-                active={breakdownCell === "income"}
-              />
-              <SummaryCard
-                hero
-                label="EXPENSES"
-                value={fmt(summary.totalOut)}
-                changePct={summary.totalOutDelta}
-                changeGoodWhenUp={false}
-                activeColor={HOME_EXPENSE}
-                valueColor={HOME_EXPENSE}
-                onClick={() => toggleBreakdown("expenses")}
-                active={breakdownCell === "expenses"}
-              />
-            </div>
-            {/* Overview panel (#123) — same four fields as mobile's Home
-                overview card (Current Balance / Upcoming Bills / Available
-                Cash / Estimated Savings), merged into one wide surface with
-                internal columns instead of four repeated card shells.
-                Clicking a column still opens the same shared drawer below it
-                (toggleBreakdown/renderDrawerBody, unchanged) rather than
-                growing the column itself or opening a modal. */}
-            <div className="grid grid-cols-4 rounded-2xl overflow-hidden" style={{ backgroundColor: surface }}>
-              <OverviewColumn
-                first
-                label="CURRENT BALANCE"
-                value={overviewBalance.value}
-                color={overviewBalance.color}
-                caption={overviewBalance.caption}
-                onClick={() => toggleBreakdown("balance")}
-                active={breakdownCell === "balance"}
-              />
-              <OverviewColumn
-                label="UPCOMING BILLS"
-                value={overviewBills.value}
-                color={overviewBills.color}
-                caption={overviewBills.caption}
-                onClick={() => toggleBreakdown("bills")}
-                active={breakdownCell === "bills"}
-              />
-              <OverviewColumn
-                label="AVAILABLE CASH"
-                value={overviewCash.value}
-                color={overviewCash.color}
-                caption={overviewCash.caption}
-                onClick={() => toggleBreakdown("cash")}
-                active={breakdownCell === "cash"}
-              />
-              <OverviewColumn
-                label="ESTIMATED SAVINGS"
-                value={overviewSavings.value}
-                valueNode={overviewSavings.saved != null
-                  ? <StackedFraction num={overviewSavings.saved} den={overviewSavings.estimated} color={overviewSavings.color} />
-                  : undefined}
-                color={overviewSavings.color}
-                caption={overviewSavings.caption}
-                onClick={() => toggleBreakdown("savings")}
-                active={breakdownCell === "savings"}
-              />
-            </div>
-
-            {/* Outer animator: grid-template-rows 0fr<->1fr is what makes
-                everything below (the trend chart) slide smoothly instead of
-                insta-jumping - it animates the actual space the drawer
-                reserves in the page flow, not just its own opacity. margin-top
-                rides the same transition so it collapses to 0 fully closed
-                instead of leaving a bare gap (overrides space-y-4's own
-                margin via inline style).
-
-                margin-bottom is on the same animation for the same reason, and
-                it has to be explicit: this is the last child of the space-y-4
-                stack, so nothing below it contributes a gap of its own and the
-                open drawer would otherwise sit right on top of the trend
-                legend beneath it. */}
-            <div
-              style={{
-                display: "grid",
-                gridTemplateRows: breakdownCell && !breakdownClosing ? "1fr" : "0fr",
-                marginTop: breakdownCell && !breakdownClosing ? 16 : 0,
-                marginBottom: breakdownCell && !breakdownClosing ? 24 : 0,
-                transition: `grid-template-rows ${DRAWER_TRANSITION_MS}ms cubic-bezier(0.32,0.72,0,1), margin-top ${DRAWER_TRANSITION_MS}ms cubic-bezier(0.32,0.72,0,1), margin-bottom ${DRAWER_TRANSITION_MS}ms cubic-bezier(0.32,0.72,0,1)`,
-              }}
-            >
-              <div style={{ overflow: "hidden", minHeight: 0, position: "relative" }}>
-                {/* Outgoing layer: the previous cell, absolutely positioned so
-                    it overlaps the incoming one instead of pushing it down -
-                    fades itself out via a keyframe the instant it mounts and
-                    is unmounted once that finishes (see outgoingTimer). */}
-                {outgoingCell && (
-                  <div
-                    className="rounded-2xl p-5"
-                    style={{
-                      position: "absolute", inset: 0, backgroundColor: surface,
-                      animation: `breakdown-fade-out ${SWITCH_TRANSITION_MS}ms ease forwards`,
-                      pointerEvents: "none",
-                    }}
-                    // Clears outgoingCell off the browser's own animation
-                    // clock instead of only the JS setTimeout in
-                    // toggleBreakdown (kept as a fallback) - that timer's
-                    // ~180ms and the CSS animation's ~180ms start from two
-                    // different clocks (JS call time vs. whenever the
-                    // browser actually starts the animation next paint), so
-                    // they drift. If the timer fired first it ripped
-                    // `animation` off the incoming layer below mid-flight,
-                    // snapping its opacity from wherever a still-running
-                    // fade-in had reached in the *transition* meant for the
-                    // toggle-closed case, instead of easing the rest of the
-                    // way - the flash/double-run on a switch (#128).
-                    onAnimationEnd={() => setOutgoingCell(null)}
-                  >
-                    {renderDrawerBody(outgoingCell)}
-                  </div>
-                )}
-                {breakdownCell && (
-                  <div
-                    key={breakdownCell}
-                    className="rounded-2xl p-5"
-                    style={{
-                      backgroundColor: surface,
-                      opacity: breakdownClosing ? 0 : 1,
-                      // Mutually exclusive with `animation` below rather than
-                      // both targeting opacity at once - a CSS animation
-                      // always wins over a transition on the same property,
-                      // so leaving this transition active during a switch
-                      // did nothing but race it (#128).
-                      transition: outgoingCell ? "none" : `opacity ${DRAWER_TRANSITION_MS}ms ease`,
-                      // Only fades in when there's an outgoing layer under it
-                      // (a switch) - a fresh open already gets its motion from
-                      // the outer grid-rows/margin animation and doesn't need
-                      // a second, redundant entrance animation on top of it.
-                      animation: outgoingCell ? `breakdown-fade-in ${SWITCH_TRANSITION_MS}ms ease forwards` : undefined,
-                    }}
-                  >
-                    {renderDrawerBody(breakdownCell, { showClose: true })}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        ) : (
-          /* Same unified panel the dashboard's overview uses - one surface with
-             internal dividers rather than four separate card shells - so the
-             two pages read as the same app. These columns are read-only
-             (nothing to expand), which OverviewColumn handles by dropping the
-             chevron and the hover tint when no onClick is given. */
-          <div className="grid grid-cols-4 rounded-2xl overflow-hidden" style={{ backgroundColor: surface }}>
-            <OverviewColumn
-              first
-              label={`${CATEGORY_CONFIG[activeTab].label.toUpperCase()} TOTAL`}
-              value={fmt(summary.categoryTotal)}
-              color={activeColor}
-            />
-            {INCOME_TYPES.has(activeTab) ? (
-              <OverviewColumn
-                label="PAYMENTS"
-                value={String(summary.txCount)}
-                color={activeColor}
-                caption={summary.txCount > 0 ? `avg ${fmt(summary.avgTx)} each` : null}
-              />
-            ) : (
-              <OverviewColumn
-                label="AVG TRANSACTION"
-                value={fmt(summary.avgTx)}
-                color={activeColor}
-              />
-            )}
-            <OverviewColumn
-              label="VS LAST MONTH"
-              value={
-                summary.categoryDelta != null
-                  ? `${summary.categoryDelta >= 0 ? "+" : ""}${summary.categoryDelta.toFixed(1)}%`
-                  : "—"
-              }
-              color={
-                categoryDeltaGood == null
-                  ? muted
-                  : categoryDeltaGood
-                    ? HOME_INCOME
-                    : HOME_EXPENSE
-              }
-              caption={
-                summary.categoryDelta != null
-                  ? summary.categoryDelta >= 0
-                    ? "↑ higher than last month"
-                    : "↓ lower than last month"
-                  : null
-              }
-            />
-            <OverviewColumn
-              label={
-                INCOME_TYPES.has(activeTab) ? "% OF TOTAL INCOME" : "% OF TOTAL EXPENSES"
-              }
-              value={
-                summary.pctOfTotal != null
-                  ? `${summary.pctOfTotal.toFixed(1)}%`
-                  : "—"
-              }
-              color={activeColor}
-            />
-          </div>
-        )}
-
-        {loading ? (
-          activeTab === "ALL" ? (
-            /* Mirrors the trend block's real layout - controls at either end,
-               then the legend strip, then the chart - so the skeleton doesn't
-               resolve into a differently-shaped block. */
-            <div style={{ marginTop: -16 }}>
-              <div className="flex items-center gap-3" style={{ marginBottom: 20 }}>
-                <Skel h={34} w="130px" style={{ borderRadius: 999 }} />
-                <div className="flex items-center justify-center" style={{ flex: 1, minWidth: 0, gap: 6, flexWrap: "wrap" }}>
-                  {[...Array(5)].map((_, i) => (
-                    <Skel key={i} h={29} w={`${110 + i * 14}px`} style={{ borderRadius: 999 }} />
-                  ))}
-                </div>
-                <Skel h={38} w="360px" style={{ borderRadius: 999 }} />
-              </div>
-              <Skel h={TREND_CHART_HEIGHT} style={{ borderRadius: 16 }} />
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 gap-4">
-              <div className="rounded-2xl p-6" style={{ backgroundColor: surface }}>
-                <Skel h={28} w="42%" />
-                <Skel h={275} style={{ marginTop: 20, borderRadius: 12 }} />
-              </div>
-              <div className="rounded-2xl p-6" style={{ backgroundColor: surface }}>
-                <Skel h={28} w="42%" />
-                <Skel h={275} style={{ marginTop: 20, borderRadius: 12 }} />
-              </div>
-            </div>
-          )
-        ) : activeTab === "ALL" ? (
-          /* Full-bleed trend — no card chrome, controls and a legend sit
-             directly around the chart instead of being boxed alongside it.
-             Replaces the old donut + boxed income/expense pair. */
-          <div style={{ marginTop: -16 }}>
-            <div className="flex items-center gap-3" style={{ marginBottom: 20 }}>
-                <div ref={categoriesPanelRef} style={{ position: "relative", flexShrink: 0 }}>
-                  <button
-                    onClick={() => setCategoriesOpen((v) => !v)}
-                    onMouseEnter={() => setCategoriesHovered(true)}
-                    onMouseLeave={() => setCategoriesHovered(false)}
-                    style={{
-                      display: "flex", alignItems: "center", gap: 8, padding: "8px 16px", borderRadius: 999,
-                      border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600, color: text,
-                      backgroundColor: categoriesOpen
-                        ? "rgba(255,255,255,0.09)"
-                        : categoriesHovered ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.05)",
-                      transition: "background-color 150ms ease",
-                    }}
-                  >
-                    Categories
-                    <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-                      style={{ transform: categoriesOpen ? "rotate(180deg)" : "none", transition: "transform 150ms ease" }}>
-                      <path d="M6 9l6 6 6-6" />
-                    </svg>
-                  </button>
-                  {categoriesOpen && (
-                    <div style={{
-                      position: "absolute", top: "calc(100% + 8px)", left: 0, zIndex: 20, width: 230,
-                      borderRadius: 14, backgroundColor: HOME_SURFACE, boxShadow: "0 16px 40px rgba(0,0,0,0.45)",
-                      padding: 8,
-                    }}>
-                      {TREND_CATEGORIES.map((cat) => {
-                        const on = visibleCategories.has(cat);
-                        const color = CATEGORY_ACCENT[cat];
-                        return (
-                          <button
-                            key={cat}
-                            onClick={() => toggleTrendCategory(cat)}
-                            style={{
-                              display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left",
-                              padding: "7px 8px", borderRadius: 8, border: "none", cursor: "pointer",
-                              fontSize: 13, fontWeight: 500, color: text, backgroundColor: "transparent",
-                            }}
-                          >
-                            <span style={{
-                              width: 11, height: 11, borderRadius: "50%", flexShrink: 0, boxSizing: "border-box",
-                              backgroundColor: on ? color : "transparent",
-                              border: `2px solid ${color}`,
-                            }} />
-                            {CATEGORY_CONFIG[cat].label}
-                          </button>
-                        );
-                      })}
-                      <div style={{ borderTop: `1px solid ${HOME_DIVIDER}`, marginTop: 6, paddingTop: 8 }}>
-                        <button
-                          onClick={handleSaveTrendCategories}
-                          style={{
-                            width: "100%", padding: "7px 0", borderRadius: 8, border: "none", cursor: "pointer",
-                            fontSize: 12, fontWeight: 700,
-                            color: categoriesSaved ? HOME_INCOME : ACCENT_TEXT,
-                            backgroundColor: categoriesSaved ? `color-mix(in srgb, ${HOME_INCOME} 15%, transparent)` : ACCENT,
-                            transition: "background-color 150ms ease, color 150ms ease",
-                          }}
+                        onMouseLeave={(e) =>
+                          (e.currentTarget.style.color = muted)
+                        }
+                      >
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="22"
+                          height="22"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2.5"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
                         >
-                          {categoriesSaved ? "✓ Saved" : "Save"}
-                        </button>
-                      </div>
+                          <path d="M15 18l-6-6 6-6" />
+                        </svg>
+                      </button>
+                      <h1
+                        className="text-3xl font-bold tracking-tight"
+                        style={{
+                          color: activeColor,
+                          minWidth: 0,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {CATEGORY_CONFIG[activeTab].label}
+                      </h1>
                     </div>
                   )}
-                </div>
-                {/* Explicit rows of four rather than a grid or a free wrap. A
-                    grid aligns columns, which forced slack around the short
-                    pills; a free wrap packs tight but breaks wherever the
-                    width runs out. Chunking gives both - each pill keeps its
-                    own natural width and they pack against each other, but
-                    the break always lands after the fourth.
 
-                    Each row still carries flexWrap as a safety valve: on a
-                    narrow enough viewport four pills won't fit, and wrapping
-                    is a better failure than overflowing the band.
-
-                    The outer row's items-center is what makes the multi-line
-                    case read right - the Categories button and the range
-                    toggle sit on the strip's own centre line, so it stays a
-                    single band rather than leaving the controls stranded at
-                    the top. */}
-                <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-                  {trendLegendRows.map((row, i) => (
-                    <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, flexWrap: "wrap" }}>
-                      {row.map((cat) => (
-                        <TrendPill key={cat} label={CATEGORY_CONFIG[cat].label} value={fmt(trendTotals[cat])} color={CATEGORY_ACCENT[cat]} />
-                      ))}
-                    </div>
-                  ))}
-                </div>
-              <div ref={trendRangeRef} className="flex items-center gap-1" style={{ position: "relative", padding: 2, borderRadius: 999, backgroundColor: "rgba(255,255,255,0.05)", flexShrink: 0 }}>
-                {/* The sliding selection itself - one element behind the row,
-                    not a background on each button. top/bottom 2 matches the
-                    container's own padding, so it spans exactly a button. */}
-                {rangeIndicator && (
                   <div
-                    aria-hidden="true"
-                    style={{
-                      position: "absolute", top: 2, bottom: 2,
-                      left: rangeIndicator.left, width: rangeIndicator.width,
-                      borderRadius: 999, backgroundColor: ACCENT, pointerEvents: "none",
-                      transition: "left 280ms cubic-bezier(0.4, 0, 0.2, 1), width 280ms cubic-bezier(0.4, 0, 0.2, 1)",
-                    }}
-                  />
-                )}
-                {[[1, "1M"], [3, "3M"], [6, "6M"], [12, "1Y"], ["all", "Lifetime"]].map(([n, label]) => (
-                  <button
-                    key={n}
-                    data-range-active={trendMonths === n}
-                    onClick={() => setTrendMonths(n)}
-                    onMouseEnter={() => setRangeHovered(n)}
-                    onMouseLeave={() => setRangeHovered(null)}
-                    style={{
-                      position: "relative", zIndex: 1,
-                      padding: "8px 16px", borderRadius: 999, border: "none", cursor: "pointer",
-                      fontSize: 14, fontWeight: 700,
-                      color: trendMonths === n ? ACCENT_TEXT : rangeHovered === n ? ACCENT : muted,
-                      backgroundColor: trendMonths === n
-                        ? "transparent"
-                        : rangeHovered === n ? `color-mix(in srgb, ${ACCENT} 16%, transparent)` : "transparent",
-                      transition: "color 150ms ease, background-color 150ms ease",
-                    }}
+                    className="flex items-center gap-3"
+                    style={{ flexShrink: 0 }}
                   >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            {visibleCategories.size === 0 ? (
-              <div style={{ height: TREND_CHART_HEIGHT, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <p style={{ color: muted, fontSize: 13 }}>No categories selected — pick one from Categories above.</p>
-              </div>
-            ) : trendHasData ? (
-              // Sized wrapper + height="100%" instead of a fixed pixel height
-              // on ResponsiveContainer directly - recharts coerces a numeric
-              // height prop to px, so it can't take the clamp() responsive
-              // value itself; the wrapper can.
-              <div style={{ height: TREND_CHART_HEIGHT }}>
-              <ResponsiveContainer width="100%" height="100%" style={{ pointerEvents: "none" }}>
-                <AreaChart data={trendData}>
-                  <defs>
-                    {TREND_CATEGORIES.map((cat) => (
-                      <linearGradient key={cat} id={`trend${cat}Fill`} x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor={CATEGORY_ACCENT[cat]} stopOpacity={0.3} />
-                        <stop offset="95%" stopColor={CATEGORY_ACCENT[cat]} stopOpacity={0.02} />
-                      </linearGradient>
-                    ))}
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.06)" />
-                  <XAxis
-                    dataKey="label"
-                    axisLine={false}
-                    tickLine={false}
-                    tick={{ fontSize: 12, fill: text }}
-                    interval={Math.max(0, Math.ceil(trendData.length / 8) - 1)}
-                  />
-                  <YAxis axisLine={false} tickLine={false} tickFormatter={(v) => `$${v}`} tick={{ fontSize: 12, fill: text }} />
-                  <Tooltip {...tooltipProps} formatter={(v) => fmt(v)} />
-                  {visibleTrendCategories.map((cat) => (
-                    <Area
-                      key={cat}
-                      type="linear"
-                      dataKey={cat}
-                      name={CATEGORY_CONFIG[cat].label}
-                      stroke={CATEGORY_ACCENT[cat]}
-                      strokeWidth={2}
-                      fill={`url(#trend${cat}Fill)`}
-                      // Only mark days with a real transaction - one bucket per
-                      // day means most days are 0, and dotting every zero point
-                      // would bury the actual data under noise.
-                      dot={(props) => {
-                        const { cx, cy, payload, index } = props;
-                        if (!payload[cat]) return <circle key={index} cx={cx} cy={cy} r={0} />;
-                        return <circle key={index} cx={cx} cy={cy} r={3.5} fill={CATEGORY_ACCENT[cat]} stroke={bg} strokeWidth={1.5} />;
+                    {isSingleMonthRange(dateRange) ? (
+                      <>
+                        <button
+                          onClick={() => handleStepMonth(-1)}
+                          aria-label="Previous month"
+                          className="rounded-lg cursor-pointer transition-colors"
+                          style={{ padding: 6, color: muted }}
+                          onMouseEnter={(e) =>
+                            (e.currentTarget.style.color = text)
+                          }
+                          onMouseLeave={(e) =>
+                            (e.currentTarget.style.color = muted)
+                          }
+                        >
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="22"
+                            height="22"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <path d="M15 18l-6-6 6-6" />
+                          </svg>
+                        </button>
+                        <div ref={datePickerRef} className="flex items-center">
+                          <div
+                            className="flex items-center"
+                            style={{ gap: 10 }}
+                          >
+                            <button
+                              onClick={() => requestPicker("month")}
+                              className="text-3xl font-bold tracking-tight cursor-pointer transition-colors"
+                              style={{
+                                color: datePicker === "month" ? ACCENT : text,
+                                background: "none",
+                                border: "none",
+                                padding: 0,
+                              }}
+                              onMouseEnter={(e) =>
+                                (e.currentTarget.style.color =
+                                  datePicker === "month" ? ACCENT_DEEP : ACCENT)
+                              }
+                              onMouseLeave={(e) =>
+                                (e.currentTarget.style.color =
+                                  datePicker === "month" ? ACCENT : text)
+                              }
+                            >
+                              {dateRange.from.toLocaleDateString("en-US", {
+                                month: "long",
+                              })}
+                            </button>
+                            <button
+                              onClick={() => requestPicker("year")}
+                              className="text-3xl font-bold tracking-tight cursor-pointer transition-colors"
+                              style={{
+                                color: datePicker === "year" ? ACCENT : text,
+                                background: "none",
+                                border: "none",
+                                padding: 0,
+                              }}
+                              onMouseEnter={(e) =>
+                                (e.currentTarget.style.color =
+                                  datePicker === "year" ? ACCENT_DEEP : ACCENT)
+                              }
+                              onMouseLeave={(e) =>
+                                (e.currentTarget.style.color =
+                                  datePicker === "year" ? ACCENT : text)
+                              }
+                            >
+                              {dateRange.from.getFullYear()}
+                            </button>
+                          </div>
+
+                          <div
+                            style={{
+                              overflow: "hidden",
+                              maxWidth: pickerOpen ? pickerWidth : 0,
+                              transition: `max-width ${PICKER_TRANSITION_MS}ms ${PICKER_EASE}`,
+                            }}
+                          >
+                            <div
+                              ref={pickerContentRef}
+                              className="flex items-center"
+                              style={{
+                                gap: 4,
+                                paddingLeft: 16,
+                                width: "max-content",
+                              }}
+                            >
+                              {renderPicker === "month" &&
+                                (() => {
+                                  const trackedMonths =
+                                    trackedMonthsByYear[
+                                      dateRange.from.getFullYear()
+                                    ];
+                                  if (
+                                    !trackedMonths ||
+                                    trackedMonths.size === 0
+                                  ) {
+                                    return (
+                                      <span
+                                        style={{
+                                          fontSize: 12.5,
+                                          color: muted,
+                                          whiteSpace: "nowrap",
+                                        }}
+                                      >
+                                        No tracked months this year
+                                      </span>
+                                    );
+                                  }
+                                  return MONTH_ABBR.map((m, i) => {
+                                    if (!trackedMonths.has(i)) return null;
+                                    const active =
+                                      i === dateRange.from.getMonth();
+                                    // Today's month is always outlined, so finding it is a glance.
+                                    const isCurrentMonth =
+                                      i === getNow().getMonth() &&
+                                      dateRange.from.getFullYear() ===
+                                        getNow().getFullYear();
+                                    return (
+                                      <button
+                                        key={m}
+                                        onClick={() => gotoMonth(i)}
+                                        className="transition-colors"
+                                        style={{
+                                          padding: "6px 10px",
+                                          borderRadius: 999,
+                                          cursor: "pointer",
+                                          fontSize: 13,
+                                          fontWeight: 700,
+                                          whiteSpace: "nowrap",
+                                          border:
+                                            isCurrentMonth && !active
+                                              ? `1.5px solid ${text}`
+                                              : "1.5px solid transparent",
+                                          color: active ? ACCENT_TEXT : muted,
+                                          backgroundColor: active
+                                            ? ACCENT
+                                            : "rgba(255,255,255,0.05)",
+                                        }}
+                                        onMouseEnter={(e) => {
+                                          e.currentTarget.style.backgroundColor =
+                                            active
+                                              ? ACCENT_DEEP
+                                              : `color-mix(in srgb, ${ACCENT} 22%, transparent)`;
+                                          if (!active)
+                                            e.currentTarget.style.color =
+                                              ACCENT;
+                                        }}
+                                        onMouseLeave={(e) => {
+                                          e.currentTarget.style.backgroundColor =
+                                            active
+                                              ? ACCENT
+                                              : "rgba(255,255,255,0.05)";
+                                          if (!active)
+                                            e.currentTarget.style.color = muted;
+                                        }}
+                                      >
+                                        {m}
+                                      </button>
+                                    );
+                                  });
+                                })()}
+                              {renderPicker === "year" &&
+                                (trackedYears.length === 0 ? (
+                                  <span
+                                    style={{
+                                      fontSize: 12.5,
+                                      color: muted,
+                                      whiteSpace: "nowrap",
+                                    }}
+                                  >
+                                    No tracked years yet
+                                  </span>
+                                ) : (
+                                  trackedYears.map((y) => {
+                                    const active =
+                                      y === dateRange.from.getFullYear();
+                                    const isCurrentYear =
+                                      y === getNow().getFullYear();
+                                    return (
+                                      <button
+                                        key={y}
+                                        onClick={() => gotoYear(y)}
+                                        className="transition-colors"
+                                        style={{
+                                          padding: "6px 14px",
+                                          borderRadius: 999,
+                                          cursor: "pointer",
+                                          fontSize: 13,
+                                          fontWeight: 700,
+                                          fontVariantNumeric: "tabular-nums",
+                                          whiteSpace: "nowrap",
+                                          border:
+                                            isCurrentYear && !active
+                                              ? `1.5px solid ${text}`
+                                              : "1.5px solid transparent",
+                                          color: active ? ACCENT_TEXT : muted,
+                                          backgroundColor: active
+                                            ? ACCENT
+                                            : "rgba(255,255,255,0.05)",
+                                        }}
+                                        onMouseEnter={(e) => {
+                                          e.currentTarget.style.backgroundColor =
+                                            active
+                                              ? ACCENT_DEEP
+                                              : `color-mix(in srgb, ${ACCENT} 22%, transparent)`;
+                                          if (!active)
+                                            e.currentTarget.style.color =
+                                              ACCENT;
+                                        }}
+                                        onMouseLeave={(e) => {
+                                          e.currentTarget.style.backgroundColor =
+                                            active
+                                              ? ACCENT
+                                              : "rgba(255,255,255,0.05)";
+                                          if (!active)
+                                            e.currentTarget.style.color = muted;
+                                        }}
+                                      >
+                                        {y}
+                                      </button>
+                                    );
+                                  })
+                                ))}
+                            </div>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => handleStepMonth(1)}
+                          aria-label="Next month"
+                          className="rounded-lg cursor-pointer transition-colors"
+                          style={{ padding: 6, color: muted }}
+                          onMouseEnter={(e) =>
+                            (e.currentTarget.style.color = text)
+                          }
+                          onMouseLeave={(e) =>
+                            (e.currentTarget.style.color = muted)
+                          }
+                        >
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="22"
+                            height="22"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <path d="M9 18l6-6-6-6" />
+                          </svg>
+                        </button>
+                      </>
+                    ) : (
+                      <h1
+                        className="text-3xl font-bold tracking-tight"
+                        style={{ color: text }}
+                      >
+                        {activePreset === "All"
+                          ? "All Time"
+                          : (activePreset ?? "Custom Range")}
+                      </h1>
+                    )}
+                  </div>
+
+                  {activeTab !== "ALL" && (
+                    <div style={{ flex: 1, minWidth: 0 }} />
+                  )}
+                </div>
+
+                {loading ? (
+                  activeTab === "ALL" ? (
+                    <div className="space-y-4">
+                      {/* Hero pair: SummaryCard's own px-6 py-6, label over value, with
+                  the change badge's slot on the right. */}
+                      <div className="grid grid-cols-2 gap-4">
+                        {[...Array(2)].map((_, i) => (
+                          <div
+                            key={i}
+                            className="rounded-2xl px-6 py-6"
+                            style={{ backgroundColor: surface }}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <Skel h={20} w="35%" />
+                              <Skel h={14} w={42} />
+                            </div>
+                            <Skel h={44} w="55%" style={{ marginTop: 10 }} />
+                          </div>
+                        ))}
+                      </div>
+                      <OverviewPanelSkeleton
+                        surface={surface}
+                        border={border}
+                      />
+                    </div>
+                  ) : (
+                    <OverviewPanelSkeleton surface={surface} border={border} />
+                  )
+                ) : activeTab === "ALL" ? (
+                  <div className="space-y-4">
+                    {/* Hero pair */}
+                    <div className="grid grid-cols-2 gap-4">
+                      <SummaryCard
+                        hero
+                        label="INCOME"
+                        value={fmt(summary.totalIn)}
+                        activeColor={HOME_INCOME}
+                        valueColor={HOME_INCOME}
+                        changePct={summary.totalInDelta}
+                        changeGoodWhenUp={true}
+                        onClick={() => toggleBreakdown("income")}
+                        active={breakdownCell === "income"}
+                      />
+                      <SummaryCard
+                        hero
+                        label="EXPENSES"
+                        value={fmt(summary.totalOut)}
+                        changePct={summary.totalOutDelta}
+                        changeGoodWhenUp={false}
+                        activeColor={HOME_EXPENSE}
+                        valueColor={HOME_EXPENSE}
+                        onClick={() => toggleBreakdown("expenses")}
+                        active={breakdownCell === "expenses"}
+                      />
+                    </div>
+                    <div
+                      className="grid grid-cols-4 rounded-2xl overflow-hidden"
+                      style={{ backgroundColor: surface }}
+                    >
+                      <OverviewColumn
+                        first
+                        label="CURRENT BALANCE"
+                        value={overviewBalance.value}
+                        color={overviewBalance.color}
+                        caption={overviewBalance.caption}
+                        onClick={() => toggleBreakdown("balance")}
+                        active={breakdownCell === "balance"}
+                      />
+                      <OverviewColumn
+                        label="UPCOMING BILLS"
+                        value={overviewBills.value}
+                        color={overviewBills.color}
+                        caption={overviewBills.caption}
+                        onClick={() => toggleBreakdown("bills")}
+                        active={breakdownCell === "bills"}
+                      />
+                      <OverviewColumn
+                        label="AVAILABLE CASH"
+                        value={overviewCash.value}
+                        color={overviewCash.color}
+                        caption={overviewCash.caption}
+                        onClick={() => toggleBreakdown("cash")}
+                        active={breakdownCell === "cash"}
+                      />
+                      <OverviewColumn
+                        label="ESTIMATED SAVINGS"
+                        value={overviewSavings.value}
+                        valueNode={
+                          overviewSavings.saved != null ? (
+                            <StackedFraction
+                              num={overviewSavings.saved}
+                              den={overviewSavings.estimated}
+                              color={overviewSavings.color}
+                            />
+                          ) : undefined
+                        }
+                        color={overviewSavings.color}
+                        caption={overviewSavings.caption}
+                        onClick={() => toggleBreakdown("savings")}
+                        active={breakdownCell === "savings"}
+                      />
+                    </div>
+
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateRows:
+                          breakdownCell && !breakdownClosing ? "1fr" : "0fr",
+                        marginTop: breakdownCell && !breakdownClosing ? 16 : 0,
+                        marginBottom:
+                          breakdownCell && !breakdownClosing ? 24 : 0,
+                        transition: `grid-template-rows ${DRAWER_TRANSITION_MS}ms cubic-bezier(0.32,0.72,0,1), margin-top ${DRAWER_TRANSITION_MS}ms cubic-bezier(0.32,0.72,0,1), margin-bottom ${DRAWER_TRANSITION_MS}ms cubic-bezier(0.32,0.72,0,1)`,
                       }}
-                      animationDuration={900}
-                      animationEasing="ease-in-out"
+                    >
+                      <div
+                        style={{
+                          overflow: "hidden",
+                          minHeight: 0,
+                          position: "relative",
+                        }}
+                      >
+                        {/* Outgoing layer: the previous cell, fading out over the incoming one. */}
+                        {outgoingCell && (
+                          <div
+                            className="rounded-2xl p-5"
+                            style={{
+                              position: "absolute",
+                              inset: 0,
+                              backgroundColor: surface,
+                              animation: `breakdown-fade-out ${SWITCH_TRANSITION_MS}ms ease forwards`,
+                              pointerEvents: "none",
+                            }}
+                            // The JS timer and the CSS animation don't stay in sync (#128).
+                            onAnimationEnd={() => setOutgoingCell(null)}
+                          >
+                            {renderDrawerBody(outgoingCell)}
+                          </div>
+                        )}
+                        {breakdownCell && (
+                          <div
+                            key={breakdownCell}
+                            className="rounded-2xl p-5"
+                            style={{
+                              backgroundColor: surface,
+                              opacity: breakdownClosing ? 0 : 1,
+                              transition: outgoingCell
+                                ? "none"
+                                : `opacity ${DRAWER_TRANSITION_MS}ms ease`,
+                              animation: outgoingCell
+                                ? `breakdown-fade-in ${SWITCH_TRANSITION_MS}ms ease forwards`
+                                : undefined,
+                            }}
+                          >
+                            {renderDrawerBody(breakdownCell, {
+                              showClose: true,
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    className="grid grid-cols-4 rounded-2xl overflow-hidden"
+                    style={{ backgroundColor: surface }}
+                  >
+                    <OverviewColumn
+                      first
+                      label={`${CATEGORY_CONFIG[activeTab].label.toUpperCase()} TOTAL`}
+                      value={fmt(summary.categoryTotal)}
+                      color={activeColor}
                     />
-                  ))}
-                </AreaChart>
-              </ResponsiveContainer>
-              </div>
-            ) : <Empty />}
-          </div>
-        ) : (
-        <div className="grid grid-cols-2 gap-4">
-          <ChartCard title="Spending Over Time" activeColor={activeColor}>
-            {areaData.length > 0 ? (
-              <ResponsiveContainer
-                width="100%"
-                height={230}
-                style={{ pointerEvents: "none" }}
-              >
-                <AreaChart data={areaData}>
-                  <defs>
-                    <linearGradient id="areaFill" x1="0" y1="0" x2="0" y2="1">
-                      <stop
-                        offset="5%"
-                        stopColor={activeColor}
-                        stopOpacity={0.3}
+                    {INCOME_TYPES.has(activeTab) ? (
+                      <OverviewColumn
+                        label="PAYMENTS"
+                        value={String(summary.txCount)}
+                        color={activeColor}
+                        caption={
+                          summary.txCount > 0
+                            ? `avg ${fmt(summary.avgTx)} each`
+                            : null
+                        }
                       />
-                      <stop
-                        offset="95%"
-                        stopColor={activeColor}
-                        stopOpacity={0.02}
+                    ) : (
+                      <OverviewColumn
+                        label="AVG TRANSACTION"
+                        value={fmt(summary.avgTx)}
+                        color={activeColor}
                       />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid
-                    strokeDasharray="3 3"
-                    vertical={false}
-                    stroke={
-                      "rgba(255,255,255,0.06)"
-                    }
-                  />
-                  <XAxis
-                    dataKey="date"
-                    type="number"
-                    scale="time"
-                    domain={["dataMin", "dataMax"]}
-                    axisLine={false}
-                    tickLine={false}
-                    tick={{ fontSize: 12, fill: text }}
-                    tickFormatter={(v) =>
-                      new Date(v).toLocaleDateString("en-US", {
-                        month: "short",
-                        day: "numeric",
-                      })
-                    }
-                  />
-                  <YAxis
-                    axisLine={false}
-                    tickLine={false}
-                    tickFormatter={(v) => `$${v}`}
-                    tick={{ fontSize: 12, fill: text }}
-                  />
-                  <Tooltip
-                    {...tooltipProps}
-                    cursor={{
-                      stroke: activeColor,
-                      strokeWidth: 1,
-                      strokeDasharray: "4 4",
-                    }}
-                    content={({ payload }) => {
-                      if (!payload?.length) return null;
-                      const { date, total } = payload[0].payload;
-                      return (
+                    )}
+                    <OverviewColumn
+                      label="VS LAST MONTH"
+                      value={
+                        summary.categoryDelta != null
+                          ? `${summary.categoryDelta >= 0 ? "+" : ""}${summary.categoryDelta.toFixed(1)}%`
+                          : "—"
+                      }
+                      color={
+                        categoryDeltaGood == null
+                          ? muted
+                          : categoryDeltaGood
+                            ? HOME_INCOME
+                            : HOME_EXPENSE
+                      }
+                      caption={
+                        summary.categoryDelta != null
+                          ? summary.categoryDelta >= 0
+                            ? "↑ higher than last month"
+                            : "↓ lower than last month"
+                          : null
+                      }
+                    />
+                    <OverviewColumn
+                      label={
+                        INCOME_TYPES.has(activeTab)
+                          ? "% OF TOTAL INCOME"
+                          : "% OF TOTAL EXPENSES"
+                      }
+                      value={
+                        summary.pctOfTotal != null
+                          ? `${summary.pctOfTotal.toFixed(1)}%`
+                          : "—"
+                      }
+                      color={activeColor}
+                    />
+                  </div>
+                )}
+
+                {loading ? (
+                  activeTab === "ALL" ? (
+                    <div style={{ marginTop: -16 }}>
+                      <div
+                        className="flex items-center gap-3"
+                        style={{ marginBottom: 20 }}
+                      >
+                        <Skel h={34} w="130px" style={{ borderRadius: 999 }} />
                         <div
+                          className="flex items-center justify-center"
                           style={{
-                            ...tooltipProps.contentStyle,
-                            padding: "8px 12px",
+                            flex: 1,
+                            minWidth: 0,
+                            gap: 6,
+                            flexWrap: "wrap",
                           }}
                         >
-                          <p style={{ margin: 0, opacity: 0.7, fontSize: 12 }}>
-                            {new Date(date).toLocaleDateString("en-US", {
-                              month: "short",
-                              day: "numeric",
-                              year: "numeric",
-                            })}
-                          </p>
-                          <p style={{ margin: 0, fontWeight: 600 }}>
-                            {fmt(total)}
-                          </p>
+                          {[...Array(5)].map((_, i) => (
+                            <Skel
+                              key={i}
+                              h={29}
+                              w={`${110 + i * 14}px`}
+                              style={{ borderRadius: 999 }}
+                            />
+                          ))}
                         </div>
-                      );
-                    }}
-                  />
-                  <Area
-                    key={activeTab}
-                    type="monotone"
-                    dataKey="total"
-                    stroke={activeColor}
-                    strokeWidth={2}
-                    fill="url(#areaFill)"
-                    dot={{ fill: activeColor, r: 4, strokeWidth: 0 }}
-                    activeDot={{ r: 6, strokeWidth: 0 }}
-                    isAnimationActive={false}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            ) : (
-              <Empty />
-            )}
-          </ChartCard>
-
-          <ChartCard title={`Top ${CATEGORY_CONFIG[activeTab].label} by Name`} activeColor={activeColor}>
-            {barData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={230} style={{ pointerEvents: "none" }}>
-                <BarChart data={barData}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis
-                    dataKey="month"
-                    axisLine={false}
-                    tickLine={false}
-                    interval={0}
-                    height={60}
-                    tick={(props) => {
-                      const val = props.payload?.value ?? "";
-                      const label = val.length > 12 ? val.slice(0, 12) + "…" : val;
-                      return (
-                        <text x={props.x} y={props.y} dy={8} textAnchor="end" fontSize={12} style={{ fill: text }} transform={`rotate(-35, ${props.x}, ${props.y})`}>
-                          {label}
-                        </text>
-                      );
-                    }}
-                  />
-                  <YAxis axisLine={false} tickLine={false} tickFormatter={(v) => `$${v}`} tick={{ fontSize: 12, fill: text }} />
-                  <Tooltip {...tooltipProps} formatter={(v) => fmt(v)} cursor={false} />
-                  <Bar dataKey="total" radius={[6, 6, 0, 0]} barSize={32}>
-                    {barData.map((entry) => <Cell key={entry.month} fill={entry.color} />)}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            ) : <Empty />}
-          </ChartCard>
-        </div>
-        )}
-
-        {loading ? (
-          <div className="grid gap-4" style={{ gridTemplateColumns: "2fr 1fr" }}>
-            <div className="rounded-2xl" style={{ backgroundColor: surface }}>
-              {/* card header — title + pagination pills all live in one row
-                  now (#127), matches px-6 py-4 */}
-              <div className="px-6 py-4 border-b flex items-center justify-between" style={{ borderColor: border }}>
-                <Skel h={28} w="140px" />
-                <Skel h={28} w="200px" style={{ borderRadius: 999 }} />
-              </div>
-              {/* thead — text-base = 24px line-height, py-3. Name/Amount/Date
-                  order matches the real table (#125) - no Category column
-                  anymore, that's now just the dot in front of each row's name. */}
-              <div className="px-6 py-3 border-b flex items-center gap-6" style={{ borderColor: border }}>
-                <Skel h={24} style={{ flex: 1 }} />
-                <Skel h={24} w="90px" />
-                <Skel h={24} w="110px" />
-                <Skel h={24} w="40px" />
-              </div>
-              {/* rows — text-lg name = 28px line-height, py-4 */}
-              {[...Array(8)].map((_, i) => (
-                <div key={i} className="px-6 py-4 border-t flex items-center gap-6" style={{ borderColor: border }}>
-                  <div className="flex items-center gap-3" style={{ flex: 1 }}>
-                    <Skel h={9} w="9px" style={{ borderRadius: 999, flexShrink: 0 }} />
-                    <Skel h={28} style={{ flex: 1 }} />
+                        <Skel h={38} w="360px" style={{ borderRadius: 999 }} />
+                      </div>
+                      <Skel
+                        h={TREND_CHART_HEIGHT}
+                        style={{ borderRadius: 16 }}
+                      />
+                    </div>
+                  ) : (
+                    /* ChartCard's own p-6, a dotted text-xl title with mb-5, and the
+               230px chart body it wraps. */
+                    <div className="grid grid-cols-2 gap-4">
+                      {[...Array(2)].map((_, i) => (
+                        <div
+                          key={i}
+                          className="rounded-2xl p-6"
+                          style={{ backgroundColor: surface }}
+                        >
+                          <div className="flex items-center gap-2">
+                            <Skel
+                              h={8}
+                              w="8px"
+                              style={{ borderRadius: 999, flexShrink: 0 }}
+                            />
+                            <Skel h={28} w="42%" />
+                          </div>
+                          <Skel
+                            h={230}
+                            style={{ marginTop: 20, borderRadius: 12 }}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )
+                ) : activeTab === "ALL" ? (
+                  /* Full-bleed trend */
+                  <div style={{ marginTop: -16 }}>
+                    <div
+                      className="flex items-center gap-3"
+                      style={{ marginBottom: 20 }}
+                    >
+                      <div
+                        ref={categoriesPanelRef}
+                        style={{ position: "relative", flexShrink: 0 }}
+                      >
+                        <button
+                          onClick={() => setCategoriesOpen((v) => !v)}
+                          onMouseEnter={() => setCategoriesHovered(true)}
+                          onMouseLeave={() => setCategoriesHovered(false)}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                            padding: "8px 16px",
+                            borderRadius: 999,
+                            border: "none",
+                            cursor: "pointer",
+                            fontSize: 14,
+                            fontWeight: 600,
+                            color: text,
+                            backgroundColor: categoriesOpen
+                              ? "rgba(255,255,255,0.09)"
+                              : categoriesHovered
+                                ? "rgba(255,255,255,0.08)"
+                                : "rgba(255,255,255,0.05)",
+                            transition: "background-color 150ms ease",
+                          }}
+                        >
+                          Categories
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="15"
+                            height="15"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            style={{
+                              transform: categoriesOpen
+                                ? "rotate(180deg)"
+                                : "none",
+                              transition: "transform 150ms ease",
+                            }}
+                          >
+                            <path d="M6 9l6 6 6-6" />
+                          </svg>
+                        </button>
+                        {categoriesOpen && (
+                          <div
+                            style={{
+                              position: "absolute",
+                              top: "calc(100% + 8px)",
+                              left: 0,
+                              zIndex: 20,
+                              width: 230,
+                              borderRadius: 14,
+                              backgroundColor: HOME_SURFACE,
+                              boxShadow: "0 16px 40px rgba(0,0,0,0.45)",
+                              padding: 8,
+                            }}
+                          >
+                            {TREND_CATEGORIES.map((cat) => {
+                              const on = visibleCategories.has(cat);
+                              const color = CATEGORY_ACCENT[cat];
+                              return (
+                                <button
+                                  key={cat}
+                                  onClick={() => toggleTrendCategory(cat)}
+                                  style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 10,
+                                    width: "100%",
+                                    textAlign: "left",
+                                    padding: "7px 8px",
+                                    borderRadius: 8,
+                                    border: "none",
+                                    cursor: "pointer",
+                                    fontSize: 13,
+                                    fontWeight: 500,
+                                    color: text,
+                                    backgroundColor: "transparent",
+                                  }}
+                                >
+                                  <span
+                                    style={{
+                                      width: 11,
+                                      height: 11,
+                                      borderRadius: "50%",
+                                      flexShrink: 0,
+                                      boxSizing: "border-box",
+                                      backgroundColor: on
+                                        ? color
+                                        : "transparent",
+                                      border: `2px solid ${color}`,
+                                    }}
+                                  />
+                                  {CATEGORY_CONFIG[cat].label}
+                                </button>
+                              );
+                            })}
+                            <div
+                              style={{
+                                borderTop: `1px solid ${HOME_DIVIDER}`,
+                                marginTop: 6,
+                                paddingTop: 8,
+                              }}
+                            >
+                              <button
+                                onClick={handleSaveTrendCategories}
+                                style={{
+                                  width: "100%",
+                                  padding: "7px 0",
+                                  borderRadius: 8,
+                                  border: "none",
+                                  cursor: "pointer",
+                                  fontSize: 12,
+                                  fontWeight: 700,
+                                  color: categoriesSaved
+                                    ? HOME_INCOME
+                                    : ACCENT_TEXT,
+                                  backgroundColor: categoriesSaved
+                                    ? `color-mix(in srgb, ${HOME_INCOME} 15%, transparent)`
+                                    : ACCENT,
+                                  transition:
+                                    "background-color 150ms ease, color 150ms ease",
+                                }}
+                              >
+                                {categoriesSaved ? "✓ Saved" : "Save"}
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      {/* Explicit rows of four */}
+                      <div
+                        style={{
+                          flex: 1,
+                          minWidth: 0,
+                          display: "flex",
+                          flexDirection: "column",
+                          alignItems: "center",
+                          gap: 6,
+                        }}
+                      >
+                        {trendLegendRows.map((row, i) => (
+                          <div
+                            key={i}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              gap: 6,
+                              flexWrap: "wrap",
+                            }}
+                          >
+                            {row.map((cat) => (
+                              <TrendPill
+                                key={cat}
+                                label={CATEGORY_CONFIG[cat].label}
+                                value={fmt(trendTotals[cat])}
+                                color={CATEGORY_ACCENT[cat]}
+                              />
+                            ))}
+                          </div>
+                        ))}
+                      </div>
+                      <div
+                        ref={trendRangeRef}
+                        className="flex items-center gap-1"
+                        style={{
+                          position: "relative",
+                          padding: 2,
+                          borderRadius: 999,
+                          backgroundColor: "rgba(255,255,255,0.05)",
+                          flexShrink: 0,
+                        }}
+                      >
+                        {/* Sliding selection */}
+                        {rangeIndicator && (
+                          <div
+                            aria-hidden="true"
+                            style={{
+                              position: "absolute",
+                              top: 2,
+                              bottom: 2,
+                              left: rangeIndicator.left,
+                              width: rangeIndicator.width,
+                              borderRadius: 999,
+                              backgroundColor: ACCENT,
+                              pointerEvents: "none",
+                              transition:
+                                "left 280ms cubic-bezier(0.4, 0, 0.2, 1), width 280ms cubic-bezier(0.4, 0, 0.2, 1)",
+                            }}
+                          />
+                        )}
+                        {[
+                          [1, "1M"],
+                          [3, "3M"],
+                          [6, "6M"],
+                          [12, "1Y"],
+                          ["all", "Lifetime"],
+                        ].map(([n, label]) => (
+                          <button
+                            key={n}
+                            data-range-active={trendMonths === n}
+                            onClick={() => setTrendMonths(n)}
+                            onMouseEnter={() => setRangeHovered(n)}
+                            onMouseLeave={() => setRangeHovered(null)}
+                            style={{
+                              position: "relative",
+                              zIndex: 1,
+                              padding: "8px 16px",
+                              borderRadius: 999,
+                              border: "none",
+                              cursor: "pointer",
+                              fontSize: 14,
+                              fontWeight: 700,
+                              color:
+                                trendMonths === n
+                                  ? ACCENT_TEXT
+                                  : rangeHovered === n
+                                    ? ACCENT
+                                    : muted,
+                              backgroundColor:
+                                trendMonths === n
+                                  ? "transparent"
+                                  : rangeHovered === n
+                                    ? `color-mix(in srgb, ${ACCENT} 16%, transparent)`
+                                    : "transparent",
+                              transition:
+                                "color 150ms ease, background-color 150ms ease",
+                            }}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {visibleCategories.size === 0 ? (
+                      <div
+                        style={{
+                          height: TREND_CHART_HEIGHT,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        <p style={{ color: muted, fontSize: 13 }}>
+                          No categories selected — pick one from Categories
+                          above.
+                        </p>
+                      </div>
+                    ) : trendHasData ? (
+                      <div style={{ height: TREND_CHART_HEIGHT }}>
+                        <ResponsiveContainer
+                          width="100%"
+                          height="100%"
+                          style={{ pointerEvents: "none" }}
+                        >
+                          <AreaChart data={trendData}>
+                            <defs>
+                              {TREND_CATEGORIES.map((cat) => (
+                                <linearGradient
+                                  key={cat}
+                                  id={`trend${cat}Fill`}
+                                  x1="0"
+                                  y1="0"
+                                  x2="0"
+                                  y2="1"
+                                >
+                                  <stop
+                                    offset="5%"
+                                    stopColor={CATEGORY_ACCENT[cat]}
+                                    stopOpacity={0.3}
+                                  />
+                                  <stop
+                                    offset="95%"
+                                    stopColor={CATEGORY_ACCENT[cat]}
+                                    stopOpacity={0.02}
+                                  />
+                                </linearGradient>
+                              ))}
+                            </defs>
+                            <CartesianGrid
+                              strokeDasharray="3 3"
+                              vertical={false}
+                              stroke="rgba(255,255,255,0.06)"
+                            />
+                            <XAxis
+                              dataKey="label"
+                              axisLine={false}
+                              tickLine={false}
+                              tick={{ fontSize: 12, fill: text }}
+                              interval={Math.max(
+                                0,
+                                Math.ceil(trendData.length / 8) - 1,
+                              )}
+                            />
+                            <YAxis
+                              axisLine={false}
+                              tickLine={false}
+                              tickFormatter={(v) => `$${v}`}
+                              tick={{ fontSize: 12, fill: text }}
+                            />
+                            <Tooltip
+                              {...tooltipProps}
+                              formatter={(v) => fmt(v)}
+                            />
+                            {visibleTrendCategories.map((cat) => (
+                              <Area
+                                key={cat}
+                                type="linear"
+                                dataKey={cat}
+                                name={CATEGORY_CONFIG[cat].label}
+                                stroke={CATEGORY_ACCENT[cat]}
+                                strokeWidth={2}
+                                fill={`url(#trend${cat}Fill)`}
+                                dot={(props) => {
+                                  const { cx, cy, payload, index } = props;
+                                  if (!payload[cat])
+                                    return (
+                                      <circle
+                                        key={index}
+                                        cx={cx}
+                                        cy={cy}
+                                        r={0}
+                                      />
+                                    );
+                                  return (
+                                    <circle
+                                      key={index}
+                                      cx={cx}
+                                      cy={cy}
+                                      r={3.5}
+                                      fill={CATEGORY_ACCENT[cat]}
+                                      stroke={bg}
+                                      strokeWidth={1.5}
+                                    />
+                                  );
+                                }}
+                                animationDuration={900}
+                                animationEasing="ease-in-out"
+                              />
+                            ))}
+                          </AreaChart>
+                        </ResponsiveContainer>
+                      </div>
+                    ) : (
+                      <Empty />
+                    )}
                   </div>
-                  <Skel h={24} w="90px" />
-                  <Skel h={20} w="110px" />
-                  <Skel h={20} w="40px" />
-                </div>
-              ))}
-            </div>
-            <div className="rounded-2xl" style={{ backgroundColor: surface }}>
-              <div className="px-6 py-4 border-b" style={{ borderColor: border }}>
-                <Skel h={28} w="120px" />
+                ) : (
+                  <div className="grid grid-cols-2 gap-4">
+                    <ChartCard
+                      title="Spending Over Time"
+                      activeColor={activeColor}
+                    >
+                      {areaData.length > 0 ? (
+                        <ResponsiveContainer
+                          width="100%"
+                          height={230}
+                          style={{ pointerEvents: "none" }}
+                        >
+                          <AreaChart data={areaData}>
+                            <defs>
+                              <linearGradient
+                                id="areaFill"
+                                x1="0"
+                                y1="0"
+                                x2="0"
+                                y2="1"
+                              >
+                                <stop
+                                  offset="5%"
+                                  stopColor={activeColor}
+                                  stopOpacity={0.3}
+                                />
+                                <stop
+                                  offset="95%"
+                                  stopColor={activeColor}
+                                  stopOpacity={0.02}
+                                />
+                              </linearGradient>
+                            </defs>
+                            <CartesianGrid
+                              strokeDasharray="3 3"
+                              vertical={false}
+                              stroke={"rgba(255,255,255,0.06)"}
+                            />
+                            <XAxis
+                              dataKey="date"
+                              type="number"
+                              scale="time"
+                              domain={["dataMin", "dataMax"]}
+                              axisLine={false}
+                              tickLine={false}
+                              tick={{ fontSize: 12, fill: text }}
+                              tickFormatter={(v) =>
+                                new Date(v).toLocaleDateString("en-US", {
+                                  month: "short",
+                                  day: "numeric",
+                                })
+                              }
+                            />
+                            <YAxis
+                              axisLine={false}
+                              tickLine={false}
+                              tickFormatter={(v) => `$${v}`}
+                              tick={{ fontSize: 12, fill: text }}
+                            />
+                            <Tooltip
+                              {...tooltipProps}
+                              cursor={{
+                                stroke: activeColor,
+                                strokeWidth: 1,
+                                strokeDasharray: "4 4",
+                              }}
+                              content={({ payload }) => {
+                                if (!payload?.length) return null;
+                                const { date, total } = payload[0].payload;
+                                return (
+                                  <div
+                                    style={{
+                                      ...tooltipProps.contentStyle,
+                                      padding: "8px 12px",
+                                    }}
+                                  >
+                                    <p
+                                      style={{
+                                        margin: 0,
+                                        opacity: 0.7,
+                                        fontSize: 12,
+                                      }}
+                                    >
+                                      {new Date(date).toLocaleDateString(
+                                        "en-US",
+                                        {
+                                          month: "short",
+                                          day: "numeric",
+                                          year: "numeric",
+                                        },
+                                      )}
+                                    </p>
+                                    <p style={{ margin: 0, fontWeight: 600 }}>
+                                      {fmt(total)}
+                                    </p>
+                                  </div>
+                                );
+                              }}
+                            />
+                            <Area
+                              key={activeTab}
+                              type="monotone"
+                              dataKey="total"
+                              stroke={activeColor}
+                              strokeWidth={2}
+                              fill="url(#areaFill)"
+                              dot={{ fill: activeColor, r: 4, strokeWidth: 0 }}
+                              activeDot={{ r: 6, strokeWidth: 0 }}
+                              isAnimationActive={false}
+                            />
+                          </AreaChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <Empty />
+                      )}
+                    </ChartCard>
+
+                    <ChartCard
+                      title={`Top ${CATEGORY_CONFIG[activeTab].label} by Name`}
+                      activeColor={activeColor}
+                    >
+                      {barData.length > 0 ? (
+                        <ResponsiveContainer
+                          width="100%"
+                          height={230}
+                          style={{ pointerEvents: "none" }}
+                        >
+                          <BarChart data={barData}>
+                            <CartesianGrid
+                              strokeDasharray="3 3"
+                              vertical={false}
+                            />
+                            <XAxis
+                              dataKey="month"
+                              axisLine={false}
+                              tickLine={false}
+                              interval={0}
+                              height={60}
+                              tick={(props) => {
+                                const val = props.payload?.value ?? "";
+                                const label =
+                                  val.length > 12
+                                    ? val.slice(0, 12) + "…"
+                                    : val;
+                                return (
+                                  <text
+                                    x={props.x}
+                                    y={props.y}
+                                    dy={8}
+                                    textAnchor="end"
+                                    fontSize={12}
+                                    style={{ fill: text }}
+                                    transform={`rotate(-35, ${props.x}, ${props.y})`}
+                                  >
+                                    {label}
+                                  </text>
+                                );
+                              }}
+                            />
+                            <YAxis
+                              axisLine={false}
+                              tickLine={false}
+                              tickFormatter={(v) => `$${v}`}
+                              tick={{ fontSize: 12, fill: text }}
+                            />
+                            <Tooltip
+                              {...tooltipProps}
+                              formatter={(v) => fmt(v)}
+                              cursor={false}
+                            />
+                            <Bar
+                              dataKey="total"
+                              radius={[6, 6, 0, 0]}
+                              barSize={32}
+                            >
+                              {barData.map((entry) => (
+                                <Cell key={entry.month} fill={entry.color} />
+                              ))}
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <Empty />
+                      )}
+                    </ChartCard>
+                  </div>
+                )}
+
+                {loading ? (
+                  <div
+                    className="grid gap-4"
+                    style={{ gridTemplateColumns: "2fr 1fr" }}
+                  >
+                    <div
+                      className="rounded-2xl"
+                      style={{ backgroundColor: surface }}
+                    >
+                      {/* Card header */}
+                      <div
+                        className="px-6 py-4 border-b flex items-center justify-between"
+                        style={{ borderColor: border }}
+                      >
+                        <div className="flex items-center gap-3">
+                          <Skel h={28} w="140px" />
+                          <Skel h={30} w="176px" style={{ borderRadius: 8 }} />
+                        </div>
+                        <Skel h={28} w="200px" style={{ borderRadius: 999 }} />
+                      </div>
+                      {/* thead */}
+                      <div
+                        className="px-6 py-3 border-b flex items-center gap-6"
+                        style={{ borderColor: border }}
+                      >
+                        <Skel h={24} style={{ flex: 1 }} />
+                        <Skel h={24} w="90px" />
+                        <Skel h={24} w="110px" />
+                        <Skel h={24} w="40px" />
+                      </div>
+                      {/* rows */}
+                      {[...Array(10)].map((_, i) => (
+                        <div
+                          key={i}
+                          className="px-6 py-4 border-t flex items-center gap-6"
+                          style={{ borderColor: border }}
+                        >
+                          <div
+                            className="flex items-center gap-3"
+                            style={{ flex: 1 }}
+                          >
+                            <Skel
+                              h={9}
+                              w="9px"
+                              style={{ borderRadius: 999, flexShrink: 0 }}
+                            />
+                            <Skel h={28} style={{ flex: 1 }} />
+                          </div>
+                          <Skel h={24} w="90px" />
+                          <Skel h={20} w="110px" />
+                          <Skel h={20} w="40px" />
+                        </div>
+                      ))}
+                    </div>
+                    {/* Side panel */}
+                    <div
+                      className="rounded-2xl"
+                      style={{ backgroundColor: surface }}
+                    >
+                      <div
+                        className="px-6 py-4 border-b flex items-center gap-3"
+                        style={{ borderColor: border }}
+                      >
+                        <Skel
+                          h={9}
+                          w="9px"
+                          style={{ borderRadius: 999, flexShrink: 0 }}
+                        />
+                        <Skel h={28} w="120px" />
+                      </div>
+                      <div
+                        className="flex items-center justify-center"
+                        style={{
+                          padding: "16px",
+                          borderBottom: `1px solid ${border}`,
+                        }}
+                      >
+                        <Skel h={180} w={180} style={{ borderRadius: "50%" }} />
+                      </div>
+                      {[...Array(8)].map((_, i) => (
+                        <div
+                          key={i}
+                          className="px-6 flex items-center gap-4"
+                          style={{
+                            paddingTop: 13,
+                            paddingBottom: 13,
+                            borderTop: i === 0 ? "none" : `1px solid ${border}`,
+                          }}
+                        >
+                          <Skel
+                            h={9}
+                            w="9px"
+                            style={{ borderRadius: 999, flexShrink: 0 }}
+                          />
+                          <Skel h={24} style={{ flex: 1 }} />
+                          <Skel h={28} w="72px" />
+                          <Skel h={24} w="84px" />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    className="grid gap-4"
+                    style={{ gridTemplateColumns: "2fr 1fr" }}
+                  >
+                    <div ref={tableRef}>
+                      <TransactionTable
+                        rows={paginated}
+                        page={page}
+                        perPage={perPage}
+                        total={sorted.length}
+                        onPageChange={setPage}
+                        onPerPageChange={setPerPage}
+                        onEdit={(t) => {
+                          setEditingTransaction(t);
+                          setEditingFromSearch(false);
+                        }}
+                        onDelete={handleDelete}
+                        activeColor={activeColor}
+                        highlightId={highlightId}
+                        sortColumn={sortColumn}
+                        sortDir={sortDir}
+                        onSort={handleSort}
+                        query={tableQuery}
+                        onQueryChange={setTableQuery}
+                      />
+                    </div>
+                    {activeTab === "ALL" ? (
+                      <CategoryTrendPanel
+                        transactions={transactions}
+                        dateRange={dateRange}
+                      />
+                    ) : (
+                      // Self-hides when the category has nothing scheduled (#127).
+                      <div className="space-y-4">
+                        <CategoryUpcomingPanel
+                          category={activeTab}
+                          onRefresh={refreshTransactions}
+                        />
+                        <CategoryDetailPanel
+                          category={activeTab}
+                          transactions={transactions}
+                          dateRange={dateRange}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
-              {[...Array(6)].map((_, i) => (
-                <div key={i} className="px-6 py-4 flex items-center gap-4" style={{ borderTop: i === 0 ? "none" : `1px solid ${border}` }}>
-                  <Skel h={9} w="9px" style={{ borderRadius: 999, flexShrink: 0 }} />
-                  <Skel h={24} style={{ flex: 1 }} />
-                  <Skel h={28} w="72px" />
-                  <Skel h={24} w="84px" />
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : (
-        <div className="grid gap-4" style={{ gridTemplateColumns: "2fr 1fr" }}>
-          <div ref={tableRef}>
-            <TransactionTable
-              rows={paginated}
-              page={page}
-              perPage={perPage}
-              total={sorted.length}
-              onPageChange={setPage}
-              onPerPageChange={setPerPage}
-              onEdit={(t) => { setEditingTransaction(t); setEditingFromSearch(false); }}
-              onDelete={handleDelete}
-              activeColor={activeColor}
-              highlightId={highlightId}
-              sortColumn={sortColumn}
-              sortDir={sortDir}
-              onSort={handleSort}
-            />
-          </div>
-          {activeTab === "ALL" ? (
-            <CategoryTrendPanel transactions={transactions} dateRange={dateRange} />
-          ) : (
-            // Upcoming sits above the history panel: it's the part that can
-            // still be acted on, and it self-hides when the category has
-            // nothing scheduled (#127).
-            <div className="space-y-4">
-              <CategoryUpcomingPanel category={activeTab} onRefresh={refreshTransactions} />
-              <CategoryDetailPanel category={activeTab} transactions={transactions} dateRange={dateRange} />
-            </div>
+            </main>
           )}
-        </div>
-        )}
-        </div>
-      </main>
-        )}
-        <Footer />
+          <Footer />
         </div>
       </div>
 
       {devMenuOpen && !isDemo() && (
-        <div style={{
-          position: "fixed", bottom: 24, right: 24, zIndex: 9999,
-          width: 280, borderRadius: 14,
-          backgroundColor: surface, border: `1px solid ${border}`,
-          boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
-          overflow: "hidden", display: "flex", flexDirection: "column", maxHeight: "80vh",
-        }}>
-          <div style={{ padding: "10px 14px 9px", borderBottom: `1px solid ${border}`, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: HOME_EXPENSE }}>DEV TOOLS</span>
-            <button onClick={() => setDevMenuOpen(false)} style={{ background: "none", border: "none", cursor: "pointer", color: muted, display: "flex", padding: 2 }}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        <div
+          style={{
+            position: "fixed",
+            bottom: 24,
+            right: 24,
+            zIndex: 9999,
+            width: 280,
+            borderRadius: 14,
+            backgroundColor: surface,
+            border: `1px solid ${border}`,
+            boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+            overflow: "hidden",
+            display: "flex",
+            flexDirection: "column",
+            maxHeight: "80vh",
+          }}
+        >
+          <div
+            style={{
+              padding: "10px 14px 9px",
+              borderBottom: `1px solid ${border}`,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              flexShrink: 0,
+            }}
+          >
+            <span
+              style={{
+                fontSize: 11,
+                fontWeight: 700,
+                letterSpacing: "0.08em",
+                color: HOME_EXPENSE,
+              }}
+            >
+              DEV TOOLS
+            </span>
+            <button
+              onClick={() => setDevMenuOpen(false)}
+              style={{
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                color: muted,
+                display: "flex",
+                padding: 2,
+              }}
+            >
+              <svg
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M18 6 6 18M6 6l12 12" />
+              </svg>
             </button>
           </div>
           <div style={{ overflowY: "auto", padding: "6px 0 10px" }}>
-
-            <DevMenuSection label="LOADING & STATE" border={border} muted={muted} />
-            <DevMenuRow label="Skeletons" active={loading} onToggle={() => setLoading(v => !v)} muted={muted} text={text} border={border} />
-            <DevMenuRow label="Force empty" active={devForceEmpty} onToggle={() => setDevForceEmpty(v => !v)} muted={muted} text={text} border={border} />
-            <DevMenuRow label="Force next error" active={devForceError} onToggle={() => { const next = !devForceError; setDevForceError(next); devForceErrorRef.current = next; }} muted={muted} text={text} border={border} />
-            <DevMenuButton label="Re-fetch" description="Reload transactions" onClick={() => { setLoading(true); refreshTransactions(); setTimeout(() => setLoading(false), devDelay + 200); }} muted={muted} text={text} border={border} />
+            <DevMenuSection
+              label="LOADING & STATE"
+              border={border}
+              muted={muted}
+            />
+            <DevMenuRow
+              label="Skeletons"
+              active={loading}
+              onToggle={() => setLoading((v) => !v)}
+              muted={muted}
+              text={text}
+              border={border}
+            />
+            <DevMenuRow
+              label="Force empty"
+              active={devForceEmpty}
+              onToggle={() => setDevForceEmpty((v) => !v)}
+              muted={muted}
+              text={text}
+              border={border}
+            />
+            <DevMenuRow
+              label="Force next error"
+              active={devForceError}
+              onToggle={() => {
+                const next = !devForceError;
+                setDevForceError(next);
+                devForceErrorRef.current = next;
+              }}
+              muted={muted}
+              text={text}
+              border={border}
+            />
+            <DevMenuButton
+              label="Re-fetch"
+              description="Reload transactions"
+              onClick={() => {
+                setLoading(true);
+                refreshTransactions();
+                setTimeout(() => setLoading(false), devDelay + 200);
+              }}
+              muted={muted}
+              text={text}
+              border={border}
+            />
 
             <DevMenuSection label="NETWORK" border={border} muted={muted} />
-            <div style={{ padding: "4px 14px 6px", display: "flex", flexDirection: "column", gap: 4 }}>
+            <div
+              style={{
+                padding: "4px 14px 6px",
+                display: "flex",
+                flexDirection: "column",
+                gap: 4,
+              }}
+            >
               <span style={{ fontSize: 11, color: muted }}>Slow network</span>
               <div style={{ display: "flex", gap: 4 }}>
-                {[0, 500, 2000, 5000].map(ms => (
-                  <button key={ms} onClick={() => setDevDelay(ms)} style={{ flex: 1, padding: "3px 0", borderRadius: 6, border: `1px solid ${devDelay === ms ? HOME_EXPENSE : border}`, backgroundColor: devDelay === ms ? `color-mix(in srgb, ${HOME_EXPENSE} 12%, transparent)` : "transparent", color: devDelay === ms ? HOME_EXPENSE : muted, fontSize: 10, fontWeight: 600, cursor: "pointer" }}>
-                    {ms === 0 ? "Off" : ms < 1000 ? `${ms}ms` : `${ms/1000}s`}
+                {[0, 500, 2000, 5000].map((ms) => (
+                  <button
+                    key={ms}
+                    onClick={() => setDevDelay(ms)}
+                    style={{
+                      flex: 1,
+                      padding: "3px 0",
+                      borderRadius: 6,
+                      border: `1px solid ${devDelay === ms ? HOME_EXPENSE : border}`,
+                      backgroundColor:
+                        devDelay === ms
+                          ? `color-mix(in srgb, ${HOME_EXPENSE} 12%, transparent)`
+                          : "transparent",
+                      color: devDelay === ms ? HOME_EXPENSE : muted,
+                      fontSize: 10,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {ms === 0 ? "Off" : ms < 1000 ? `${ms}ms` : `${ms / 1000}s`}
                   </button>
                 ))}
               </div>
             </div>
 
             <DevMenuSection label="DATA" border={border} muted={muted} />
-            <DevMenuInfo label="Transactions" value={transactions.length} muted={muted} text={text} />
-            <DevMenuInfo label="Last fetch" value={devLastFetch ? devLastFetch.toLocaleTimeString() : "—"} muted={muted} text={text} />
-            <DevMenuInfo label="Date range" value={dateRange.from ? `${dateRange.from.toLocaleDateString("en-US",{month:"short",day:"numeric"})} → ${dateRange.to?.toLocaleDateString("en-US",{month:"short",day:"numeric"}) ?? "…"}` : "All time"} muted={muted} text={text} />
-            <DevMenuInfo label="Active tab" value={activeTab} muted={muted} text={text} />
-            <DevMenuInfo label="Sort" value={`${sortColumn} ${sortDir}`} muted={muted} text={text} />
+            <DevMenuInfo
+              label="Transactions"
+              value={transactions.length}
+              muted={muted}
+              text={text}
+            />
+            <DevMenuInfo
+              label="Last fetch"
+              value={devLastFetch ? devLastFetch.toLocaleTimeString() : "—"}
+              muted={muted}
+              text={text}
+            />
+            <DevMenuInfo
+              label="Date range"
+              value={
+                dateRange.from
+                  ? `${dateRange.from.toLocaleDateString("en-US", { month: "short", day: "numeric" })} → ${dateRange.to?.toLocaleDateString("en-US", { month: "short", day: "numeric" }) ?? "…"}`
+                  : "All time"
+              }
+              muted={muted}
+              text={text}
+            />
+            <DevMenuInfo
+              label="Active tab"
+              value={activeTab}
+              muted={muted}
+              text={text}
+            />
+            <DevMenuInfo
+              label="Sort"
+              value={`${sortColumn} ${sortDir}`}
+              muted={muted}
+              text={text}
+            />
 
             <DevMenuSection label="SESSION" border={border} muted={muted} />
-            <DevMenuInfo label="Token expiry" value={(() => { try { const t = localStorage.getItem("token"); if (!t) return "None"; const p = JSON.parse(atob(t.split(".")[1])); return p.exp ? new Date(p.exp * 1000).toLocaleString() : "No exp"; } catch { return "Invalid"; } })()} muted={muted} text={text} />
-            <DevMenuButton label="Clear localStorage" description="Wipes all local data + reloads" onClick={() => { localStorage.clear(); window.location.reload(); }} muted={muted} text={HOME_EXPENSE} border={border} danger />
-
+            <DevMenuInfo
+              label="Token expiry"
+              value={(() => {
+                try {
+                  const t = localStorage.getItem("token");
+                  if (!t) return "None";
+                  const p = JSON.parse(atob(t.split(".")[1]));
+                  return p.exp
+                    ? new Date(p.exp * 1000).toLocaleString()
+                    : "No exp";
+                } catch {
+                  return "Invalid";
+                }
+              })()}
+              muted={muted}
+              text={text}
+            />
+            <DevMenuButton
+              label="Clear localStorage"
+              description="Wipes all local data + reloads"
+              onClick={() => {
+                localStorage.clear();
+                window.location.reload();
+              }}
+              muted={muted}
+              text={HOME_EXPENSE}
+              border={border}
+              danger
+            />
           </div>
         </div>
       )}
@@ -2457,11 +3435,15 @@ export default function Dashboard() {
         </div>
       )}
 
-
       {editingTransaction && (
         <EditTransactionModal
+          // Keyed by id, or switching rows keeps the previous form values (#81).
+          key={editingTransaction.id}
           transaction={editingTransaction}
-          onClose={() => { setEditingTransaction(null); setEditingFromSearch(false); }}
+          onClose={() => {
+            setEditingTransaction(null);
+            setEditingFromSearch(false);
+          }}
           onSaved={() => {
             setEditingTransaction(null);
             setEditingFromSearch(false);
@@ -2471,36 +3453,107 @@ export default function Dashboard() {
           onLocate={editingFromSearch ? handleLocateTransaction : undefined}
         />
       )}
-
     </div>
   );
 }
 
 function DevMenuSection({ label, border, muted }) {
   return (
-    <div style={{ padding: "8px 14px 4px", borderTop: `1px solid ${border}`, marginTop: 4 }}>
-      <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.1em", color: muted }}>{label}</span>
+    <div
+      style={{
+        padding: "8px 14px 4px",
+        borderTop: `1px solid ${border}`,
+        marginTop: 4,
+      }}
+    >
+      <span
+        style={{
+          fontSize: 9,
+          fontWeight: 700,
+          letterSpacing: "0.1em",
+          color: muted,
+        }}
+      >
+        {label}
+      </span>
     </div>
   );
 }
 
 function DevMenuInfo({ label, value, muted, text }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "4px 14px", gap: 12 }}>
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        padding: "4px 14px",
+        gap: 12,
+      }}
+    >
       <span style={{ fontSize: 12, color: muted }}>{label}</span>
-      <span style={{ fontSize: 11, fontWeight: 600, color: text, fontFamily: "monospace", textAlign: "right", maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{value}</span>
+      <span
+        style={{
+          fontSize: 11,
+          fontWeight: 600,
+          color: text,
+          fontFamily: "monospace",
+          textAlign: "right",
+          maxWidth: 140,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {value}
+      </span>
     </div>
   );
 }
 
-function DevMenuButton({ label, description, onClick, muted, text, border, danger }) {
+function DevMenuButton({
+  label,
+  description,
+  onClick,
+  muted,
+  text,
+  border,
+  danger,
+}) {
   return (
     <div style={{ padding: "3px 14px" }}>
-      <button onClick={onClick} style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 8px", borderRadius: 8, border: `1px solid ${border}`, background: "transparent", cursor: "pointer", transition: "background-color 150ms ease" }}
-        onMouseEnter={e => e.currentTarget.style.backgroundColor = danger ? `color-mix(in srgb, ${HOME_EXPENSE} 8%, transparent)` : `color-mix(in srgb, ${text} 6%, transparent)`}
-        onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}
+      <button
+        onClick={onClick}
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "5px 8px",
+          borderRadius: 8,
+          border: `1px solid ${border}`,
+          background: "transparent",
+          cursor: "pointer",
+          transition: "background-color 150ms ease",
+        }}
+        onMouseEnter={(e) =>
+          (e.currentTarget.style.backgroundColor = danger
+            ? `color-mix(in srgb, ${HOME_EXPENSE} 8%, transparent)`
+            : `color-mix(in srgb, ${text} 6%, transparent)`)
+        }
+        onMouseLeave={(e) =>
+          (e.currentTarget.style.backgroundColor = "transparent")
+        }
       >
-        <span style={{ fontSize: 12, fontWeight: 500, color: danger ? HOME_EXPENSE : text }}>{label}</span>
+        <span
+          style={{
+            fontSize: 12,
+            fontWeight: 500,
+            color: danger ? HOME_EXPENSE : text,
+          }}
+        >
+          {label}
+        </span>
         <span style={{ fontSize: 10, color: muted }}>{description}</span>
       </button>
     </div>
@@ -2509,18 +3562,47 @@ function DevMenuButton({ label, description, onClick, muted, text, border, dange
 
 function DevMenuRow({ label, active, onToggle, muted, text, border }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 14px", gap: 12 }}>
-      <span style={{ fontSize: 12, fontWeight: 500, color: text }}>{label}</span>
-      <button onClick={onToggle} style={{
-        width: 38, height: 22, borderRadius: 999, border: "none", cursor: "pointer", flexShrink: 0,
-        backgroundColor: active ? HOME_INCOME : `color-mix(in srgb, ${text} 18%, transparent)`,
-        position: "relative", transition: "background-color 180ms ease",
-      }}>
-        <div style={{
-          position: "absolute", top: 3, left: active ? "calc(100% - 19px)" : 3,
-          width: 16, height: 16, borderRadius: "50%", backgroundColor: "#fff",
-          transition: "left 180ms ease", boxShadow: "0 1px 3px rgba(0,0,0,0.25)",
-        }} />
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        padding: "6px 14px",
+        gap: 12,
+      }}
+    >
+      <span style={{ fontSize: 12, fontWeight: 500, color: text }}>
+        {label}
+      </span>
+      <button
+        onClick={onToggle}
+        style={{
+          width: 38,
+          height: 22,
+          borderRadius: 999,
+          border: "none",
+          cursor: "pointer",
+          flexShrink: 0,
+          backgroundColor: active
+            ? HOME_INCOME
+            : `color-mix(in srgb, ${text} 18%, transparent)`,
+          position: "relative",
+          transition: "background-color 180ms ease",
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            top: 3,
+            left: active ? "calc(100% - 19px)" : 3,
+            width: 16,
+            height: 16,
+            borderRadius: "50%",
+            backgroundColor: "#fff",
+            transition: "left 180ms ease",
+            boxShadow: "0 1px 3px rgba(0,0,0,0.25)",
+          }}
+        />
       </button>
     </div>
   );
@@ -2528,7 +3610,10 @@ function DevMenuRow({ label, active, onToggle, muted, text, border }) {
 
 function Empty() {
   return (
-    <div className="h-70 flex items-center justify-center text-base" style={{ color: HOME_TEXT }}>
+    <div
+      className="h-70 flex items-center justify-center text-base"
+      style={{ color: HOME_TEXT }}
+    >
       No data yet
     </div>
   );
