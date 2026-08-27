@@ -31,13 +31,33 @@ export const CATEGORY_CONFIG = {
   TIPS: { color: "#34d399", lightColor: "#059669", label: "Tips" },
 };
 
+// Whether a row renders "+" or "-". Cash tips stay "+" here - they're money
+// earned, even before they're banked.
 export const INCOME_TYPES = new Set(["INCOME", "REIMBURSEMENT", "TIPS"]);
 
-// Categories whose transaction name carries no information beyond the category
-// itself. These auto-fill and lock the name input at every entry point rather
-// than letting each row be named separately (#73). Centralised because the old
-// `category === "TIPS" ? "Cash" : ...` ternary was duplicated across 14 sites in
-// 7 files, so adding a second locked category meant touching all of them.
+// Narrower than INCOME_TYPES - these decide what counts toward the Income and
+// Expenses totals, not just how a row is signed (#131, #69):
+//
+//   TIPS    - cash in hand, not yet moved. Excluded until it's deposited.
+//   SAVINGS - moving money into savings isn't spending it.
+//
+// Both still render signed in transaction lists, just don't feed the
+// Income/Expenses/Net totals. Tip deposits are added to income separately.
+export const MONEY_IN_TYPES = new Set(["INCOME", "REIMBURSEMENT"]);
+export const MONEY_OUT_TYPES = new Set(["EXPENSE", "BILL", "SUBSCRIPTION", "DEBT"]);
+
+export function matchesTransaction(t, query) {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  return (
+    t.name?.toLowerCase().includes(q) ||
+    t.note?.toLowerCase().includes(q) ||
+    t.category?.toLowerCase().includes(q) ||
+    (CATEGORY_CONFIG[t.category]?.label ?? "").toLowerCase().includes(q) ||
+    String(t.amount).includes(q)
+  );
+}
+
 export const LOCKED_NAMES = { TIPS: "Cash", SAVINGS: "Savings" };
 
 // The forced name for a category, or null when the user names it themselves.
@@ -88,7 +108,7 @@ export function desaturate(hex, amount = 0.25) {
   return hslToHex(h, Math.max(0, s * (1 - amount)), l);
 }
 
-// First entry = richest; each subsequent step is 5% lighter / slightly less saturated
+// First entry is richest; each step after lightens by 5%.
 export function generateCategoryShades(baseHex, count) {
   const [h, s, l] = hexToHsl(baseHex);
   const baseS = s * 0.72;
@@ -107,8 +127,7 @@ export function fmt(amount) {
   }).format(amount);
 }
 
-// Whole-dollar variant - no cents. UI-only rounding for surfaces where exact
-// change is noise (e.g. savings projections: "saved $100" not "$100.23").
+// Rounds to whole dollars for surfaces where cents are noise, like "saved $100".
 export function fmtWhole(amount) {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -117,7 +136,7 @@ export function fmtWhole(amount) {
   }).format(amount);
 }
 
-// Cycle for the shared amount-sort toggle (AmountSortButton): null -> desc -> asc -> null.
+// Cycle order for the shared amount-sort toggle: off -> descending -> ascending -> off.
 export function nextAmountSort(current) {
   return current === "desc" ? "asc" : current === "asc" ? null : "desc";
 }

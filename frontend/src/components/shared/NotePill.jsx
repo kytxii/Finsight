@@ -1,0 +1,15 @@
+import { HOME_MUTED } from "./categoryVisuals";
+
+export default function NotePill({ note, style }) {
+  if (!note) return null;
+  return (
+    <span style={{
+      display: "inline-block", padding: "2px 8px", borderRadius: 999,
+      fontSize: 11, fontWeight: 600, color: HOME_MUTED,
+      backgroundColor: "rgba(255,255,255,0.06)", whiteSpace: "nowrap",
+      ...style,
+    }}>
+      {note}
+    </span>
+  );
+}

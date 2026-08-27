@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import client from "../api/client";
-import { HOME_BG, HOME_SURFACE, HOME_TEXT, HOME_MUTED, HOME_DIVIDER } from "../components/categoryVisuals";
+import { HOME_SURFACE, HOME_TEXT, HOME_MUTED, HOME_DIVIDER } from "../components/shared/categoryVisuals";
 import { LOADING_SYMBOLS as SYMBOLS, LOADING_PHRASES as PHRASES } from "../utils/authFlavor";
-import { Wordmark } from "../components/Logo";
+import { Wordmark } from "../components/shared/Logo";
+import AuthBackground from "../components/shared/AuthBackground";
 
 // Dark-only, pinned to the app's jade/teal theme (matches Login + the mobile
 // dashboard). No light/dark branching on these pages by design.
@@ -118,47 +119,10 @@ export default function Register() {
     <>
       <style>{`
         @keyframes btn-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        @keyframes finsight-float-1 {
-          0%   { transform: translate(0px,   0px)   scale(1);    }
-          33%  { transform: translate(40px,  -30px) scale(1.08); }
-          66%  { transform: translate(-20px, 25px)  scale(0.95); }
-          100% { transform: translate(0px,   0px)   scale(1);    }
-        }
-        @keyframes finsight-float-2 {
-          0%   { transform: translate(0px,  0px)   scale(1);    }
-          40%  { transform: translate(-35px, 20px) scale(1.06); }
-          70%  { transform: translate(25px, -40px) scale(0.97); }
-          100% { transform: translate(0px,  0px)   scale(1);    }
-        }
-        @keyframes finsight-float-3 {
-          0%   { transform: translate(0px,   0px)  scale(1);    }
-          50%  { transform: translate(20px,  35px) scale(1.05); }
-          100% { transform: translate(0px,   0px)  scale(1);    }
-        }
-        @keyframes finsight-grid-fade { 0%, 100% { opacity: 0.04; } 50% { opacity: 0.08; } }
         @keyframes strength-shimmer { 0% { background-position: -200% center; } 100% { background-position: 200% center; } }
       `}</style>
 
-      {/* Full-screen ambient background */}
-      <div style={{ position: "fixed", inset: 0, backgroundColor: HOME_BG, overflow: "hidden", zIndex: 0 }}>
-        <div
-          style={{
-            position: "absolute", inset: 0,
-            backgroundImage: `radial-gradient(circle, ${ACCENT} 1px, transparent 1px)`,
-            backgroundSize: "32px 32px",
-            animation: "finsight-grid-fade 8s ease-in-out infinite",
-          }}
-        />
-        {/* Glow blobs use fixed px sizes + corner-anchored px offsets so the
-            ambient background reads the same on a phone and a 4K monitor
-            (vw units made them balloon/shrink per screen). */}
-        {/* Jade glow, top-right */}
-        <div style={{ position: "absolute", top: "-160px", right: "-160px", width: "620px", height: "620px", borderRadius: "50%", background: `radial-gradient(circle, ${ACCENT}24 0%, transparent 70%)`, filter: "blur(48px)", animation: "finsight-float-1 18s ease-in-out infinite" }} />
-        {/* Deep-teal glow, bottom-left */}
-        <div style={{ position: "absolute", bottom: "-180px", left: "-140px", width: "520px", height: "520px", borderRadius: "50%", background: `radial-gradient(circle, ${ACCENT_DEEP}55 0%, transparent 70%)`, filter: "blur(56px)", animation: "finsight-float-2 22s ease-in-out infinite" }} />
-        {/* Faint surface glow, center-left */}
-        <div style={{ position: "absolute", top: "34%", left: "-40px", width: "360px", height: "360px", borderRadius: "50%", background: `radial-gradient(circle, ${HOME_SURFACE}cc 0%, transparent 70%)`, filter: "blur(40px)", animation: "finsight-float-3 15s ease-in-out infinite" }} />
-      </div>
+      <AuthBackground />
 
       {/* Scroll-safe centered wrapper (#20) */}
       <div style={{ position: "fixed", inset: 0, zIndex: 1, display: "flex", alignItems: "center", justifyContent: "center", overflowY: "auto", padding: "24px 16px" }}>
@@ -168,7 +132,7 @@ export default function Register() {
             padding: "clamp(28px, 6vw, 40px)",
             borderRadius: "20px",
             backgroundColor: HOME_SURFACE,
-            boxShadow: "0 24px 60px rgba(0,0,0,0.45)",
+            boxShadow: "0 12px 28px rgba(0,0,0,0.4)",
           }}
         >
           <div style={{ marginBottom: "26px" }}>
@@ -275,10 +239,10 @@ export default function Register() {
 
             <p style={{ margin: 0, fontSize: "13.5px", textAlign: "center", color: HOME_MUTED }}>
               Already have an account?{" "}
-              <a href="/login" style={{ color: ACCENT, textDecoration: "none", fontWeight: 700, transition: "filter 0.15s" }}
+              <Link to="/login" style={{ color: ACCENT, textDecoration: "none", fontWeight: 700, transition: "filter 0.15s" }}
                 onMouseEnter={e => e.currentTarget.style.filter = "brightness(1.28)"}
                 onMouseLeave={e => e.currentTarget.style.filter = "none"}
-              >Sign in</a>
+              >Sign in</Link>
             </p>
           </form>
         </div>
