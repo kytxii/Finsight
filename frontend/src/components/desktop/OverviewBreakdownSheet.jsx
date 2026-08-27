@@ -57,7 +57,7 @@ function Note({ children, compact = false }) {
   return <p style={{ margin: compact ? "8px 2px 0" : "12px 2px 0", fontSize: compact ? 11.5 : 12.5, lineHeight: 1.45, color: HOME_MUTED }}>{children}</p>;
 }
 
-// ── Per-cell content ─────────────────────────────────────────────────────────
+// Per-cell content
 
 export function BalanceBody({ safeToSpend, status, compact = false }) {
   if (status !== "ok" || !safeToSpend) {

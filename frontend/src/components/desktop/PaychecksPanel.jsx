@@ -751,7 +751,7 @@ export default function PaychecksPanel({ mobile = false, desktop = false, onSave
     </>
   );
 
-  // ── Desktop: stat header + permanent two-column layout ───────────────────
+  // Desktop: stat header + permanent two-column layout
   if (desktop) {
     const activeSchedule = schedules[0];
     return (
@@ -815,11 +815,11 @@ export default function PaychecksPanel({ mobile = false, desktop = false, onSave
     );
   }
 
-  // ── Sidebar/mobile: toggled list vs settings, unchanged from before ──────
+  // Sidebar/mobile: toggled list vs settings, unchanged from before
   return (
     <div ref={scrollRef} onScroll={handleScroll} style={{ flex: 1, overflowY: "auto", overscrollBehavior: "contain", padding: "16px 20px 32px", display: "flex", flexDirection: "column", gap: "24px", color: text }}>
 
-      {/* ── Loading ── */}
+      {/* Loading */}
       {loading && (
         <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -841,7 +841,7 @@ export default function PaychecksPanel({ mobile = false, desktop = false, onSave
 
       {!loading && (
         <>
-          {/* ── Panel header ── */}
+          {/* Panel header */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <p style={{ ...labelStyle, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 0 }}>
               {view === "settings" ? "Settings" : "Paychecks"}

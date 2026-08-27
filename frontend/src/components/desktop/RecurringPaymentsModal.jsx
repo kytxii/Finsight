@@ -259,7 +259,7 @@ export default function RecurringPaymentsModal({ onClose, inline = false, deskto
       .finally(() => setLoading(false));
   }, []);
 
-  // ── Inline edit ───────────────────────────────────────────────────────────
+  // Inline edit
 
   const startEdit = (id, field, value) => {
     setEditCell({ id, field });
@@ -292,7 +292,7 @@ export default function RecurringPaymentsModal({ onClose, inline = false, deskto
     setRows(prev => prev.map(r => r.id === id ? { ...r, [field]: parsed } : r));
   };
 
-  // ── Delete ────────────────────────────────────────────────────────────────
+  // Delete
 
   const handleDelete = async (id) => {
     setDeleted(s => new Set(s).add(id));
@@ -315,7 +315,7 @@ export default function RecurringPaymentsModal({ onClose, inline = false, deskto
     }
   };
 
-  // ── Toggle category ───────────────────────────────────────────────────────
+  // Toggle category
 
   const toggleCategory = (id) => {
     setRows(prev => prev.map(r =>
@@ -323,13 +323,13 @@ export default function RecurringPaymentsModal({ onClose, inline = false, deskto
     ));
   };
 
-  // ── Toggle estimate ──────────────────────────────────────────────────────
+  // Toggle estimate
 
   const toggleEstimate = (id) => {
     setRows(prev => prev.map(r => r.id === id ? { ...r, is_estimate: !r.is_estimate } : r));
   };
 
-  // ── Dirty check ───────────────────────────────────────────────────────────
+  // Dirty check
 
   const anyDraftValid = drafts.some(isDraftValid);
 
@@ -350,7 +350,7 @@ export default function RecurringPaymentsModal({ onClose, inline = false, deskto
     return false;
   });
 
-  // ── Save ──────────────────────────────────────────────────────────────────
+  // Save
 
   const handleSave = async () => {
     if (isSaving || !isDirty) return;
@@ -412,7 +412,7 @@ export default function RecurringPaymentsModal({ onClose, inline = false, deskto
     onSaveStateChange?.({ isDirty, isSaving, saveStatus, onSave: handleSave });
   }, [isDirty, isSaving, saveStatus, drafts]);
 
-  // ── Cell renderers ────────────────────────────────────────────────────────
+  // Cell renderers
 
   const renderDisplay = (row, field) => {
     if (field === "amount") {
@@ -533,7 +533,7 @@ export default function RecurringPaymentsModal({ onClose, inline = false, deskto
     return content;
   };
 
-  // ── Column config ─────────────────────────────────────────────────────────
+  // Column config
 
   const COLS = [
     { field: "name",         label: "Name",   width: "33%" },
@@ -713,7 +713,7 @@ export default function RecurringPaymentsModal({ onClose, inline = false, deskto
     </div>
   );
 
-  // ── Table content ─────────────────────────────────────────────────────────
+  // Table content
 
   const tableContent = (
     <>
@@ -947,7 +947,7 @@ export default function RecurringPaymentsModal({ onClose, inline = false, deskto
     </>
   );
 
-  // ── Save button (modal mode only) ─────────────────────────────────────────
+  // Save button (modal mode only)
 
   const saveButton = (
     <button
@@ -972,7 +972,7 @@ export default function RecurringPaymentsModal({ onClose, inline = false, deskto
     </button>
   );
 
-  // ── Desktop mode ──────────────────────────────────────────────────────────
+  // Desktop mode
 
   if (desktop) {
     return (
@@ -1036,7 +1036,7 @@ export default function RecurringPaymentsModal({ onClose, inline = false, deskto
     );
   }
 
-  // ── Inline mode ───────────────────────────────────────────────────────────
+  // Inline mode
 
   if (inline) {
     return (
@@ -1049,7 +1049,7 @@ export default function RecurringPaymentsModal({ onClose, inline = false, deskto
     );
   }
 
-  // ── Modal mode ────────────────────────────────────────────────────────────
+  // Modal mode
 
   return (
     <div

@@ -47,7 +47,7 @@ import { HOME_BG, HOME_TEXT, HOME_MUTED, HOME_DIVIDER, HOME_SURFACE, HOME_INCOME
 import CategoryPicker from "../components/mobile/CategoryPicker";
 import CompactDateField from "../components/mobile/CompactDateField";
 
-// ── Icons ────────────────────────────────────────────────────────────────────
+// Icons
 
 function IconDashboard({ size = 20 }) {
   return (
@@ -157,7 +157,7 @@ function IconChevronLeft({ size = 16 }) {
   );
 }
 
-// ── Main component ────────────────────────────────────────────────────────────
+// Main component
 
 const newBatchRow = () => ({
   _key: Math.random(),
@@ -420,7 +420,7 @@ export default function MobileDashboard() {
     }
   };
 
-  // ── Dashboard state (fixed to current month - no picker on the Home tab)
+  // Dashboard state (fixed to current month - no picker on the Home tab)
   const dashDateRange = useMemo(() => getPresetRange("Current Month"), []);
 
   const [activityJump, setActivityJump] = useState(null);
@@ -539,7 +539,7 @@ export default function MobileDashboard() {
     setActivityJump({ id: t.id, token: Date.now() });
   }, []);
 
-  // ── Dashboard computed
+  // Dashboard computed
   const dashFiltered = useMemo(() => {
     if (devForceEmpty) return [];
     if (!dashDateRange.from && !dashDateRange.to) return transactions;
@@ -614,7 +614,7 @@ export default function MobileDashboard() {
     [upcomingItems],
   );
 
-  // ── Last month (for the small +/-% badges on Home's Income/Expense cards,
+  // Last month (for the small +/-% badges on Home's Income/Expense cards,
   // and MobileCategory's own vs-last-month card, #108)
   const dashLastMonthRange = useMemo(() => getPresetRange("Last Month"), []);
   const dashLastMonthDeposits = useMemo(
@@ -669,7 +669,7 @@ export default function MobileDashboard() {
     return () => vv.removeEventListener("resize", handler);
   }, []);
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  // Render
 
   return (
     <div
@@ -694,7 +694,7 @@ export default function MobileDashboard() {
         onSelectTransaction={handleSelectTransaction}
       />
 
-      {/* ── Main content ── */}
+      {/* Main content */}
       <main
         ref={mainRef}
         className="flex-1 px-4 pb-28 space-y-4 overflow-y-auto"
@@ -788,7 +788,7 @@ export default function MobileDashboard() {
         </MobilePageSlide>
       </main>
 
-      {/* ── Bottom nav ── */}
+      {/* Bottom nav */}
       <nav
         className="fixed bottom-0 left-0 right-0 z-30 flex px-4 pointer-events-none"
         style={{ paddingBottom: "max(7px, calc(env(safe-area-inset-bottom, 0px) / 2))" }}
@@ -867,7 +867,7 @@ export default function MobileDashboard() {
         </div>
       </nav>
 
-      {/* ── Overlay ── */}
+      {/* Overlay */}
       <div
         className="fixed inset-0 z-40"
         style={{
@@ -884,7 +884,7 @@ export default function MobileDashboard() {
         }}
       />
 
-      {/* ── Add sheet ── */}
+      {/* Add sheet */}
       <div
         className="fixed bottom-0 left-0 right-0 z-50 rounded-t-2xl p-5 space-y-3"
         style={{
@@ -1002,7 +1002,7 @@ export default function MobileDashboard() {
         </button>
       </div>
 
-      {/* ── Entry sheet ── */}
+      {/* Entry sheet */}
       <div
         className="fixed bottom-0 left-0 right-0 z-50"
         style={{
@@ -1118,7 +1118,7 @@ export default function MobileDashboard() {
         </div>
       </div>
 
-      {/* ── Batch add sheet ── */}
+      {/* Batch add sheet */}
       <div
         className="fixed bottom-0 left-0 right-0 z-50 rounded-t-2xl flex flex-col"
         style={{
@@ -1429,7 +1429,7 @@ export default function MobileDashboard() {
         </div>
       </div>
 
-      {/* ── Import sheet ── */}
+      {/* Import sheet */}
       {/* Backdrop is the shared Add-sheet overlay above, same reasoning as
           the Batch sheet. */}
       <div
@@ -1500,7 +1500,7 @@ export default function MobileDashboard() {
       </div>
 
 
-      {/* ── Overview stat breakdown sheet (#42) ── */}
+      {/* Overview stat breakdown sheet (#42) */}
       <OverviewBreakdownSheet
         cell={breakdownCell}
         onClose={() => setBreakdownCell(null)}
@@ -1514,7 +1514,7 @@ export default function MobileDashboard() {
         cashTips={dashCashTips}
       />
 
-      {/* ── Recurring payments overlay ── */}
+      {/* Recurring payments overlay */}
       <MobileScreen open={recurringOpen} style={{ backgroundColor: HOME_BG, color: HOME_TEXT }}>
           <div
             className="px-4 pb-3 flex items-center justify-between shrink-0"
@@ -1551,7 +1551,7 @@ export default function MobileDashboard() {
           <MobileRecurring onSaved={refresh} openAddSignal={recurringAddSignal} />
       </MobileScreen>
 
-      {/* ── Installments overlay ── */}
+      {/* Installments overlay */}
       <MobileScreen open={installmentsOpen} style={{ backgroundColor: HOME_BG, color: HOME_TEXT }}>
           <div
             className="px-4 pb-3 flex items-center justify-between shrink-0"
@@ -1588,7 +1588,7 @@ export default function MobileDashboard() {
           <MobileInstallments onSaved={refresh} openAddSignal={installmentsAddSignal} />
       </MobileScreen>
 
-      {/* ── Paychecks overlay ── */}
+      {/* Paychecks overlay */}
       <MobileScreen open={paychecksOpen} style={{ backgroundColor: HOME_BG, color: HOME_TEXT }}>
           <div
             className="px-4 pb-3 flex items-center shrink-0"
@@ -1614,7 +1614,7 @@ export default function MobileDashboard() {
           <MobilePaychecks onSaved={refresh} />
       </MobileScreen>
 
-      {/* ── Drawer backdrop ── */}
+      {/* Drawer backdrop */}
       {(drawerOpen || accountOpen) && (
         <div
           className="fixed inset-0 z-40"
@@ -1623,7 +1623,7 @@ export default function MobileDashboard() {
         />
       )}
 
-      {/* ── Drawer (menu + account as sliding track) ── */}
+      {/* Drawer (menu + account as sliding track) */}
       {/* Bottom sheet, same shape as MobileTransactionModal's detail sheet. */}
       <div
         className="fixed bottom-0 left-0 right-0 z-50"

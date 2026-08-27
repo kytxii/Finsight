@@ -71,9 +71,15 @@ async def logout(request: Request, response: Response, db: AsyncSession = Depend
 async def oauth_login_redirect(provider: str, request: Request):
     if provider not in OAUTH_PROVIDERS:
         raise HTTPException(status_code=404, detail="Unknown provider")
-    client = oauth.create_client(provider)
-    redirect_uri = settings.REDIRECT_URI.format(provider=provider)
-    return await client.authorize_redirect(request, redirect_uri)
+    try:
+        client = oauth.create_client(provider)
+        redirect_uri = settings.REDIRECT_URI.format(provider=provider)
+        return await client.authorize_redirect(request, redirect_uri)
+    except Exception:
+        # A misconfigured provider (missing client id/secret, bad redirect URI) would
+        # otherwise surface as a raw unhandled error instead of ever reaching the
+        # provider's consent screen (#126). Send the user back with a visible message.
+        return RedirectResponse(url=f"{settings.FRONTEND_URL}/login?error={quote('Something went wrong signing in.')}")
 
 
 @router.get("/{provider}/callback")

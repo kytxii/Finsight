@@ -1,9 +1,8 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import client from "../api/client";
 import {
-  HOME_BG,
   HOME_SURFACE,
   HOME_TEXT,
   HOME_MUTED,
@@ -14,6 +13,7 @@ import {
   LOADING_PHRASES as PHRASES,
 } from "../utils/authFlavor";
 import { Wordmark } from "../components/shared/Logo";
+import AuthBackground from "../components/shared/AuthBackground";
 
 const API_BASE = import.meta.env.VITE_API_URL ?? "/api";
 
@@ -160,87 +160,9 @@ export default function Login() {
     <>
       <style>{`
         @keyframes btn-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        @keyframes finsight-float-1 {
-          0%   { transform: translate(0px,   0px)   scale(1);    }
-          33%  { transform: translate(40px,  -30px) scale(1.08); }
-          66%  { transform: translate(-20px, 25px)  scale(0.95); }
-          100% { transform: translate(0px,   0px)   scale(1);    }
-        }
-        @keyframes finsight-float-2 {
-          0%   { transform: translate(0px,  0px)   scale(1);    }
-          40%  { transform: translate(-35px, 20px) scale(1.06); }
-          70%  { transform: translate(25px, -40px) scale(0.97); }
-          100% { transform: translate(0px,  0px)   scale(1);    }
-        }
-        @keyframes finsight-float-3 {
-          0%   { transform: translate(0px,   0px)  scale(1);    }
-          50%  { transform: translate(20px,  35px) scale(1.05); }
-          100% { transform: translate(0px,   0px)  scale(1);    }
-        }
-        @keyframes finsight-grid-fade { 0%, 100% { opacity: 0.04; } 50% { opacity: 0.08; } }
       `}</style>
 
-      {/* Full-screen ambient background */}
-      <div
-        style={{
-          position: "fixed",
-          inset: 0,
-          backgroundColor: HOME_BG,
-          overflow: "hidden",
-          zIndex: 0,
-        }}
-      >
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            backgroundImage: `radial-gradient(circle, ${ACCENT} 1px, transparent 1px)`,
-            backgroundSize: "32px 32px",
-            animation: "finsight-grid-fade 8s ease-in-out infinite",
-          }}
-        />
-        <div
-          style={{
-            position: "absolute",
-            top: "-160px",
-            left: "-160px",
-            width: "620px",
-            height: "620px",
-            borderRadius: "50%",
-            background: `radial-gradient(circle, ${ACCENT}24 0%, transparent 70%)`,
-            filter: "blur(48px)",
-            animation: "finsight-float-1 18s ease-in-out infinite",
-          }}
-        />
-        {/* Deep-teal glow, bottom-right */}
-        <div
-          style={{
-            position: "absolute",
-            bottom: "-180px",
-            right: "-140px",
-            width: "520px",
-            height: "520px",
-            borderRadius: "50%",
-            background: `radial-gradient(circle, ${ACCENT_DEEP}55 0%, transparent 70%)`,
-            filter: "blur(56px)",
-            animation: "finsight-float-2 22s ease-in-out infinite",
-          }}
-        />
-        {/* Faint surface glow, center-right */}
-        <div
-          style={{
-            position: "absolute",
-            top: "34%",
-            right: "-40px",
-            width: "360px",
-            height: "360px",
-            borderRadius: "50%",
-            background: `radial-gradient(circle, ${HOME_SURFACE}cc 0%, transparent 70%)`,
-            filter: "blur(40px)",
-            animation: "finsight-float-3 15s ease-in-out infinite",
-          }}
-        />
-      </div>
+      <AuthBackground />
 
       {/* Scroll-safe centered wrapper*/}
       <div
@@ -262,7 +184,7 @@ export default function Login() {
             padding: "clamp(28px, 6vw, 40px)",
             borderRadius: "20px",
             backgroundColor: HOME_SURFACE,
-            boxShadow: "0 24px 60px rgba(0,0,0,0.45)",
+            boxShadow: "0 12px 28px rgba(0,0,0,0.4)",
           }}
         >
           <div style={{ marginBottom: "26px" }}>
@@ -534,8 +456,8 @@ export default function Login() {
               }}
             >
               Don't have an account?{" "}
-              <a
-                href="/register"
+              <Link
+                to="/register"
                 style={{
                   opacity: rateLimited ? 0.35 : 1,
                   color: ACCENT,
@@ -550,7 +472,7 @@ export default function Login() {
                 onMouseLeave={(e) => (e.currentTarget.style.filter = "none")}
               >
                 Register
-              </a>
+              </Link>
             </p>
 
             <div
