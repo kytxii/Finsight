@@ -17,6 +17,13 @@ from app.schemas.paycheck import SetSpendingReserve
 EXPENSE_CATEGORIES = {Category.EXPENSE, Category.BILL, Category.SUBSCRIPTION, Category.SAVINGS, Category.DEBT}
 INCOME_CATEGORIES = {Category.INCOME, Category.REIMBURSEMENT, Category.TIPS}
 
+# Categories that count as money actually arriving. Narrower than
+# INCOME_CATEGORIES, which is a sign/direction test (is this row a "+"?) and so
+# includes TIPS. A cash tip is tracked, not banked - it becomes income only when
+# it lands in checking as a TipDeposit, the same rule _balance_delta already
+# applies to the running balance. (#131)
+MONEY_IN_CATEGORIES = {Category.INCOME, Category.REIMBURSEMENT}
+
 # Estimated-savings spend/obligation categories exclude SAVINGS: money moved into
 # savings is saving, not spending, and is surfaced separately as "saved so far".
 NON_SAVINGS_EXPENSE_CATEGORIES = EXPENSE_CATEGORIES - {Category.SAVINGS}
@@ -540,10 +547,15 @@ class EstimatedSavingsResult(NamedTuple):
 
 
 async def _whole_month_income(schedules: list[PaycheckSchedule], month_start: date, month_end: date, current_user: UUID, db: AsyncSession) -> Decimal:
-    """Every dollar of income for [month_start, month_end): real INCOME
-    transactions already logged (paycheck-linked or not - a manual entry like
-    a freelance gig counts the same as a formal paycheck) plus a projected
-    amount for each active schedule's still-unfilled paycheck this month.
+    """Every dollar of income for [month_start, month_end): real INCOME and
+    REIMBURSEMENT transactions already logged (paycheck-linked or not - a manual
+    entry like a freelance gig counts the same as a formal paycheck), cash
+    banked as TipDeposits, plus a projected amount for each active schedule's
+    still-unfilled paycheck this month.
+
+    Cash tips are deliberately absent. A TIPS transaction records cash in hand,
+    which changes nothing until it's deposited - so the deposit is the income
+    event, not the tip. Same rule _balance_delta applies to checking. (#131)
 
     Not a double count: a filled paycheck's amount already exists as a linked
     INCOME transaction (see update_paycheck_amount), so it's covered by the
@@ -553,9 +565,17 @@ async def _whole_month_income(schedules: list[PaycheckSchedule], month_start: da
     actual_income = sum((
         await db.scalars(select(Transaction.amount).where(
             Transaction.created_by == current_user,
-            Transaction.category == Category.INCOME,
+            Transaction.category.in_(MONEY_IN_CATEGORIES),
             Transaction.transaction_date >= month_start,
             Transaction.transaction_date < month_end,
+        ))
+    ).all(), start=Decimal("0"))
+
+    actual_income += sum((
+        await db.scalars(select(TipDeposit.amount).where(
+            TipDeposit.created_by == current_user,
+            TipDeposit.deposit_date >= month_start,
+            TipDeposit.deposit_date < month_end,
         ))
     ).all(), start=Decimal("0"))
 
@@ -589,7 +609,7 @@ async def get_estimated_savings(current_user: UUID, db: AsyncSession) -> Estimat
     results with a projection for the days still ahead.
 
     estimated_savings = max(whole_month_income - committed_recurring -
-    discretionary_projection, saved_so_far). whole_month_income is every dollar
+    discretionary_projection, 0). whole_month_income is every dollar
     of income for the month - landed or not, paycheck-schedule or a manual
     entry like a freelance gig - deliberately NOT scoped to "still to come," so
     a raise or an amount correction on an already-landed paycheck (or a
@@ -597,9 +617,15 @@ async def get_estimated_savings(current_user: UUID, db: AsyncSession) -> Estimat
     once payday passes or being silently excluded.
     discretionary_projection blends real spending already logged this month
     with a historical daily rate for the days left, so the estimate gets more
-    accurate (not just smaller) as the month plays out. Flooring at saved_so_far
-    means the total can never read as "saved past your target" - a month
-    outperforming the projection just raises the ceiling to match instead.
+    accurate (not just smaller) as the month plays out.
+
+    The floor is 0, not saved_so_far: this figure is the ceiling the projection
+    actually computed, and clamping it to whatever has already been saved threw
+    that away - whenever the ceiling fell to or below saved_so_far the pair
+    rendered as "$X / $X", which told the caller nothing (#130). saved_so_far is
+    reported alongside and may now exceed it; beating the projection is a real
+    state and callers are expected to render it as such. A negative ceiling
+    means the month has no room to save at all and reports as 0.
 
     Deliberately independent of the balance anchor - it's a flow calc, so it works
     for users who never set a starting balance. Two prerequisite gates raise
@@ -705,7 +731,7 @@ async def get_estimated_savings(current_user: UUID, db: AsyncSession) -> Estimat
     discretionary_projected_remaining = _cents(monthly_discretionary_avg / Decimal(days_in_month) * Decimal(days_after_today))
 
     raw_ceiling = whole_month_income - committed_recurring - discretionary_spent_so_far - discretionary_projected_remaining
-    estimated_savings = _cents(max(raw_ceiling, saved_so_far))
+    estimated_savings = _cents(max(raw_ceiling, Decimal("0")))
 
     return EstimatedSavingsResult(
         month_start=month_start,

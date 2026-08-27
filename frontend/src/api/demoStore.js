@@ -1,7 +1,13 @@
-import { parseCsvText, detectColumnMapping, annotateImportRows } from "../utils/csvImport";
-import { computeMonthlyPayment, computeGaugeStatus } from "../utils/installmentMath";
+import {
+  parseCsvText,
+  detectColumnMapping,
+  annotateImportRows,
+} from "../utils/csvImport";
+import {
+  computeMonthlyPayment,
+  computeGaugeStatus,
+} from "../utils/installmentMath";
 
-// ── Keys ──────────────────────────────────────────────────────────────────────
 const TX_KEY = "demo_transactions";
 const RP_KEY = "demo_recurring";
 const PS_KEY = "demo_paycheck_schedules";
@@ -12,334 +18,2010 @@ const TD_KEY = "demo_tip_deposits";
 const IN_KEY = "demo_installments";
 const ID_KEY = "demo_next_id";
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-const getAll  = (key)       => JSON.parse(localStorage.getItem(key) || "[]");
+const getAll = (key) => JSON.parse(localStorage.getItem(key) || "[]");
 const saveAll = (key, data) => localStorage.setItem(key, JSON.stringify(data));
-const respond = (data)      => Promise.resolve({ data });
+const respond = (data) => Promise.resolve({ data });
 
-// Persisted rather than a plain in-memory counter: every "delete" in this file
-// is a soft-deactivate, not a removal, so a stale record can sit in
-// localStorage indefinitely. An in-memory counter resets to 1000 on every
-// page load (or dev-server hot-reload), so after any create -> delete ->
-// reload cycle the next created record could reuse an id a deactivated
-// record still holds - getAll(...).find(i => i.id === id) then silently
-// resolves to whichever one comes first in array order, which may not be the
-// live record. Persisting the counter itself makes ids monotonic across the
-// whole browser session regardless of reloads.
+// Saved to disk, not just memory
 function nextId() {
   const next = parseInt(localStorage.getItem(ID_KEY) || "1000", 10) + 1;
   localStorage.setItem(ID_KEY, String(next));
   return `demo-${next}`;
 }
 
-// ── Seed data ─────────────────────────────────────────────────────────────────
 const SEED_TRANSACTIONS = [
   // May 2025
-  { id: "demo-t-1",   name: "Salary",               amount: "4500.00", category: "INCOME",       transaction_date: "2025-05-01" },
-  { id: "demo-t-2",   name: "Rent",                  amount: "1200.00", category: "BILL",         transaction_date: "2025-05-01" },
-  { id: "demo-t-3",   name: "Spotify",               amount: "9.99",    category: "SUBSCRIPTION", transaction_date: "2025-05-01" },
-  { id: "demo-t-4",   name: "Groceries",             amount: "98.40",   category: "EXPENSE",      transaction_date: "2025-05-03" },
-  { id: "demo-t-5",   name: "Gym Membership",        amount: "40.00",   category: "SUBSCRIPTION", transaction_date: "2025-05-05" },
-  { id: "demo-t-6",   name: "Gas",                   amount: "52.10",   category: "EXPENSE",      transaction_date: "2025-05-07" },
-  { id: "demo-t-7",   name: "Internet",              amount: "60.00",   category: "BILL",         transaction_date: "2025-05-10" },
-  { id: "demo-t-8",   name: "Coffee",                amount: "4.75",    category: "EXPENSE",      transaction_date: "2025-05-11" },
-  { id: "demo-t-9",   name: "Dinner Out",            amount: "48.20",   category: "EXPENSE",      transaction_date: "2025-05-13" },
-  { id: "demo-t-10",  name: "Netflix",               amount: "15.99",   category: "SUBSCRIPTION", transaction_date: "2025-05-15" },
-  { id: "demo-t-11",  name: "Student Loan",          amount: "250.00",  category: "DEBT",         transaction_date: "2025-05-15" },
-  { id: "demo-t-12",  name: "Groceries",             amount: "82.60",   category: "EXPENSE",      transaction_date: "2025-05-17" },
-  { id: "demo-t-13",  name: "Amazon",                amount: "43.99",   category: "EXPENSE",      transaction_date: "2025-05-19" },
-  { id: "demo-t-14",  name: "Electric",              amount: "91.50",   category: "BILL",         transaction_date: "2025-05-20" },
-  { id: "demo-t-15",  name: "Pharmacy",              amount: "22.30",   category: "EXPENSE",      transaction_date: "2025-05-22" },
-  { id: "demo-t-16",  name: "Lunch",                 amount: "16.80",   category: "EXPENSE",      transaction_date: "2025-05-24" },
-  { id: "demo-t-17",  name: "Freelance",             amount: "400.00",  category: "INCOME",       transaction_date: "2025-05-25" },
-  { id: "demo-t-18",  name: "Cash",                  amount: "20.00",   category: "TIPS",         transaction_date: "2025-05-26"  },
-  { id: "demo-t-19",  name: "Clothing",              amount: "75.00",   category: "EXPENSE",      transaction_date: "2025-05-27" },
-  { id: "demo-t-20",  name: "Savings Transfer",      amount: "500.00",  category: "SAVINGS",      transaction_date: "2025-05-28" },
+  {
+    id: "demo-t-1",
+    name: "Salary",
+    amount: "4500.00",
+    category: "INCOME",
+    transaction_date: "2025-05-01",
+  },
+  {
+    id: "demo-t-2",
+    name: "Rent",
+    amount: "1200.00",
+    category: "BILL",
+    transaction_date: "2025-05-01",
+  },
+  {
+    id: "demo-t-3",
+    name: "Spotify",
+    amount: "9.99",
+    category: "SUBSCRIPTION",
+    transaction_date: "2025-05-01",
+  },
+  {
+    id: "demo-t-4",
+    name: "Groceries",
+    amount: "98.40",
+    category: "EXPENSE",
+    transaction_date: "2025-05-03",
+  },
+  {
+    id: "demo-t-5",
+    name: "Gym Membership",
+    amount: "40.00",
+    category: "SUBSCRIPTION",
+    transaction_date: "2025-05-05",
+  },
+  {
+    id: "demo-t-6",
+    name: "Gas",
+    amount: "52.10",
+    category: "EXPENSE",
+    transaction_date: "2025-05-07",
+  },
+  {
+    id: "demo-t-7",
+    name: "Internet",
+    amount: "60.00",
+    category: "BILL",
+    transaction_date: "2025-05-10",
+  },
+  {
+    id: "demo-t-8",
+    name: "Coffee",
+    amount: "4.75",
+    category: "EXPENSE",
+    transaction_date: "2025-05-11",
+  },
+  {
+    id: "demo-t-9",
+    name: "Dinner Out",
+    amount: "48.20",
+    category: "EXPENSE",
+    transaction_date: "2025-05-13",
+  },
+  {
+    id: "demo-t-10",
+    name: "Netflix",
+    amount: "15.99",
+    category: "SUBSCRIPTION",
+    transaction_date: "2025-05-15",
+  },
+  {
+    id: "demo-t-11",
+    name: "Student Loan",
+    amount: "250.00",
+    category: "DEBT",
+    transaction_date: "2025-05-15",
+  },
+  {
+    id: "demo-t-12",
+    name: "Groceries",
+    amount: "82.60",
+    category: "EXPENSE",
+    transaction_date: "2025-05-17",
+  },
+  {
+    id: "demo-t-13",
+    name: "Amazon",
+    amount: "43.99",
+    category: "EXPENSE",
+    transaction_date: "2025-05-19",
+  },
+  {
+    id: "demo-t-14",
+    name: "Electric",
+    amount: "91.50",
+    category: "BILL",
+    transaction_date: "2025-05-20",
+  },
+  {
+    id: "demo-t-15",
+    name: "Pharmacy",
+    amount: "22.30",
+    category: "EXPENSE",
+    transaction_date: "2025-05-22",
+  },
+  {
+    id: "demo-t-16",
+    name: "Lunch",
+    amount: "16.80",
+    category: "EXPENSE",
+    transaction_date: "2025-05-24",
+  },
+  {
+    id: "demo-t-17",
+    name: "Freelance",
+    amount: "400.00",
+    category: "INCOME",
+    transaction_date: "2025-05-25",
+  },
+  {
+    id: "demo-t-18",
+    name: "Cash",
+    amount: "20.00",
+    category: "TIPS",
+    transaction_date: "2025-05-26",
+  },
+  {
+    id: "demo-t-19",
+    name: "Clothing",
+    amount: "75.00",
+    category: "EXPENSE",
+    transaction_date: "2025-05-27",
+  },
+  {
+    id: "demo-t-20",
+    name: "Savings Transfer",
+    amount: "500.00",
+    category: "SAVINGS",
+    transaction_date: "2025-05-28",
+  },
   // June 2025
-  { id: "demo-t-21",  name: "Salary",               amount: "4500.00", category: "INCOME",       transaction_date: "2025-06-01" },
-  { id: "demo-t-22",  name: "Rent",                  amount: "1200.00", category: "BILL",         transaction_date: "2025-06-01" },
-  { id: "demo-t-23",  name: "Spotify",               amount: "9.99",    category: "SUBSCRIPTION", transaction_date: "2025-06-01" },
-  { id: "demo-t-24",  name: "Groceries",             amount: "94.20",   category: "EXPENSE",      transaction_date: "2025-06-03" },
-  { id: "demo-t-25",  name: "Gym Membership",        amount: "40.00",   category: "SUBSCRIPTION", transaction_date: "2025-06-05" },
-  { id: "demo-t-26",  name: "Gas",                   amount: "58.40",   category: "EXPENSE",      transaction_date: "2025-06-07" },
-  { id: "demo-t-27",  name: "Internet",              amount: "60.00",   category: "BILL",         transaction_date: "2025-06-10" },
-  { id: "demo-t-28",  name: "Coffee",                amount: "4.75",    category: "EXPENSE",      transaction_date: "2025-06-11" },
-  { id: "demo-t-29",  name: "BBQ Supplies",          amount: "67.30",   category: "EXPENSE",      transaction_date: "2025-06-14" },
-  { id: "demo-t-30",  name: "Netflix",               amount: "15.99",   category: "SUBSCRIPTION", transaction_date: "2025-06-15" },
-  { id: "demo-t-31",  name: "Student Loan",          amount: "250.00",  category: "DEBT",         transaction_date: "2025-06-15" },
-  { id: "demo-t-32",  name: "Groceries",             amount: "88.90",   category: "EXPENSE",      transaction_date: "2025-06-18" },
-  { id: "demo-t-33",  name: "Electric",              amount: "78.20",   category: "BILL",         transaction_date: "2025-06-20" },
-  { id: "demo-t-34",  name: "Uber",                  amount: "22.50",   category: "EXPENSE",      transaction_date: "2025-06-21" },
-  { id: "demo-t-35",  name: "Concert Tickets",       amount: "85.00",   category: "EXPENSE",      transaction_date: "2025-06-22" },
-  { id: "demo-t-36",  name: "Freelance",             amount: "600.00",  category: "INCOME",       transaction_date: "2025-06-23" },
-  { id: "demo-t-37",  name: "Amazon",                amount: "31.49",   category: "EXPENSE",      transaction_date: "2025-06-24" },
-  { id: "demo-t-38",  name: "Dinner Out",            amount: "56.80",   category: "EXPENSE",      transaction_date: "2025-06-26" },
-  { id: "demo-t-39",  name: "Beach Supplies",        amount: "38.50",   category: "EXPENSE",      transaction_date: "2025-06-27" },
-  { id: "demo-t-40",  name: "Savings Transfer",      amount: "550.00",  category: "SAVINGS",      transaction_date: "2025-06-28" },
+  {
+    id: "demo-t-21",
+    name: "Salary",
+    amount: "4500.00",
+    category: "INCOME",
+    transaction_date: "2025-06-01",
+  },
+  {
+    id: "demo-t-22",
+    name: "Rent",
+    amount: "1200.00",
+    category: "BILL",
+    transaction_date: "2025-06-01",
+  },
+  {
+    id: "demo-t-23",
+    name: "Spotify",
+    amount: "9.99",
+    category: "SUBSCRIPTION",
+    transaction_date: "2025-06-01",
+  },
+  {
+    id: "demo-t-24",
+    name: "Groceries",
+    amount: "94.20",
+    category: "EXPENSE",
+    transaction_date: "2025-06-03",
+  },
+  {
+    id: "demo-t-25",
+    name: "Gym Membership",
+    amount: "40.00",
+    category: "SUBSCRIPTION",
+    transaction_date: "2025-06-05",
+  },
+  {
+    id: "demo-t-26",
+    name: "Gas",
+    amount: "58.40",
+    category: "EXPENSE",
+    transaction_date: "2025-06-07",
+  },
+  {
+    id: "demo-t-27",
+    name: "Internet",
+    amount: "60.00",
+    category: "BILL",
+    transaction_date: "2025-06-10",
+  },
+  {
+    id: "demo-t-28",
+    name: "Coffee",
+    amount: "4.75",
+    category: "EXPENSE",
+    transaction_date: "2025-06-11",
+  },
+  {
+    id: "demo-t-29",
+    name: "BBQ Supplies",
+    amount: "67.30",
+    category: "EXPENSE",
+    transaction_date: "2025-06-14",
+  },
+  {
+    id: "demo-t-30",
+    name: "Netflix",
+    amount: "15.99",
+    category: "SUBSCRIPTION",
+    transaction_date: "2025-06-15",
+  },
+  {
+    id: "demo-t-31",
+    name: "Student Loan",
+    amount: "250.00",
+    category: "DEBT",
+    transaction_date: "2025-06-15",
+  },
+  {
+    id: "demo-t-32",
+    name: "Groceries",
+    amount: "88.90",
+    category: "EXPENSE",
+    transaction_date: "2025-06-18",
+  },
+  {
+    id: "demo-t-33",
+    name: "Electric",
+    amount: "78.20",
+    category: "BILL",
+    transaction_date: "2025-06-20",
+  },
+  {
+    id: "demo-t-34",
+    name: "Uber",
+    amount: "22.50",
+    category: "EXPENSE",
+    transaction_date: "2025-06-21",
+  },
+  {
+    id: "demo-t-35",
+    name: "Concert Tickets",
+    amount: "85.00",
+    category: "EXPENSE",
+    transaction_date: "2025-06-22",
+  },
+  {
+    id: "demo-t-36",
+    name: "Freelance",
+    amount: "600.00",
+    category: "INCOME",
+    transaction_date: "2025-06-23",
+  },
+  {
+    id: "demo-t-37",
+    name: "Amazon",
+    amount: "31.49",
+    category: "EXPENSE",
+    transaction_date: "2025-06-24",
+  },
+  {
+    id: "demo-t-38",
+    name: "Dinner Out",
+    amount: "56.80",
+    category: "EXPENSE",
+    transaction_date: "2025-06-26",
+  },
+  {
+    id: "demo-t-39",
+    name: "Beach Supplies",
+    amount: "38.50",
+    category: "EXPENSE",
+    transaction_date: "2025-06-27",
+  },
+  {
+    id: "demo-t-40",
+    name: "Savings Transfer",
+    amount: "550.00",
+    category: "SAVINGS",
+    transaction_date: "2025-06-28",
+  },
   // July 2025
-  { id: "demo-t-41",  name: "Salary",               amount: "4500.00", category: "INCOME",       transaction_date: "2025-07-01" },
-  { id: "demo-t-42",  name: "Rent",                  amount: "1200.00", category: "BILL",         transaction_date: "2025-07-01" },
-  { id: "demo-t-43",  name: "Spotify",               amount: "9.99",    category: "SUBSCRIPTION", transaction_date: "2025-07-01" },
-  { id: "demo-t-44",  name: "Groceries",             amount: "102.30",  category: "EXPENSE",      transaction_date: "2025-07-03" },
-  { id: "demo-t-45",  name: "Gym Membership",        amount: "40.00",   category: "SUBSCRIPTION", transaction_date: "2025-07-05" },
-  { id: "demo-t-46",  name: "Gas",                   amount: "61.20",   category: "EXPENSE",      transaction_date: "2025-07-08" },
-  { id: "demo-t-47",  name: "Internet",              amount: "60.00",   category: "BILL",         transaction_date: "2025-07-10" },
-  { id: "demo-t-48",  name: "Coffee",                amount: "4.75",    category: "EXPENSE",      transaction_date: "2025-07-12" },
-  { id: "demo-t-49",  name: "Netflix",               amount: "15.99",   category: "SUBSCRIPTION", transaction_date: "2025-07-15" },
-  { id: "demo-t-50",  name: "Student Loan",          amount: "250.00",  category: "DEBT",         transaction_date: "2025-07-15" },
-  { id: "demo-t-51",  name: "Groceries",             amount: "79.40",   category: "EXPENSE",      transaction_date: "2025-07-16" },
-  { id: "demo-t-52",  name: "Electric",              amount: "105.60",  category: "BILL",         transaction_date: "2025-07-20" },
-  { id: "demo-t-53",  name: "Vacation Hotel",        amount: "320.00",  category: "EXPENSE",      transaction_date: "2025-07-22" },
-  { id: "demo-t-54",  name: "Vacation Food",         amount: "145.80",  category: "EXPENSE",      transaction_date: "2025-07-23" },
-  { id: "demo-t-55",  name: "Amazon",                amount: "54.99",   category: "EXPENSE",      transaction_date: "2025-07-21" },
-  { id: "demo-t-56",  name: "Pharmacy",              amount: "18.90",   category: "EXPENSE",      transaction_date: "2025-07-25" },
-  { id: "demo-t-57",  name: "Gas",                   amount: "48.30",   category: "EXPENSE",      transaction_date: "2025-07-26" },
-  { id: "demo-t-58",  name: "Cash",                  amount: "25.00",   category: "TIPS",         transaction_date: "2025-07-27"  },
-  { id: "demo-t-59",  name: "Dinner Out",            amount: "72.30",   category: "EXPENSE",      transaction_date: "2025-07-28" },
-  { id: "demo-t-60",  name: "Savings Transfer",      amount: "300.00",  category: "SAVINGS",      transaction_date: "2025-07-28" },
+  {
+    id: "demo-t-41",
+    name: "Salary",
+    amount: "4500.00",
+    category: "INCOME",
+    transaction_date: "2025-07-01",
+  },
+  {
+    id: "demo-t-42",
+    name: "Rent",
+    amount: "1200.00",
+    category: "BILL",
+    transaction_date: "2025-07-01",
+  },
+  {
+    id: "demo-t-43",
+    name: "Spotify",
+    amount: "9.99",
+    category: "SUBSCRIPTION",
+    transaction_date: "2025-07-01",
+  },
+  {
+    id: "demo-t-44",
+    name: "Groceries",
+    amount: "102.30",
+    category: "EXPENSE",
+    transaction_date: "2025-07-03",
+  },
+  {
+    id: "demo-t-45",
+    name: "Gym Membership",
+    amount: "40.00",
+    category: "SUBSCRIPTION",
+    transaction_date: "2025-07-05",
+  },
+  {
+    id: "demo-t-46",
+    name: "Gas",
+    amount: "61.20",
+    category: "EXPENSE",
+    transaction_date: "2025-07-08",
+  },
+  {
+    id: "demo-t-47",
+    name: "Internet",
+    amount: "60.00",
+    category: "BILL",
+    transaction_date: "2025-07-10",
+  },
+  {
+    id: "demo-t-48",
+    name: "Coffee",
+    amount: "4.75",
+    category: "EXPENSE",
+    transaction_date: "2025-07-12",
+  },
+  {
+    id: "demo-t-49",
+    name: "Netflix",
+    amount: "15.99",
+    category: "SUBSCRIPTION",
+    transaction_date: "2025-07-15",
+  },
+  {
+    id: "demo-t-50",
+    name: "Student Loan",
+    amount: "250.00",
+    category: "DEBT",
+    transaction_date: "2025-07-15",
+  },
+  {
+    id: "demo-t-51",
+    name: "Groceries",
+    amount: "79.40",
+    category: "EXPENSE",
+    transaction_date: "2025-07-16",
+  },
+  {
+    id: "demo-t-52",
+    name: "Electric",
+    amount: "105.60",
+    category: "BILL",
+    transaction_date: "2025-07-20",
+  },
+  {
+    id: "demo-t-53",
+    name: "Vacation Hotel",
+    amount: "320.00",
+    category: "EXPENSE",
+    transaction_date: "2025-07-22",
+  },
+  {
+    id: "demo-t-54",
+    name: "Vacation Food",
+    amount: "145.80",
+    category: "EXPENSE",
+    transaction_date: "2025-07-23",
+  },
+  {
+    id: "demo-t-55",
+    name: "Amazon",
+    amount: "54.99",
+    category: "EXPENSE",
+    transaction_date: "2025-07-21",
+  },
+  {
+    id: "demo-t-56",
+    name: "Pharmacy",
+    amount: "18.90",
+    category: "EXPENSE",
+    transaction_date: "2025-07-25",
+  },
+  {
+    id: "demo-t-57",
+    name: "Gas",
+    amount: "48.30",
+    category: "EXPENSE",
+    transaction_date: "2025-07-26",
+  },
+  {
+    id: "demo-t-58",
+    name: "Cash",
+    amount: "25.00",
+    category: "TIPS",
+    transaction_date: "2025-07-27",
+  },
+  {
+    id: "demo-t-59",
+    name: "Dinner Out",
+    amount: "72.30",
+    category: "EXPENSE",
+    transaction_date: "2025-07-28",
+  },
+  {
+    id: "demo-t-60",
+    name: "Savings Transfer",
+    amount: "300.00",
+    category: "SAVINGS",
+    transaction_date: "2025-07-28",
+  },
   // August 2025
-  { id: "demo-t-61",  name: "Salary",               amount: "4500.00", category: "INCOME",       transaction_date: "2025-08-01" },
-  { id: "demo-t-62",  name: "Rent",                  amount: "1200.00", category: "BILL",         transaction_date: "2025-08-01" },
-  { id: "demo-t-63",  name: "Spotify",               amount: "9.99",    category: "SUBSCRIPTION", transaction_date: "2025-08-01" },
-  { id: "demo-t-64",  name: "Groceries",             amount: "91.70",   category: "EXPENSE",      transaction_date: "2025-08-04" },
-  { id: "demo-t-65",  name: "Gym Membership",        amount: "40.00",   category: "SUBSCRIPTION", transaction_date: "2025-08-05" },
-  { id: "demo-t-66",  name: "Gas",                   amount: "55.80",   category: "EXPENSE",      transaction_date: "2025-08-07" },
-  { id: "demo-t-67",  name: "School Supplies",       amount: "88.50",   category: "EXPENSE",      transaction_date: "2025-08-09" },
-  { id: "demo-t-68",  name: "Internet",              amount: "60.00",   category: "BILL",         transaction_date: "2025-08-10" },
-  { id: "demo-t-69",  name: "Coffee",                amount: "4.75",    category: "EXPENSE",      transaction_date: "2025-08-12" },
-  { id: "demo-t-70",  name: "Netflix",               amount: "15.99",   category: "SUBSCRIPTION", transaction_date: "2025-08-15" },
-  { id: "demo-t-71",  name: "Student Loan",          amount: "250.00",  category: "DEBT",         transaction_date: "2025-08-15" },
-  { id: "demo-t-72",  name: "Groceries",             amount: "84.20",   category: "EXPENSE",      transaction_date: "2025-08-17" },
-  { id: "demo-t-73",  name: "Electric",              amount: "98.40",   category: "BILL",         transaction_date: "2025-08-20" },
-  { id: "demo-t-74",  name: "Clothing",              amount: "112.00",  category: "EXPENSE",      transaction_date: "2025-08-23" },
-  { id: "demo-t-75",  name: "Amazon",                amount: "29.99",   category: "EXPENSE",      transaction_date: "2025-08-21" },
-  { id: "demo-t-76",  name: "Freelance",             amount: "350.00",  category: "INCOME",       transaction_date: "2025-08-26" },
-  { id: "demo-t-77",  name: "Lunch",                 amount: "14.50",   category: "EXPENSE",      transaction_date: "2025-08-25" },
-  { id: "demo-t-78",  name: "Dinner Out",            amount: "61.40",   category: "EXPENSE",      transaction_date: "2025-08-27" },
-  { id: "demo-t-79",  name: "Pharmacy",              amount: "31.50",   category: "EXPENSE",      transaction_date: "2025-08-28" },
-  { id: "demo-t-80",  name: "Savings Transfer",      amount: "450.00",  category: "SAVINGS",      transaction_date: "2025-08-28" },
+  {
+    id: "demo-t-61",
+    name: "Salary",
+    amount: "4500.00",
+    category: "INCOME",
+    transaction_date: "2025-08-01",
+  },
+  {
+    id: "demo-t-62",
+    name: "Rent",
+    amount: "1200.00",
+    category: "BILL",
+    transaction_date: "2025-08-01",
+  },
+  {
+    id: "demo-t-63",
+    name: "Spotify",
+    amount: "9.99",
+    category: "SUBSCRIPTION",
+    transaction_date: "2025-08-01",
+  },
+  {
+    id: "demo-t-64",
+    name: "Groceries",
+    amount: "91.70",
+    category: "EXPENSE",
+    transaction_date: "2025-08-04",
+  },
+  {
+    id: "demo-t-65",
+    name: "Gym Membership",
+    amount: "40.00",
+    category: "SUBSCRIPTION",
+    transaction_date: "2025-08-05",
+  },
+  {
+    id: "demo-t-66",
+    name: "Gas",
+    amount: "55.80",
+    category: "EXPENSE",
+    transaction_date: "2025-08-07",
+  },
+  {
+    id: "demo-t-67",
+    name: "School Supplies",
+    amount: "88.50",
+    category: "EXPENSE",
+    transaction_date: "2025-08-09",
+  },
+  {
+    id: "demo-t-68",
+    name: "Internet",
+    amount: "60.00",
+    category: "BILL",
+    transaction_date: "2025-08-10",
+  },
+  {
+    id: "demo-t-69",
+    name: "Coffee",
+    amount: "4.75",
+    category: "EXPENSE",
+    transaction_date: "2025-08-12",
+  },
+  {
+    id: "demo-t-70",
+    name: "Netflix",
+    amount: "15.99",
+    category: "SUBSCRIPTION",
+    transaction_date: "2025-08-15",
+  },
+  {
+    id: "demo-t-71",
+    name: "Student Loan",
+    amount: "250.00",
+    category: "DEBT",
+    transaction_date: "2025-08-15",
+  },
+  {
+    id: "demo-t-72",
+    name: "Groceries",
+    amount: "84.20",
+    category: "EXPENSE",
+    transaction_date: "2025-08-17",
+  },
+  {
+    id: "demo-t-73",
+    name: "Electric",
+    amount: "98.40",
+    category: "BILL",
+    transaction_date: "2025-08-20",
+  },
+  {
+    id: "demo-t-74",
+    name: "Clothing",
+    amount: "112.00",
+    category: "EXPENSE",
+    transaction_date: "2025-08-23",
+  },
+  {
+    id: "demo-t-75",
+    name: "Amazon",
+    amount: "29.99",
+    category: "EXPENSE",
+    transaction_date: "2025-08-21",
+  },
+  {
+    id: "demo-t-76",
+    name: "Freelance",
+    amount: "350.00",
+    category: "INCOME",
+    transaction_date: "2025-08-26",
+  },
+  {
+    id: "demo-t-77",
+    name: "Lunch",
+    amount: "14.50",
+    category: "EXPENSE",
+    transaction_date: "2025-08-25",
+  },
+  {
+    id: "demo-t-78",
+    name: "Dinner Out",
+    amount: "61.40",
+    category: "EXPENSE",
+    transaction_date: "2025-08-27",
+  },
+  {
+    id: "demo-t-79",
+    name: "Pharmacy",
+    amount: "31.50",
+    category: "EXPENSE",
+    transaction_date: "2025-08-28",
+  },
+  {
+    id: "demo-t-80",
+    name: "Savings Transfer",
+    amount: "450.00",
+    category: "SAVINGS",
+    transaction_date: "2025-08-28",
+  },
   // September 2025
-  { id: "demo-t-81",  name: "Salary",               amount: "4500.00", category: "INCOME",       transaction_date: "2025-09-01" },
-  { id: "demo-t-82",  name: "Rent",                  amount: "1200.00", category: "BILL",         transaction_date: "2025-09-01" },
-  { id: "demo-t-83",  name: "Spotify",               amount: "9.99",    category: "SUBSCRIPTION", transaction_date: "2025-09-01" },
-  { id: "demo-t-84",  name: "Groceries",             amount: "96.80",   category: "EXPENSE",      transaction_date: "2025-09-03" },
-  { id: "demo-t-85",  name: "Gym Membership",        amount: "40.00",   category: "SUBSCRIPTION", transaction_date: "2025-09-05" },
-  { id: "demo-t-86",  name: "Gas",                   amount: "53.60",   category: "EXPENSE",      transaction_date: "2025-09-06" },
-  { id: "demo-t-87",  name: "Internet",              amount: "60.00",   category: "BILL",         transaction_date: "2025-09-10" },
-  { id: "demo-t-88",  name: "Coffee",                amount: "4.75",    category: "EXPENSE",      transaction_date: "2025-09-11" },
-  { id: "demo-t-89",  name: "Netflix",               amount: "15.99",   category: "SUBSCRIPTION", transaction_date: "2025-09-15" },
-  { id: "demo-t-90",  name: "Student Loan",          amount: "250.00",  category: "DEBT",         transaction_date: "2025-09-15" },
-  { id: "demo-t-91",  name: "Groceries",             amount: "77.30",   category: "EXPENSE",      transaction_date: "2025-09-16" },
-  { id: "demo-t-92",  name: "Electric",              amount: "88.70",   category: "BILL",         transaction_date: "2025-09-20" },
-  { id: "demo-t-93",  name: "Amazon",                amount: "66.49",   category: "EXPENSE",      transaction_date: "2025-09-21" },
-  { id: "demo-t-94",  name: "Dinner Out",            amount: "43.80",   category: "EXPENSE",      transaction_date: "2025-09-22" },
-  { id: "demo-t-95",  name: "Accessories",           amount: "34.99",   category: "EXPENSE",      transaction_date: "2025-09-23" },
-  { id: "demo-t-96",  name: "Freelance",             amount: "500.00",  category: "INCOME",       transaction_date: "2025-09-24" },
-  { id: "demo-t-97",  name: "Uber",                  amount: "18.50",   category: "EXPENSE",      transaction_date: "2025-09-25" },
-  { id: "demo-t-98",  name: "Medical",               amount: "75.00",   category: "EXPENSE",      transaction_date: "2025-09-26" },
-  { id: "demo-t-99",  name: "Groceries",             amount: "68.90",   category: "EXPENSE",      transaction_date: "2025-09-27" },
-  { id: "demo-t-100", name: "Savings Transfer",      amount: "500.00",  category: "SAVINGS",      transaction_date: "2025-09-28" },
+  {
+    id: "demo-t-81",
+    name: "Salary",
+    amount: "4500.00",
+    category: "INCOME",
+    transaction_date: "2025-09-01",
+  },
+  {
+    id: "demo-t-82",
+    name: "Rent",
+    amount: "1200.00",
+    category: "BILL",
+    transaction_date: "2025-09-01",
+  },
+  {
+    id: "demo-t-83",
+    name: "Spotify",
+    amount: "9.99",
+    category: "SUBSCRIPTION",
+    transaction_date: "2025-09-01",
+  },
+  {
+    id: "demo-t-84",
+    name: "Groceries",
+    amount: "96.80",
+    category: "EXPENSE",
+    transaction_date: "2025-09-03",
+  },
+  {
+    id: "demo-t-85",
+    name: "Gym Membership",
+    amount: "40.00",
+    category: "SUBSCRIPTION",
+    transaction_date: "2025-09-05",
+  },
+  {
+    id: "demo-t-86",
+    name: "Gas",
+    amount: "53.60",
+    category: "EXPENSE",
+    transaction_date: "2025-09-06",
+  },
+  {
+    id: "demo-t-87",
+    name: "Internet",
+    amount: "60.00",
+    category: "BILL",
+    transaction_date: "2025-09-10",
+  },
+  {
+    id: "demo-t-88",
+    name: "Coffee",
+    amount: "4.75",
+    category: "EXPENSE",
+    transaction_date: "2025-09-11",
+  },
+  {
+    id: "demo-t-89",
+    name: "Netflix",
+    amount: "15.99",
+    category: "SUBSCRIPTION",
+    transaction_date: "2025-09-15",
+  },
+  {
+    id: "demo-t-90",
+    name: "Student Loan",
+    amount: "250.00",
+    category: "DEBT",
+    transaction_date: "2025-09-15",
+  },
+  {
+    id: "demo-t-91",
+    name: "Groceries",
+    amount: "77.30",
+    category: "EXPENSE",
+    transaction_date: "2025-09-16",
+  },
+  {
+    id: "demo-t-92",
+    name: "Electric",
+    amount: "88.70",
+    category: "BILL",
+    transaction_date: "2025-09-20",
+  },
+  {
+    id: "demo-t-93",
+    name: "Amazon",
+    amount: "66.49",
+    category: "EXPENSE",
+    transaction_date: "2025-09-21",
+  },
+  {
+    id: "demo-t-94",
+    name: "Dinner Out",
+    amount: "43.80",
+    category: "EXPENSE",
+    transaction_date: "2025-09-22",
+  },
+  {
+    id: "demo-t-95",
+    name: "Accessories",
+    amount: "34.99",
+    category: "EXPENSE",
+    transaction_date: "2025-09-23",
+  },
+  {
+    id: "demo-t-96",
+    name: "Freelance",
+    amount: "500.00",
+    category: "INCOME",
+    transaction_date: "2025-09-24",
+  },
+  {
+    id: "demo-t-97",
+    name: "Uber",
+    amount: "18.50",
+    category: "EXPENSE",
+    transaction_date: "2025-09-25",
+  },
+  {
+    id: "demo-t-98",
+    name: "Medical",
+    amount: "75.00",
+    category: "EXPENSE",
+    transaction_date: "2025-09-26",
+  },
+  {
+    id: "demo-t-99",
+    name: "Groceries",
+    amount: "68.90",
+    category: "EXPENSE",
+    transaction_date: "2025-09-27",
+  },
+  {
+    id: "demo-t-100",
+    name: "Savings Transfer",
+    amount: "500.00",
+    category: "SAVINGS",
+    transaction_date: "2025-09-28",
+  },
   // October 2025
-  { id: "demo-t-101", name: "Salary",               amount: "4500.00", category: "INCOME",       transaction_date: "2025-10-01" },
-  { id: "demo-t-102", name: "Rent",                  amount: "1200.00", category: "BILL",         transaction_date: "2025-10-01" },
-  { id: "demo-t-103", name: "Spotify",               amount: "9.99",    category: "SUBSCRIPTION", transaction_date: "2025-10-01" },
-  { id: "demo-t-104", name: "Groceries",             amount: "89.50",   category: "EXPENSE",      transaction_date: "2025-10-04" },
-  { id: "demo-t-105", name: "Gym Membership",        amount: "40.00",   category: "SUBSCRIPTION", transaction_date: "2025-10-05" },
-  { id: "demo-t-106", name: "Gas",                   amount: "57.20",   category: "EXPENSE",      transaction_date: "2025-10-07" },
-  { id: "demo-t-107", name: "Internet",              amount: "60.00",   category: "BILL",         transaction_date: "2025-10-10" },
-  { id: "demo-t-108", name: "Coffee",                amount: "4.75",    category: "EXPENSE",      transaction_date: "2025-10-11" },
-  { id: "demo-t-109", name: "Netflix",               amount: "15.99",   category: "SUBSCRIPTION", transaction_date: "2025-10-15" },
-  { id: "demo-t-110", name: "Student Loan",          amount: "250.00",  category: "DEBT",         transaction_date: "2025-10-15" },
-  { id: "demo-t-111", name: "Groceries",             amount: "93.10",   category: "EXPENSE",      transaction_date: "2025-10-16" },
-  { id: "demo-t-112", name: "Electric",              amount: "82.30",   category: "BILL",         transaction_date: "2025-10-20" },
-  { id: "demo-t-113", name: "Halloween Costumes",    amount: "64.00",   category: "EXPENSE",      transaction_date: "2025-10-21" },
-  { id: "demo-t-114", name: "Amazon",                amount: "47.99",   category: "EXPENSE",      transaction_date: "2025-10-22" },
-  { id: "demo-t-115", name: "Dinner Out",            amount: "58.60",   category: "EXPENSE",      transaction_date: "2025-10-24" },
-  { id: "demo-t-116", name: "Pharmacy",              amount: "27.40",   category: "EXPENSE",      transaction_date: "2025-10-25" },
-  { id: "demo-t-117", name: "Pumpkin Patch",         amount: "32.00",   category: "EXPENSE",      transaction_date: "2025-10-26" },
-  { id: "demo-t-118", name: "Cash",                  amount: "20.00",   category: "TIPS",         transaction_date: "2025-10-27"  },
-  { id: "demo-t-119", name: "Clothing",              amount: "95.00",   category: "EXPENSE",      transaction_date: "2025-10-28" },
-  { id: "demo-t-120", name: "Savings Transfer",      amount: "500.00",  category: "SAVINGS",      transaction_date: "2025-10-28" },
+  {
+    id: "demo-t-101",
+    name: "Salary",
+    amount: "4500.00",
+    category: "INCOME",
+    transaction_date: "2025-10-01",
+  },
+  {
+    id: "demo-t-102",
+    name: "Rent",
+    amount: "1200.00",
+    category: "BILL",
+    transaction_date: "2025-10-01",
+  },
+  {
+    id: "demo-t-103",
+    name: "Spotify",
+    amount: "9.99",
+    category: "SUBSCRIPTION",
+    transaction_date: "2025-10-01",
+  },
+  {
+    id: "demo-t-104",
+    name: "Groceries",
+    amount: "89.50",
+    category: "EXPENSE",
+    transaction_date: "2025-10-04",
+  },
+  {
+    id: "demo-t-105",
+    name: "Gym Membership",
+    amount: "40.00",
+    category: "SUBSCRIPTION",
+    transaction_date: "2025-10-05",
+  },
+  {
+    id: "demo-t-106",
+    name: "Gas",
+    amount: "57.20",
+    category: "EXPENSE",
+    transaction_date: "2025-10-07",
+  },
+  {
+    id: "demo-t-107",
+    name: "Internet",
+    amount: "60.00",
+    category: "BILL",
+    transaction_date: "2025-10-10",
+  },
+  {
+    id: "demo-t-108",
+    name: "Coffee",
+    amount: "4.75",
+    category: "EXPENSE",
+    transaction_date: "2025-10-11",
+  },
+  {
+    id: "demo-t-109",
+    name: "Netflix",
+    amount: "15.99",
+    category: "SUBSCRIPTION",
+    transaction_date: "2025-10-15",
+  },
+  {
+    id: "demo-t-110",
+    name: "Student Loan",
+    amount: "250.00",
+    category: "DEBT",
+    transaction_date: "2025-10-15",
+  },
+  {
+    id: "demo-t-111",
+    name: "Groceries",
+    amount: "93.10",
+    category: "EXPENSE",
+    transaction_date: "2025-10-16",
+  },
+  {
+    id: "demo-t-112",
+    name: "Electric",
+    amount: "82.30",
+    category: "BILL",
+    transaction_date: "2025-10-20",
+  },
+  {
+    id: "demo-t-113",
+    name: "Halloween Costumes",
+    amount: "64.00",
+    category: "EXPENSE",
+    transaction_date: "2025-10-21",
+  },
+  {
+    id: "demo-t-114",
+    name: "Amazon",
+    amount: "47.99",
+    category: "EXPENSE",
+    transaction_date: "2025-10-22",
+  },
+  {
+    id: "demo-t-115",
+    name: "Dinner Out",
+    amount: "58.60",
+    category: "EXPENSE",
+    transaction_date: "2025-10-24",
+  },
+  {
+    id: "demo-t-116",
+    name: "Pharmacy",
+    amount: "27.40",
+    category: "EXPENSE",
+    transaction_date: "2025-10-25",
+  },
+  {
+    id: "demo-t-117",
+    name: "Pumpkin Patch",
+    amount: "32.00",
+    category: "EXPENSE",
+    transaction_date: "2025-10-26",
+  },
+  {
+    id: "demo-t-118",
+    name: "Cash",
+    amount: "20.00",
+    category: "TIPS",
+    transaction_date: "2025-10-27",
+  },
+  {
+    id: "demo-t-119",
+    name: "Clothing",
+    amount: "95.00",
+    category: "EXPENSE",
+    transaction_date: "2025-10-28",
+  },
+  {
+    id: "demo-t-120",
+    name: "Savings Transfer",
+    amount: "500.00",
+    category: "SAVINGS",
+    transaction_date: "2025-10-28",
+  },
   // November 2025
-  { id: "demo-t-121", name: "Salary",               amount: "4500.00", category: "INCOME",       transaction_date: "2025-11-01" },
-  { id: "demo-t-122", name: "Rent",                  amount: "1200.00", category: "BILL",         transaction_date: "2025-11-01" },
-  { id: "demo-t-123", name: "Spotify",               amount: "9.99",    category: "SUBSCRIPTION", transaction_date: "2025-11-01" },
-  { id: "demo-t-124", name: "Groceries",             amount: "104.20",  category: "EXPENSE",      transaction_date: "2025-11-04" },
-  { id: "demo-t-125", name: "Gym Membership",        amount: "40.00",   category: "SUBSCRIPTION", transaction_date: "2025-11-05" },
-  { id: "demo-t-126", name: "Gas",                   amount: "51.90",   category: "EXPENSE",      transaction_date: "2025-11-07" },
-  { id: "demo-t-127", name: "Internet",              amount: "60.00",   category: "BILL",         transaction_date: "2025-11-10" },
-  { id: "demo-t-128", name: "Coffee",                amount: "4.75",    category: "EXPENSE",      transaction_date: "2025-11-11" },
-  { id: "demo-t-129", name: "Netflix",               amount: "15.99",   category: "SUBSCRIPTION", transaction_date: "2025-11-15" },
-  { id: "demo-t-130", name: "Student Loan",          amount: "250.00",  category: "DEBT",         transaction_date: "2025-11-15" },
-  { id: "demo-t-131", name: "Groceries",             amount: "88.60",   category: "EXPENSE",      transaction_date: "2025-11-16" },
-  { id: "demo-t-132", name: "Electric",              amount: "94.20",   category: "BILL",         transaction_date: "2025-11-20" },
-  { id: "demo-t-133", name: "Dinner Out",            amount: "47.20",   category: "EXPENSE",      transaction_date: "2025-11-22" },
-  { id: "demo-t-134", name: "Thanksgiving Groceries", amount: "143.50", category: "EXPENSE",      transaction_date: "2025-11-24" },
-  { id: "demo-t-135", name: "Freelance",             amount: "450.00",  category: "INCOME",       transaction_date: "2025-11-25" },
-  { id: "demo-t-136", name: "Gas",                   amount: "49.80",   category: "EXPENSE",      transaction_date: "2025-11-26" },
-  { id: "demo-t-137", name: "Amazon",                amount: "89.99",   category: "EXPENSE",      transaction_date: "2025-11-21" },
-  { id: "demo-t-138", name: "Black Friday",          amount: "212.00",  category: "EXPENSE",      transaction_date: "2025-11-28" },
-  { id: "demo-t-139", name: "Pharmacy",              amount: "15.60",   category: "EXPENSE",      transaction_date: "2025-11-29" },
-  { id: "demo-t-140", name: "Savings Transfer",      amount: "400.00",  category: "SAVINGS",      transaction_date: "2025-11-28" },
+  {
+    id: "demo-t-121",
+    name: "Salary",
+    amount: "4500.00",
+    category: "INCOME",
+    transaction_date: "2025-11-01",
+  },
+  {
+    id: "demo-t-122",
+    name: "Rent",
+    amount: "1200.00",
+    category: "BILL",
+    transaction_date: "2025-11-01",
+  },
+  {
+    id: "demo-t-123",
+    name: "Spotify",
+    amount: "9.99",
+    category: "SUBSCRIPTION",
+    transaction_date: "2025-11-01",
+  },
+  {
+    id: "demo-t-124",
+    name: "Groceries",
+    amount: "104.20",
+    category: "EXPENSE",
+    transaction_date: "2025-11-04",
+  },
+  {
+    id: "demo-t-125",
+    name: "Gym Membership",
+    amount: "40.00",
+    category: "SUBSCRIPTION",
+    transaction_date: "2025-11-05",
+  },
+  {
+    id: "demo-t-126",
+    name: "Gas",
+    amount: "51.90",
+    category: "EXPENSE",
+    transaction_date: "2025-11-07",
+  },
+  {
+    id: "demo-t-127",
+    name: "Internet",
+    amount: "60.00",
+    category: "BILL",
+    transaction_date: "2025-11-10",
+  },
+  {
+    id: "demo-t-128",
+    name: "Coffee",
+    amount: "4.75",
+    category: "EXPENSE",
+    transaction_date: "2025-11-11",
+  },
+  {
+    id: "demo-t-129",
+    name: "Netflix",
+    amount: "15.99",
+    category: "SUBSCRIPTION",
+    transaction_date: "2025-11-15",
+  },
+  {
+    id: "demo-t-130",
+    name: "Student Loan",
+    amount: "250.00",
+    category: "DEBT",
+    transaction_date: "2025-11-15",
+  },
+  {
+    id: "demo-t-131",
+    name: "Groceries",
+    amount: "88.60",
+    category: "EXPENSE",
+    transaction_date: "2025-11-16",
+  },
+  {
+    id: "demo-t-132",
+    name: "Electric",
+    amount: "94.20",
+    category: "BILL",
+    transaction_date: "2025-11-20",
+  },
+  {
+    id: "demo-t-133",
+    name: "Dinner Out",
+    amount: "47.20",
+    category: "EXPENSE",
+    transaction_date: "2025-11-22",
+  },
+  {
+    id: "demo-t-134",
+    name: "Thanksgiving Groceries",
+    amount: "143.50",
+    category: "EXPENSE",
+    transaction_date: "2025-11-24",
+  },
+  {
+    id: "demo-t-135",
+    name: "Freelance",
+    amount: "450.00",
+    category: "INCOME",
+    transaction_date: "2025-11-25",
+  },
+  {
+    id: "demo-t-136",
+    name: "Gas",
+    amount: "49.80",
+    category: "EXPENSE",
+    transaction_date: "2025-11-26",
+  },
+  {
+    id: "demo-t-137",
+    name: "Amazon",
+    amount: "89.99",
+    category: "EXPENSE",
+    transaction_date: "2025-11-21",
+  },
+  {
+    id: "demo-t-138",
+    name: "Black Friday",
+    amount: "212.00",
+    category: "EXPENSE",
+    transaction_date: "2025-11-28",
+  },
+  {
+    id: "demo-t-139",
+    name: "Pharmacy",
+    amount: "15.60",
+    category: "EXPENSE",
+    transaction_date: "2025-11-29",
+  },
+  {
+    id: "demo-t-140",
+    name: "Savings Transfer",
+    amount: "400.00",
+    category: "SAVINGS",
+    transaction_date: "2025-11-28",
+  },
   // December 2025
-  { id: "demo-t-141", name: "Salary",               amount: "4500.00", category: "INCOME",       transaction_date: "2025-12-01" },
-  { id: "demo-t-142", name: "Rent",                  amount: "1200.00", category: "BILL",         transaction_date: "2025-12-01" },
-  { id: "demo-t-143", name: "Spotify",               amount: "9.99",    category: "SUBSCRIPTION", transaction_date: "2025-12-01" },
-  { id: "demo-t-144", name: "Groceries",             amount: "98.70",   category: "EXPENSE",      transaction_date: "2025-12-03" },
-  { id: "demo-t-145", name: "Gym Membership",        amount: "40.00",   category: "SUBSCRIPTION", transaction_date: "2025-12-05" },
-  { id: "demo-t-146", name: "Gas",                   amount: "54.60",   category: "EXPENSE",      transaction_date: "2025-12-07" },
-  { id: "demo-t-147", name: "Internet",              amount: "60.00",   category: "BILL",         transaction_date: "2025-12-10" },
-  { id: "demo-t-148", name: "Coffee",                amount: "4.75",    category: "EXPENSE",      transaction_date: "2025-12-11" },
-  { id: "demo-t-149", name: "Netflix",               amount: "15.99",   category: "SUBSCRIPTION", transaction_date: "2025-12-15" },
-  { id: "demo-t-150", name: "Student Loan",          amount: "250.00",  category: "DEBT",         transaction_date: "2025-12-15" },
-  { id: "demo-t-151", name: "Groceries",             amount: "88.40",   category: "EXPENSE",      transaction_date: "2025-12-16" },
-  { id: "demo-t-152", name: "Electric",              amount: "108.30",  category: "BILL",         transaction_date: "2025-12-20" },
-  { id: "demo-t-153", name: "Christmas Gifts",       amount: "385.00",  category: "EXPENSE",      transaction_date: "2025-12-20" },
-  { id: "demo-t-154", name: "Amazon",                amount: "67.49",   category: "EXPENSE",      transaction_date: "2025-12-21" },
-  { id: "demo-t-155", name: "Freelance",             amount: "700.00",  category: "INCOME",       transaction_date: "2025-12-22" },
-  { id: "demo-t-156", name: "Christmas Dinner",      amount: "94.80",   category: "EXPENSE",      transaction_date: "2025-12-25" },
-  { id: "demo-t-157", name: "Dinner Out",            amount: "52.30",   category: "EXPENSE",      transaction_date: "2025-12-26" },
-  { id: "demo-t-158", name: "Cash",                  amount: "30.00",   category: "TIPS",         transaction_date: "2025-12-27"  },
-  { id: "demo-t-159", name: "New Year Eve",          amount: "78.00",   category: "EXPENSE",      transaction_date: "2025-12-31" },
-  { id: "demo-t-160", name: "Savings Transfer",      amount: "350.00",  category: "SAVINGS",      transaction_date: "2025-12-28" },
+  {
+    id: "demo-t-141",
+    name: "Salary",
+    amount: "4500.00",
+    category: "INCOME",
+    transaction_date: "2025-12-01",
+  },
+  {
+    id: "demo-t-142",
+    name: "Rent",
+    amount: "1200.00",
+    category: "BILL",
+    transaction_date: "2025-12-01",
+  },
+  {
+    id: "demo-t-143",
+    name: "Spotify",
+    amount: "9.99",
+    category: "SUBSCRIPTION",
+    transaction_date: "2025-12-01",
+  },
+  {
+    id: "demo-t-144",
+    name: "Groceries",
+    amount: "98.70",
+    category: "EXPENSE",
+    transaction_date: "2025-12-03",
+  },
+  {
+    id: "demo-t-145",
+    name: "Gym Membership",
+    amount: "40.00",
+    category: "SUBSCRIPTION",
+    transaction_date: "2025-12-05",
+  },
+  {
+    id: "demo-t-146",
+    name: "Gas",
+    amount: "54.60",
+    category: "EXPENSE",
+    transaction_date: "2025-12-07",
+  },
+  {
+    id: "demo-t-147",
+    name: "Internet",
+    amount: "60.00",
+    category: "BILL",
+    transaction_date: "2025-12-10",
+  },
+  {
+    id: "demo-t-148",
+    name: "Coffee",
+    amount: "4.75",
+    category: "EXPENSE",
+    transaction_date: "2025-12-11",
+  },
+  {
+    id: "demo-t-149",
+    name: "Netflix",
+    amount: "15.99",
+    category: "SUBSCRIPTION",
+    transaction_date: "2025-12-15",
+  },
+  {
+    id: "demo-t-150",
+    name: "Student Loan",
+    amount: "250.00",
+    category: "DEBT",
+    transaction_date: "2025-12-15",
+  },
+  {
+    id: "demo-t-151",
+    name: "Groceries",
+    amount: "88.40",
+    category: "EXPENSE",
+    transaction_date: "2025-12-16",
+  },
+  {
+    id: "demo-t-152",
+    name: "Electric",
+    amount: "108.30",
+    category: "BILL",
+    transaction_date: "2025-12-20",
+  },
+  {
+    id: "demo-t-153",
+    name: "Christmas Gifts",
+    amount: "385.00",
+    category: "EXPENSE",
+    transaction_date: "2025-12-20",
+  },
+  {
+    id: "demo-t-154",
+    name: "Amazon",
+    amount: "67.49",
+    category: "EXPENSE",
+    transaction_date: "2025-12-21",
+  },
+  {
+    id: "demo-t-155",
+    name: "Freelance",
+    amount: "700.00",
+    category: "INCOME",
+    transaction_date: "2025-12-22",
+  },
+  {
+    id: "demo-t-156",
+    name: "Christmas Dinner",
+    amount: "94.80",
+    category: "EXPENSE",
+    transaction_date: "2025-12-25",
+  },
+  {
+    id: "demo-t-157",
+    name: "Dinner Out",
+    amount: "52.30",
+    category: "EXPENSE",
+    transaction_date: "2025-12-26",
+  },
+  {
+    id: "demo-t-158",
+    name: "Cash",
+    amount: "30.00",
+    category: "TIPS",
+    transaction_date: "2025-12-27",
+  },
+  {
+    id: "demo-t-159",
+    name: "New Year Eve",
+    amount: "78.00",
+    category: "EXPENSE",
+    transaction_date: "2025-12-31",
+  },
+  {
+    id: "demo-t-160",
+    name: "Savings Transfer",
+    amount: "350.00",
+    category: "SAVINGS",
+    transaction_date: "2025-12-28",
+  },
   // January 2026
-  { id: "demo-t-161", name: "Salary",               amount: "4500.00", category: "INCOME",       transaction_date: "2026-01-01" },
-  { id: "demo-t-162", name: "Rent",                  amount: "1200.00", category: "BILL",         transaction_date: "2026-01-01" },
-  { id: "demo-t-163", name: "Spotify",               amount: "9.99",    category: "SUBSCRIPTION", transaction_date: "2026-01-01" },
-  { id: "demo-t-164", name: "Groceries",             amount: "105.40",  category: "EXPENSE",      transaction_date: "2026-01-03" },
-  { id: "demo-t-165", name: "Gym Membership",        amount: "40.00",   category: "SUBSCRIPTION", transaction_date: "2026-01-05" },
-  { id: "demo-t-166", name: "Gas",                   amount: "55.20",   category: "EXPENSE",      transaction_date: "2026-01-08" },
-  { id: "demo-t-167", name: "Internet",              amount: "60.00",   category: "BILL",         transaction_date: "2026-01-10" },
-  { id: "demo-t-168", name: "New Year Dinner",       amount: "72.50",   category: "EXPENSE",      transaction_date: "2026-01-12" },
-  { id: "demo-t-169", name: "Cash",                  amount: "20.00",   category: "TIPS",         transaction_date: "2026-01-14"  },
-  { id: "demo-t-170", name: "Netflix",               amount: "15.99",   category: "SUBSCRIPTION", transaction_date: "2026-01-15" },
-  { id: "demo-t-171", name: "Student Loan",          amount: "250.00",  category: "DEBT",         transaction_date: "2026-01-15" },
-  { id: "demo-t-172", name: "Coffee",                amount: "4.75",    category: "EXPENSE",      transaction_date: "2026-01-16" },
-  { id: "demo-t-173", name: "Groceries",             amount: "88.90",   category: "EXPENSE",      transaction_date: "2026-01-18" },
-  { id: "demo-t-174", name: "Electric",              amount: "98.20",   category: "BILL",         transaction_date: "2026-01-20" },
-  { id: "demo-t-175", name: "Amazon",                amount: "156.99",  category: "EXPENSE",      transaction_date: "2026-01-22" },
-  { id: "demo-t-176", name: "Pharmacy",              amount: "22.00",   category: "EXPENSE",      transaction_date: "2026-01-25" },
-  { id: "demo-t-177", name: "Freelance",             amount: "500.00",  category: "INCOME",       transaction_date: "2026-01-26" },
-  { id: "demo-t-178", name: "Clothing",              amount: "120.00",  category: "EXPENSE",      transaction_date: "2026-01-24" },
-  { id: "demo-t-179", name: "Dinner Out",            amount: "54.30",   category: "EXPENSE",      transaction_date: "2026-01-30" },
-  { id: "demo-t-180", name: "Savings Transfer",      amount: "600.00",  category: "SAVINGS",      transaction_date: "2026-01-28" },
+  {
+    id: "demo-t-161",
+    name: "Salary",
+    amount: "4500.00",
+    category: "INCOME",
+    transaction_date: "2026-01-01",
+  },
+  {
+    id: "demo-t-162",
+    name: "Rent",
+    amount: "1200.00",
+    category: "BILL",
+    transaction_date: "2026-01-01",
+  },
+  {
+    id: "demo-t-163",
+    name: "Spotify",
+    amount: "9.99",
+    category: "SUBSCRIPTION",
+    transaction_date: "2026-01-01",
+  },
+  {
+    id: "demo-t-164",
+    name: "Groceries",
+    amount: "105.40",
+    category: "EXPENSE",
+    transaction_date: "2026-01-03",
+  },
+  {
+    id: "demo-t-165",
+    name: "Gym Membership",
+    amount: "40.00",
+    category: "SUBSCRIPTION",
+    transaction_date: "2026-01-05",
+  },
+  {
+    id: "demo-t-166",
+    name: "Gas",
+    amount: "55.20",
+    category: "EXPENSE",
+    transaction_date: "2026-01-08",
+  },
+  {
+    id: "demo-t-167",
+    name: "Internet",
+    amount: "60.00",
+    category: "BILL",
+    transaction_date: "2026-01-10",
+  },
+  {
+    id: "demo-t-168",
+    name: "New Year Dinner",
+    amount: "72.50",
+    category: "EXPENSE",
+    transaction_date: "2026-01-12",
+  },
+  {
+    id: "demo-t-169",
+    name: "Cash",
+    amount: "20.00",
+    category: "TIPS",
+    transaction_date: "2026-01-14",
+  },
+  {
+    id: "demo-t-170",
+    name: "Netflix",
+    amount: "15.99",
+    category: "SUBSCRIPTION",
+    transaction_date: "2026-01-15",
+  },
+  {
+    id: "demo-t-171",
+    name: "Student Loan",
+    amount: "250.00",
+    category: "DEBT",
+    transaction_date: "2026-01-15",
+  },
+  {
+    id: "demo-t-172",
+    name: "Coffee",
+    amount: "4.75",
+    category: "EXPENSE",
+    transaction_date: "2026-01-16",
+  },
+  {
+    id: "demo-t-173",
+    name: "Groceries",
+    amount: "88.90",
+    category: "EXPENSE",
+    transaction_date: "2026-01-18",
+  },
+  {
+    id: "demo-t-174",
+    name: "Electric",
+    amount: "98.20",
+    category: "BILL",
+    transaction_date: "2026-01-20",
+  },
+  {
+    id: "demo-t-175",
+    name: "Amazon",
+    amount: "156.99",
+    category: "EXPENSE",
+    transaction_date: "2026-01-22",
+  },
+  {
+    id: "demo-t-176",
+    name: "Pharmacy",
+    amount: "22.00",
+    category: "EXPENSE",
+    transaction_date: "2026-01-25",
+  },
+  {
+    id: "demo-t-177",
+    name: "Freelance",
+    amount: "500.00",
+    category: "INCOME",
+    transaction_date: "2026-01-26",
+  },
+  {
+    id: "demo-t-178",
+    name: "Clothing",
+    amount: "120.00",
+    category: "EXPENSE",
+    transaction_date: "2026-01-24",
+  },
+  {
+    id: "demo-t-179",
+    name: "Dinner Out",
+    amount: "54.30",
+    category: "EXPENSE",
+    transaction_date: "2026-01-30",
+  },
+  {
+    id: "demo-t-180",
+    name: "Savings Transfer",
+    amount: "600.00",
+    category: "SAVINGS",
+    transaction_date: "2026-01-28",
+  },
   // February 2026
-  { id: "demo-t-181", name: "Salary",               amount: "4500.00", category: "INCOME",       transaction_date: "2026-02-01" },
-  { id: "demo-t-182", name: "Rent",                  amount: "1200.00", category: "BILL",         transaction_date: "2026-02-01" },
-  { id: "demo-t-183", name: "Spotify",               amount: "9.99",    category: "SUBSCRIPTION", transaction_date: "2026-02-01" },
-  { id: "demo-t-184", name: "Groceries",             amount: "95.60",   category: "EXPENSE",      transaction_date: "2026-02-04" },
-  { id: "demo-t-185", name: "Gym Membership",        amount: "40.00",   category: "SUBSCRIPTION", transaction_date: "2026-02-05" },
-  { id: "demo-t-186", name: "Valentine's Dinner",    amount: "85.00",   category: "EXPENSE",      transaction_date: "2026-02-07" },
-  { id: "demo-t-187", name: "Gas",                   amount: "48.75",   category: "EXPENSE",      transaction_date: "2026-02-09" },
-  { id: "demo-t-188", name: "Internet",              amount: "60.00",   category: "BILL",         transaction_date: "2026-02-10" },
-  { id: "demo-t-189", name: "Coffee",                amount: "4.75",    category: "EXPENSE",      transaction_date: "2026-02-12" },
-  { id: "demo-t-190", name: "Gift",                  amount: "65.00",   category: "EXPENSE",      transaction_date: "2026-02-14" },
-  { id: "demo-t-191", name: "Netflix",               amount: "15.99",   category: "SUBSCRIPTION", transaction_date: "2026-02-15" },
-  { id: "demo-t-192", name: "Student Loan",          amount: "250.00",  category: "DEBT",         transaction_date: "2026-02-15" },
-  { id: "demo-t-193", name: "Groceries",             amount: "71.30",   category: "EXPENSE",      transaction_date: "2026-02-17" },
-  { id: "demo-t-194", name: "Electric",              amount: "92.40",   category: "BILL",         transaction_date: "2026-02-20" },
-  { id: "demo-t-195", name: "Amazon",                amount: "28.49",   category: "EXPENSE",      transaction_date: "2026-02-22" },
-  { id: "demo-t-196", name: "Lunch",                 amount: "19.80",   category: "EXPENSE",      transaction_date: "2026-02-24" },
-  { id: "demo-t-197", name: "Savings Transfer",      amount: "400.00",  category: "SAVINGS",      transaction_date: "2026-02-25" },
-  { id: "demo-t-198", name: "Dinner Out",            amount: "39.50",   category: "EXPENSE",      transaction_date: "2026-02-26" },
-  { id: "demo-t-199", name: "Pharmacy",              amount: "12.30",   category: "EXPENSE",      transaction_date: "2026-02-27" },
-  { id: "demo-t-200", name: "Medical",               amount: "45.00",   category: "EXPENSE",      transaction_date: "2026-02-28" },
+  {
+    id: "demo-t-181",
+    name: "Salary",
+    amount: "4500.00",
+    category: "INCOME",
+    transaction_date: "2026-02-01",
+  },
+  {
+    id: "demo-t-182",
+    name: "Rent",
+    amount: "1200.00",
+    category: "BILL",
+    transaction_date: "2026-02-01",
+  },
+  {
+    id: "demo-t-183",
+    name: "Spotify",
+    amount: "9.99",
+    category: "SUBSCRIPTION",
+    transaction_date: "2026-02-01",
+  },
+  {
+    id: "demo-t-184",
+    name: "Groceries",
+    amount: "95.60",
+    category: "EXPENSE",
+    transaction_date: "2026-02-04",
+  },
+  {
+    id: "demo-t-185",
+    name: "Gym Membership",
+    amount: "40.00",
+    category: "SUBSCRIPTION",
+    transaction_date: "2026-02-05",
+  },
+  {
+    id: "demo-t-186",
+    name: "Valentine's Dinner",
+    amount: "85.00",
+    category: "EXPENSE",
+    transaction_date: "2026-02-07",
+  },
+  {
+    id: "demo-t-187",
+    name: "Gas",
+    amount: "48.75",
+    category: "EXPENSE",
+    transaction_date: "2026-02-09",
+  },
+  {
+    id: "demo-t-188",
+    name: "Internet",
+    amount: "60.00",
+    category: "BILL",
+    transaction_date: "2026-02-10",
+  },
+  {
+    id: "demo-t-189",
+    name: "Coffee",
+    amount: "4.75",
+    category: "EXPENSE",
+    transaction_date: "2026-02-12",
+  },
+  {
+    id: "demo-t-190",
+    name: "Gift",
+    amount: "65.00",
+    category: "EXPENSE",
+    transaction_date: "2026-02-14",
+  },
+  {
+    id: "demo-t-191",
+    name: "Netflix",
+    amount: "15.99",
+    category: "SUBSCRIPTION",
+    transaction_date: "2026-02-15",
+  },
+  {
+    id: "demo-t-192",
+    name: "Student Loan",
+    amount: "250.00",
+    category: "DEBT",
+    transaction_date: "2026-02-15",
+  },
+  {
+    id: "demo-t-193",
+    name: "Groceries",
+    amount: "71.30",
+    category: "EXPENSE",
+    transaction_date: "2026-02-17",
+  },
+  {
+    id: "demo-t-194",
+    name: "Electric",
+    amount: "92.40",
+    category: "BILL",
+    transaction_date: "2026-02-20",
+  },
+  {
+    id: "demo-t-195",
+    name: "Amazon",
+    amount: "28.49",
+    category: "EXPENSE",
+    transaction_date: "2026-02-22",
+  },
+  {
+    id: "demo-t-196",
+    name: "Lunch",
+    amount: "19.80",
+    category: "EXPENSE",
+    transaction_date: "2026-02-24",
+  },
+  {
+    id: "demo-t-197",
+    name: "Savings Transfer",
+    amount: "400.00",
+    category: "SAVINGS",
+    transaction_date: "2026-02-25",
+  },
+  {
+    id: "demo-t-198",
+    name: "Dinner Out",
+    amount: "39.50",
+    category: "EXPENSE",
+    transaction_date: "2026-02-26",
+  },
+  {
+    id: "demo-t-199",
+    name: "Pharmacy",
+    amount: "12.30",
+    category: "EXPENSE",
+    transaction_date: "2026-02-27",
+  },
+  {
+    id: "demo-t-200",
+    name: "Medical",
+    amount: "45.00",
+    category: "EXPENSE",
+    transaction_date: "2026-02-28",
+  },
   // March 2026
-  { id: "demo-t-201", name: "Salary",               amount: "4500.00", category: "INCOME",       transaction_date: "2026-03-01" },
-  { id: "demo-t-202", name: "Rent",                  amount: "1200.00", category: "BILL",         transaction_date: "2026-03-01" },
-  { id: "demo-t-203", name: "Spotify",               amount: "9.99",    category: "SUBSCRIPTION", transaction_date: "2026-03-01" },
-  { id: "demo-t-204", name: "Groceries",             amount: "92.15",   category: "EXPENSE",      transaction_date: "2026-03-03" },
-  { id: "demo-t-205", name: "Gym Membership",        amount: "40.00",   category: "SUBSCRIPTION", transaction_date: "2026-03-05" },
-  { id: "demo-t-206", name: "Dinner Out",            amount: "45.80",   category: "EXPENSE",      transaction_date: "2026-03-07" },
-  { id: "demo-t-207", name: "Gas",                   amount: "52.30",   category: "EXPENSE",      transaction_date: "2026-03-08" },
-  { id: "demo-t-208", name: "Internet",              amount: "60.00",   category: "BILL",         transaction_date: "2026-03-10" },
-  { id: "demo-t-209", name: "Amazon",                amount: "34.99",   category: "EXPENSE",      transaction_date: "2026-03-12" },
-  { id: "demo-t-210", name: "Coffee",                amount: "4.75",    category: "EXPENSE",      transaction_date: "2026-03-14" },
-  { id: "demo-t-211", name: "Netflix",               amount: "15.99",   category: "SUBSCRIPTION", transaction_date: "2026-03-15" },
-  { id: "demo-t-212", name: "Student Loan",          amount: "250.00",  category: "DEBT",         transaction_date: "2026-03-15" },
-  { id: "demo-t-213", name: "Groceries",             amount: "78.40",   category: "EXPENSE",      transaction_date: "2026-03-16" },
-  { id: "demo-t-214", name: "Freelance",             amount: "350.00",  category: "INCOME",       transaction_date: "2026-03-18" },
-  { id: "demo-t-215", name: "Electric",              amount: "85.00",   category: "BILL",         transaction_date: "2026-03-20" },
-  { id: "demo-t-216", name: "Clothing",              amount: "89.99",   category: "EXPENSE",      transaction_date: "2026-03-22" },
-  { id: "demo-t-217", name: "Pharmacy",              amount: "18.50",   category: "EXPENSE",      transaction_date: "2026-03-25" },
-  { id: "demo-t-218", name: "Uber",                  amount: "16.50",   category: "EXPENSE",      transaction_date: "2026-03-27" },
-  { id: "demo-t-219", name: "Dinner Out",            amount: "62.40",   category: "EXPENSE",      transaction_date: "2026-03-30" },
-  { id: "demo-t-220", name: "Savings Transfer",      amount: "500.00",  category: "SAVINGS",      transaction_date: "2026-03-28" },
+  {
+    id: "demo-t-201",
+    name: "Salary",
+    amount: "4500.00",
+    category: "INCOME",
+    transaction_date: "2026-03-01",
+  },
+  {
+    id: "demo-t-202",
+    name: "Rent",
+    amount: "1200.00",
+    category: "BILL",
+    transaction_date: "2026-03-01",
+  },
+  {
+    id: "demo-t-203",
+    name: "Spotify",
+    amount: "9.99",
+    category: "SUBSCRIPTION",
+    transaction_date: "2026-03-01",
+  },
+  {
+    id: "demo-t-204",
+    name: "Groceries",
+    amount: "92.15",
+    category: "EXPENSE",
+    transaction_date: "2026-03-03",
+  },
+  {
+    id: "demo-t-205",
+    name: "Gym Membership",
+    amount: "40.00",
+    category: "SUBSCRIPTION",
+    transaction_date: "2026-03-05",
+  },
+  {
+    id: "demo-t-206",
+    name: "Dinner Out",
+    amount: "45.80",
+    category: "EXPENSE",
+    transaction_date: "2026-03-07",
+  },
+  {
+    id: "demo-t-207",
+    name: "Gas",
+    amount: "52.30",
+    category: "EXPENSE",
+    transaction_date: "2026-03-08",
+  },
+  {
+    id: "demo-t-208",
+    name: "Internet",
+    amount: "60.00",
+    category: "BILL",
+    transaction_date: "2026-03-10",
+  },
+  {
+    id: "demo-t-209",
+    name: "Amazon",
+    amount: "34.99",
+    category: "EXPENSE",
+    transaction_date: "2026-03-12",
+  },
+  {
+    id: "demo-t-210",
+    name: "Coffee",
+    amount: "4.75",
+    category: "EXPENSE",
+    transaction_date: "2026-03-14",
+  },
+  {
+    id: "demo-t-211",
+    name: "Netflix",
+    amount: "15.99",
+    category: "SUBSCRIPTION",
+    transaction_date: "2026-03-15",
+  },
+  {
+    id: "demo-t-212",
+    name: "Student Loan",
+    amount: "250.00",
+    category: "DEBT",
+    transaction_date: "2026-03-15",
+  },
+  {
+    id: "demo-t-213",
+    name: "Groceries",
+    amount: "78.40",
+    category: "EXPENSE",
+    transaction_date: "2026-03-16",
+  },
+  {
+    id: "demo-t-214",
+    name: "Freelance",
+    amount: "350.00",
+    category: "INCOME",
+    transaction_date: "2026-03-18",
+  },
+  {
+    id: "demo-t-215",
+    name: "Electric",
+    amount: "85.00",
+    category: "BILL",
+    transaction_date: "2026-03-20",
+  },
+  {
+    id: "demo-t-216",
+    name: "Clothing",
+    amount: "89.99",
+    category: "EXPENSE",
+    transaction_date: "2026-03-22",
+  },
+  {
+    id: "demo-t-217",
+    name: "Pharmacy",
+    amount: "18.50",
+    category: "EXPENSE",
+    transaction_date: "2026-03-25",
+  },
+  {
+    id: "demo-t-218",
+    name: "Uber",
+    amount: "16.50",
+    category: "EXPENSE",
+    transaction_date: "2026-03-27",
+  },
+  {
+    id: "demo-t-219",
+    name: "Dinner Out",
+    amount: "62.40",
+    category: "EXPENSE",
+    transaction_date: "2026-03-30",
+  },
+  {
+    id: "demo-t-220",
+    name: "Savings Transfer",
+    amount: "500.00",
+    category: "SAVINGS",
+    transaction_date: "2026-03-28",
+  },
   // April 2026
-  { id: "demo-t-221", name: "Salary",               amount: "4500.00", category: "INCOME",       transaction_date: "2026-04-01" },
-  { id: "demo-t-222", name: "Rent",                  amount: "1200.00", category: "BILL",         transaction_date: "2026-04-01" },
-  { id: "demo-t-223", name: "Spotify",               amount: "9.99",    category: "SUBSCRIPTION", transaction_date: "2026-04-01" },
-  { id: "demo-t-224", name: "Groceries",             amount: "87.32",   category: "EXPENSE",      transaction_date: "2026-04-04" },
-  { id: "demo-t-225", name: "Gym Membership",        amount: "40.00",   category: "SUBSCRIPTION", transaction_date: "2026-04-05" },
-  { id: "demo-t-226", name: "Uber",                  amount: "14.50",   category: "EXPENSE",      transaction_date: "2026-04-08" },
-  { id: "demo-t-227", name: "Internet",              amount: "60.00",   category: "BILL",         transaction_date: "2026-04-10" },
-  { id: "demo-t-228", name: "Cash",                  amount: "165.00",  category: "TIPS",         transaction_date: "2026-04-10" },
-  { id: "demo-t-229", name: "Coffee",                amount: "4.75",    category: "EXPENSE",      transaction_date: "2026-04-11" },
-  { id: "demo-t-230", name: "Lunch",                 amount: "18.40",   category: "EXPENSE",      transaction_date: "2026-04-12" },
-  { id: "demo-t-231", name: "Pharmacy",              amount: "23.10",   category: "EXPENSE",      transaction_date: "2026-04-14" },
-  { id: "demo-t-232", name: "Netflix",               amount: "15.99",   category: "SUBSCRIPTION", transaction_date: "2026-04-15" },
-  { id: "demo-t-233", name: "Student Loan",          amount: "250.00",  category: "DEBT",         transaction_date: "2026-04-15" },
-  { id: "demo-t-234", name: "Groceries",             amount: "64.50",   category: "EXPENSE",      transaction_date: "2026-04-16" },
-  { id: "demo-t-235", name: "Electric",              amount: "90.20",   category: "BILL",         transaction_date: "2026-04-20" },
-  { id: "demo-t-236", name: "Amazon",                amount: "39.99",   category: "EXPENSE",      transaction_date: "2026-04-21" },
-  { id: "demo-t-237", name: "Dinner Out",            amount: "55.60",   category: "EXPENSE",      transaction_date: "2026-04-22" },
-  { id: "demo-t-238", name: "Freelance",             amount: "425.00",  category: "INCOME",       transaction_date: "2026-04-24" },
-  { id: "demo-t-239", name: "Clothing",              amount: "68.00",   category: "EXPENSE",      transaction_date: "2026-04-25" },
-  { id: "demo-t-240", name: "Savings Transfer",      amount: "450.00",  category: "SAVINGS",      transaction_date: "2026-04-28" },
+  {
+    id: "demo-t-221",
+    name: "Salary",
+    amount: "4500.00",
+    category: "INCOME",
+    transaction_date: "2026-04-01",
+  },
+  {
+    id: "demo-t-222",
+    name: "Rent",
+    amount: "1200.00",
+    category: "BILL",
+    transaction_date: "2026-04-01",
+  },
+  {
+    id: "demo-t-223",
+    name: "Spotify",
+    amount: "9.99",
+    category: "SUBSCRIPTION",
+    transaction_date: "2026-04-01",
+  },
+  {
+    id: "demo-t-224",
+    name: "Groceries",
+    amount: "87.32",
+    category: "EXPENSE",
+    transaction_date: "2026-04-04",
+  },
+  {
+    id: "demo-t-225",
+    name: "Gym Membership",
+    amount: "40.00",
+    category: "SUBSCRIPTION",
+    transaction_date: "2026-04-05",
+  },
+  {
+    id: "demo-t-226",
+    name: "Uber",
+    amount: "14.50",
+    category: "EXPENSE",
+    transaction_date: "2026-04-08",
+  },
+  {
+    id: "demo-t-227",
+    name: "Internet",
+    amount: "60.00",
+    category: "BILL",
+    transaction_date: "2026-04-10",
+  },
+  {
+    id: "demo-t-228",
+    name: "Cash",
+    amount: "165.00",
+    category: "TIPS",
+    transaction_date: "2026-04-10",
+  },
+  {
+    id: "demo-t-229",
+    name: "Coffee",
+    amount: "4.75",
+    category: "EXPENSE",
+    transaction_date: "2026-04-11",
+  },
+  {
+    id: "demo-t-230",
+    name: "Lunch",
+    amount: "18.40",
+    category: "EXPENSE",
+    transaction_date: "2026-04-12",
+  },
+  {
+    id: "demo-t-231",
+    name: "Pharmacy",
+    amount: "23.10",
+    category: "EXPENSE",
+    transaction_date: "2026-04-14",
+  },
+  {
+    id: "demo-t-232",
+    name: "Netflix",
+    amount: "15.99",
+    category: "SUBSCRIPTION",
+    transaction_date: "2026-04-15",
+  },
+  {
+    id: "demo-t-233",
+    name: "Student Loan",
+    amount: "250.00",
+    category: "DEBT",
+    transaction_date: "2026-04-15",
+  },
+  {
+    id: "demo-t-234",
+    name: "Groceries",
+    amount: "64.50",
+    category: "EXPENSE",
+    transaction_date: "2026-04-16",
+  },
+  {
+    id: "demo-t-235",
+    name: "Electric",
+    amount: "90.20",
+    category: "BILL",
+    transaction_date: "2026-04-20",
+  },
+  {
+    id: "demo-t-236",
+    name: "Amazon",
+    amount: "39.99",
+    category: "EXPENSE",
+    transaction_date: "2026-04-21",
+  },
+  {
+    id: "demo-t-237",
+    name: "Dinner Out",
+    amount: "55.60",
+    category: "EXPENSE",
+    transaction_date: "2026-04-22",
+  },
+  {
+    id: "demo-t-238",
+    name: "Freelance",
+    amount: "425.00",
+    category: "INCOME",
+    transaction_date: "2026-04-24",
+  },
+  {
+    id: "demo-t-239",
+    name: "Clothing",
+    amount: "68.00",
+    category: "EXPENSE",
+    transaction_date: "2026-04-25",
+  },
+  {
+    id: "demo-t-240",
+    name: "Savings Transfer",
+    amount: "450.00",
+    category: "SAVINGS",
+    transaction_date: "2026-04-28",
+  },
   // May 2025 — extra
-  { id: "demo-t-241", name: "Barber",                amount: "25.00",   category: "EXPENSE",      transaction_date: "2025-05-10" },
-  { id: "demo-t-242", name: "DoorDash",              amount: "34.50",   category: "EXPENSE",      transaction_date: "2025-05-21" },
-  { id: "demo-t-243", name: "Work Lunch Reimb.",     amount: "45.00",   category: "REIMBURSEMENT", transaction_date: "2025-05-23" },
+  {
+    id: "demo-t-241",
+    name: "Barber",
+    amount: "25.00",
+    category: "EXPENSE",
+    transaction_date: "2025-05-10",
+  },
+  {
+    id: "demo-t-242",
+    name: "DoorDash",
+    amount: "34.50",
+    category: "EXPENSE",
+    transaction_date: "2025-05-21",
+  },
+  {
+    id: "demo-t-243",
+    name: "Work Lunch Reimb.",
+    amount: "45.00",
+    category: "REIMBURSEMENT",
+    transaction_date: "2025-05-23",
+  },
   // June 2025 — extra
-  { id: "demo-t-244", name: "Haircut",               amount: "28.00",   category: "EXPENSE",      transaction_date: "2025-06-09" },
-  { id: "demo-t-245", name: "Movie Tickets",         amount: "32.00",   category: "EXPENSE",      transaction_date: "2025-06-20" },
-  { id: "demo-t-246", name: "Travel Reimbursement",  amount: "120.00",  category: "REIMBURSEMENT", transaction_date: "2025-06-25" },
+  {
+    id: "demo-t-244",
+    name: "Haircut",
+    amount: "28.00",
+    category: "EXPENSE",
+    transaction_date: "2025-06-09",
+  },
+  {
+    id: "demo-t-245",
+    name: "Movie Tickets",
+    amount: "32.00",
+    category: "EXPENSE",
+    transaction_date: "2025-06-20",
+  },
+  {
+    id: "demo-t-246",
+    name: "Travel Reimbursement",
+    amount: "120.00",
+    category: "REIMBURSEMENT",
+    transaction_date: "2025-06-25",
+  },
   // July 2025 — extra
-  { id: "demo-t-247", name: "Parking",               amount: "18.00",   category: "EXPENSE",      transaction_date: "2025-07-05" },
-  { id: "demo-t-248", name: "Car Wash",              amount: "22.00",   category: "EXPENSE",      transaction_date: "2025-07-19" },
-  { id: "demo-t-249", name: "Medical Reimbursement", amount: "75.00",   category: "REIMBURSEMENT", transaction_date: "2025-07-30" },
+  {
+    id: "demo-t-247",
+    name: "Parking",
+    amount: "18.00",
+    category: "EXPENSE",
+    transaction_date: "2025-07-05",
+  },
+  {
+    id: "demo-t-248",
+    name: "Car Wash",
+    amount: "22.00",
+    category: "EXPENSE",
+    transaction_date: "2025-07-19",
+  },
+  {
+    id: "demo-t-249",
+    name: "Medical Reimbursement",
+    amount: "75.00",
+    category: "REIMBURSEMENT",
+    transaction_date: "2025-07-30",
+  },
   // August 2025 — extra
-  { id: "demo-t-250", name: "Barber",                amount: "25.00",   category: "EXPENSE",      transaction_date: "2025-08-08" },
-  { id: "demo-t-251", name: "Online Course",         amount: "49.00",   category: "EXPENSE",      transaction_date: "2025-08-18" },
-  { id: "demo-t-252", name: "Expense Reimbursement", amount: "85.00",   category: "REIMBURSEMENT", transaction_date: "2025-08-22" },
+  {
+    id: "demo-t-250",
+    name: "Barber",
+    amount: "25.00",
+    category: "EXPENSE",
+    transaction_date: "2025-08-08",
+  },
+  {
+    id: "demo-t-251",
+    name: "Online Course",
+    amount: "49.00",
+    category: "EXPENSE",
+    transaction_date: "2025-08-18",
+  },
+  {
+    id: "demo-t-252",
+    name: "Expense Reimbursement",
+    amount: "85.00",
+    category: "REIMBURSEMENT",
+    transaction_date: "2025-08-22",
+  },
   // September 2025 — extra
-  { id: "demo-t-253", name: "DoorDash",              amount: "28.75",   category: "EXPENSE",      transaction_date: "2025-09-08" },
-  { id: "demo-t-254", name: "Car Wash",              amount: "22.00",   category: "EXPENSE",      transaction_date: "2025-09-18" },
-  { id: "demo-t-255", name: "Parking Reimbursement", amount: "40.00",   category: "REIMBURSEMENT", transaction_date: "2025-09-29" },
+  {
+    id: "demo-t-253",
+    name: "DoorDash",
+    amount: "28.75",
+    category: "EXPENSE",
+    transaction_date: "2025-09-08",
+  },
+  {
+    id: "demo-t-254",
+    name: "Car Wash",
+    amount: "22.00",
+    category: "EXPENSE",
+    transaction_date: "2025-09-18",
+  },
+  {
+    id: "demo-t-255",
+    name: "Parking Reimbursement",
+    amount: "40.00",
+    category: "REIMBURSEMENT",
+    transaction_date: "2025-09-29",
+  },
   // October 2025 — extra
-  { id: "demo-t-256", name: "Barber",                amount: "25.00",   category: "EXPENSE",      transaction_date: "2025-10-09" },
-  { id: "demo-t-257", name: "Disney+",               amount: "13.99",   category: "SUBSCRIPTION", transaction_date: "2025-10-14" },
-  { id: "demo-t-258", name: "Conference Reimb.",     amount: "150.00",  category: "REIMBURSEMENT", transaction_date: "2025-10-20" },
+  {
+    id: "demo-t-256",
+    name: "Barber",
+    amount: "25.00",
+    category: "EXPENSE",
+    transaction_date: "2025-10-09",
+  },
+  {
+    id: "demo-t-257",
+    name: "Disney+",
+    amount: "13.99",
+    category: "SUBSCRIPTION",
+    transaction_date: "2025-10-14",
+  },
+  {
+    id: "demo-t-258",
+    name: "Conference Reimb.",
+    amount: "150.00",
+    category: "REIMBURSEMENT",
+    transaction_date: "2025-10-20",
+  },
   // November 2025 — extra
-  { id: "demo-t-259", name: "Parking",               amount: "24.00",   category: "EXPENSE",      transaction_date: "2025-11-09" },
-  { id: "demo-t-260", name: "Barber",                amount: "25.00",   category: "EXPENSE",      transaction_date: "2025-11-19" },
-  { id: "demo-t-261", name: "Travel Reimbursement",  amount: "200.00",  category: "REIMBURSEMENT", transaction_date: "2025-11-27" },
+  {
+    id: "demo-t-259",
+    name: "Parking",
+    amount: "24.00",
+    category: "EXPENSE",
+    transaction_date: "2025-11-09",
+  },
+  {
+    id: "demo-t-260",
+    name: "Barber",
+    amount: "25.00",
+    category: "EXPENSE",
+    transaction_date: "2025-11-19",
+  },
+  {
+    id: "demo-t-261",
+    name: "Travel Reimbursement",
+    amount: "200.00",
+    category: "REIMBURSEMENT",
+    transaction_date: "2025-11-27",
+  },
   // December 2025 — extra
-  { id: "demo-t-262", name: "Barber",                amount: "25.00",   category: "EXPENSE",      transaction_date: "2025-12-09" },
-  { id: "demo-t-263", name: "DoorDash",              amount: "41.20",   category: "EXPENSE",      transaction_date: "2025-12-18" },
-  { id: "demo-t-264", name: "Movie Tickets",         amount: "45.00",   category: "EXPENSE",      transaction_date: "2025-12-24" },
-  { id: "demo-t-265", name: "Holiday Bonus",         amount: "500.00",  category: "INCOME",       transaction_date: "2025-12-23" },
+  {
+    id: "demo-t-262",
+    name: "Barber",
+    amount: "25.00",
+    category: "EXPENSE",
+    transaction_date: "2025-12-09",
+  },
+  {
+    id: "demo-t-263",
+    name: "DoorDash",
+    amount: "41.20",
+    category: "EXPENSE",
+    transaction_date: "2025-12-18",
+  },
+  {
+    id: "demo-t-264",
+    name: "Movie Tickets",
+    amount: "45.00",
+    category: "EXPENSE",
+    transaction_date: "2025-12-24",
+  },
+  {
+    id: "demo-t-265",
+    name: "Holiday Bonus",
+    amount: "500.00",
+    category: "INCOME",
+    transaction_date: "2025-12-23",
+  },
   // January 2026 — extra
-  { id: "demo-t-266", name: "Barber",                amount: "25.00",   category: "EXPENSE",      transaction_date: "2026-01-09" },
-  { id: "demo-t-267", name: "DoorDash",              amount: "29.40",   category: "EXPENSE",      transaction_date: "2026-01-20" },
-  { id: "demo-t-268", name: "Medical Reimbursement", amount: "95.00",   category: "REIMBURSEMENT", transaction_date: "2026-01-29" },
+  {
+    id: "demo-t-266",
+    name: "Barber",
+    amount: "25.00",
+    category: "EXPENSE",
+    transaction_date: "2026-01-09",
+  },
+  {
+    id: "demo-t-267",
+    name: "DoorDash",
+    amount: "29.40",
+    category: "EXPENSE",
+    transaction_date: "2026-01-20",
+  },
+  {
+    id: "demo-t-268",
+    name: "Medical Reimbursement",
+    amount: "95.00",
+    category: "REIMBURSEMENT",
+    transaction_date: "2026-01-29",
+  },
   // February 2026 — extra
-  { id: "demo-t-269", name: "Barber",                amount: "25.00",   category: "EXPENSE",      transaction_date: "2026-02-08" },
-  { id: "demo-t-270", name: "Online Course",         amount: "39.00",   category: "EXPENSE",      transaction_date: "2026-02-18" },
-  { id: "demo-t-271", name: "Expense Reimbursement", amount: "110.00",  category: "REIMBURSEMENT", transaction_date: "2026-02-21" },
+  {
+    id: "demo-t-269",
+    name: "Barber",
+    amount: "25.00",
+    category: "EXPENSE",
+    transaction_date: "2026-02-08",
+  },
+  {
+    id: "demo-t-270",
+    name: "Online Course",
+    amount: "39.00",
+    category: "EXPENSE",
+    transaction_date: "2026-02-18",
+  },
+  {
+    id: "demo-t-271",
+    name: "Expense Reimbursement",
+    amount: "110.00",
+    category: "REIMBURSEMENT",
+    transaction_date: "2026-02-21",
+  },
   // March 2026 — extra
-  { id: "demo-t-272", name: "Barber",                amount: "25.00",   category: "EXPENSE",      transaction_date: "2026-03-09" },
-  { id: "demo-t-273", name: "DoorDash",              amount: "33.60",   category: "EXPENSE",      transaction_date: "2026-03-18" },
-  { id: "demo-t-274", name: "Parking Reimbursement", amount: "55.00",   category: "REIMBURSEMENT", transaction_date: "2026-03-24" },
+  {
+    id: "demo-t-272",
+    name: "Barber",
+    amount: "25.00",
+    category: "EXPENSE",
+    transaction_date: "2026-03-09",
+  },
+  {
+    id: "demo-t-273",
+    name: "DoorDash",
+    amount: "33.60",
+    category: "EXPENSE",
+    transaction_date: "2026-03-18",
+  },
+  {
+    id: "demo-t-274",
+    name: "Parking Reimbursement",
+    amount: "55.00",
+    category: "REIMBURSEMENT",
+    transaction_date: "2026-03-24",
+  },
   // April 2026 — extra
-  { id: "demo-t-275", name: "Barber",                amount: "25.00",   category: "EXPENSE",      transaction_date: "2026-04-07" },
-  { id: "demo-t-276", name: "Travel Reimbursement",  amount: "175.00",  category: "REIMBURSEMENT", transaction_date: "2026-04-16" },
-  { id: "demo-t-277", name: "DoorDash",              amount: "27.80",   category: "EXPENSE",      transaction_date: "2026-04-17" },
+  {
+    id: "demo-t-275",
+    name: "Barber",
+    amount: "25.00",
+    category: "EXPENSE",
+    transaction_date: "2026-04-07",
+  },
+  {
+    id: "demo-t-276",
+    name: "Travel Reimbursement",
+    amount: "175.00",
+    category: "REIMBURSEMENT",
+    transaction_date: "2026-04-16",
+  },
+  {
+    id: "demo-t-277",
+    name: "DoorDash",
+    amount: "27.80",
+    category: "EXPENSE",
+    transaction_date: "2026-04-17",
+  },
   // Cash tips this month: one banked, the rest still cash on hand (demo for #23)
-  { id: "demo-t-278", name: "Cash",                  amount: "150.00",  category: "TIPS",         transaction_date: "2026-04-05" },
-  { id: "demo-t-279", name: "Cash",                  amount: "190.00",  category: "TIPS",         transaction_date: "2026-04-17" },
-  { id: "demo-t-280", name: "Cash",                  amount: "145.00",  category: "TIPS",         transaction_date: "2026-04-22" },
-  { id: "demo-t-281", name: "Cash",                  amount: "210.00",  category: "TIPS",         transaction_date: "2026-04-26" },
+  {
+    id: "demo-t-278",
+    name: "Cash",
+    amount: "150.00",
+    category: "TIPS",
+    transaction_date: "2026-04-05",
+  },
+  {
+    id: "demo-t-279",
+    name: "Cash",
+    amount: "190.00",
+    category: "TIPS",
+    transaction_date: "2026-04-17",
+  },
+  {
+    id: "demo-t-280",
+    name: "Cash",
+    amount: "145.00",
+    category: "TIPS",
+    transaction_date: "2026-04-22",
+  },
+  {
+    id: "demo-t-281",
+    name: "Cash",
+    amount: "210.00",
+    category: "TIPS",
+    transaction_date: "2026-04-26",
+  },
 ];
 
 const SEED_RECURRING = [
@@ -360,41 +2042,84 @@ const SEED_RECURRING = [
 ];
 
 const SEED_PAYCHECK_SCHEDULES = [
-  { id: "demo-ps-1", name: "Northwind Traders", frequency: "BIWEEKLY", start_date: "2026-01-02", active: true },
+  {
+    id: "demo-ps-1",
+    name: "Northwind Traders",
+    frequency: "BIWEEKLY",
+    start_date: "2026-01-02",
+    active: true,
+  },
 ];
 
-// Past paydays for demo-ps-1 (biweekly from 2026-01-02) with amounts entered, so
-// the surplus/savings features have real projected income + estimates to show.
-// Dates must match iterPayDates output exactly or backfill will duplicate them.
-// The next payday (2026-05-08) is left for backfill to add unfilled.
 const SEED_PAYCHECKS = [
-  { id: "demo-pc-1", schedule_id: "demo-ps-1", pay_date: "2026-01-02", amount: "1820.00" },
-  { id: "demo-pc-2", schedule_id: "demo-ps-1", pay_date: "2026-01-16", amount: "1850.00" },
-  { id: "demo-pc-3", schedule_id: "demo-ps-1", pay_date: "2026-01-30", amount: "1795.00" },
-  { id: "demo-pc-4", schedule_id: "demo-ps-1", pay_date: "2026-02-13", amount: "1880.00" },
-  { id: "demo-pc-5", schedule_id: "demo-ps-1", pay_date: "2026-02-27", amount: "1840.00" },
-  { id: "demo-pc-6", schedule_id: "demo-ps-1", pay_date: "2026-03-13", amount: "1810.00" },
-  { id: "demo-pc-7", schedule_id: "demo-ps-1", pay_date: "2026-03-27", amount: "1905.00" },
-  { id: "demo-pc-8", schedule_id: "demo-ps-1", pay_date: "2026-04-10", amount: "1860.00" },
-  { id: "demo-pc-9", schedule_id: "demo-ps-1", pay_date: "2026-04-24", amount: "1875.00" },
+  {
+    id: "demo-pc-1",
+    schedule_id: "demo-ps-1",
+    pay_date: "2026-01-02",
+    amount: "1820.00",
+  },
+  {
+    id: "demo-pc-2",
+    schedule_id: "demo-ps-1",
+    pay_date: "2026-01-16",
+    amount: "1850.00",
+  },
+  {
+    id: "demo-pc-3",
+    schedule_id: "demo-ps-1",
+    pay_date: "2026-01-30",
+    amount: "1795.00",
+  },
+  {
+    id: "demo-pc-4",
+    schedule_id: "demo-ps-1",
+    pay_date: "2026-02-13",
+    amount: "1880.00",
+  },
+  {
+    id: "demo-pc-5",
+    schedule_id: "demo-ps-1",
+    pay_date: "2026-02-27",
+    amount: "1840.00",
+  },
+  {
+    id: "demo-pc-6",
+    schedule_id: "demo-ps-1",
+    pay_date: "2026-03-13",
+    amount: "1810.00",
+  },
+  {
+    id: "demo-pc-7",
+    schedule_id: "demo-ps-1",
+    pay_date: "2026-03-27",
+    amount: "1905.00",
+  },
+  {
+    id: "demo-pc-8",
+    schedule_id: "demo-ps-1",
+    pay_date: "2026-04-10",
+    amount: "1860.00",
+  },
+  {
+    id: "demo-pc-9",
+    schedule_id: "demo-ps-1",
+    pay_date: "2026-04-24",
+    amount: "1875.00",
+  },
 ];
 
-// Starting balance so Available Cash / Upcoming Bills have a base to build from.
-const SEED_BALANCE_ANCHOR = { id: "demo-ba-1", current_balance: "2850.00", as_of_date: "2026-04-01" };
+const SEED_BALANCE_ANCHOR = {
+  id: "demo-ba-1",
+  current_balance: "2850.00",
+  as_of_date: "2026-04-01",
+};
 
-// Cash deposits (lump sums banked), independent of individual tips. Seed tips
-// total ~$975; these leave ~$325 cash on hand awaiting deposit.
 const SEED_TIP_DEPOSITS = [
   { id: "demo-td-1", amount: "200.00", deposit_date: "2026-02-14" },
   { id: "demo-td-2", amount: "250.00", deposit_date: "2026-03-20" },
   { id: "demo-td-3", amount: "200.00", deposit_date: "2026-04-15" },
 ];
 
-// Fixed-term payment obligations, tracked separately from the transactions
-// feed. One with a term set (monthly_payment computed) and one still
-// undecided (period_months/monthly_payment both null), so both list-row
-// states show up out of the box. monthly_payment is precomputed via
-// installmentMath.js so seed data stays internally consistent with the math.
 const SEED_INSTALLMENTS = [
   {
     id: "demo-in-1",
@@ -404,11 +2129,6 @@ const SEED_INSTALLMENTS = [
     monthly_payment: computeMonthlyPayment("600.00", 6).toFixed(2),
     day_of_month: 15,
     category: "DEBT",
-    // Deliberately one month behind: the 15th has passed in DEMO_TODAY's month,
-    // so applyInstallments posts April's payment on first load. That both
-    // demonstrates auto-posting and leaves the ledger agreeing with
-    // payments_made, rather than claiming 2 payments with no transactions
-    // backing them.
     payments_made: 1,
     last_applied_month: "2026-03",
     active: true,
@@ -439,7 +2159,7 @@ const SEED_INSTALLMENTS = [
   },
 ];
 
-// ── Init ──────────────────────────────────────────────────────────────────────
+// Init
 export function initDemo() {
   if (!localStorage.getItem(TX_KEY)) {
     localStorage.setItem(TX_KEY, JSON.stringify(SEED_TRANSACTIONS));
@@ -477,17 +2197,17 @@ export function clearDemo() {
   localStorage.removeItem("demo");
 }
 
-// ── Auto-apply recurring payments ─────────────────────────────────────────────
+// Auto-apply recurring payments
 const DEMO_TODAY = "2026-04-28";
 
 function applyRecurringPayments() {
-  const now     = new Date(DEMO_TODAY + "T00:00:00");
-  const today   = now.getDate();
-  const year    = now.getFullYear();
-  const month   = String(now.getMonth() + 1).padStart(2, "0");
-  const prefix  = `${year}-${month}`;
+  const now = new Date(DEMO_TODAY + "T00:00:00");
+  const today = now.getDate();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const prefix = `${year}-${month}`;
 
-  const recurring    = getAll(RP_KEY);
+  const recurring = getAll(RP_KEY);
   const transactions = getAll(TX_KEY);
 
   let changed = false;
@@ -495,7 +2215,7 @@ function applyRecurringPayments() {
   let recurringChanged = false;
 
   recurring.forEach((rp) => {
-    if (rp.is_estimate) return; // held for confirmation (#58) - never auto-posts, see getUpcomingRecurringPayments
+    if (rp.is_estimate) return;
     if (rp.active === false) return;
     if (rp.day_of_month == null || rp.day_of_month > today) return;
     if (rp.last_applied_month === prefix) return;
@@ -503,19 +2223,21 @@ function applyRecurringPayments() {
     const alreadyExists = transactions.some(
       (t) =>
         t.transaction_date.startsWith(prefix) &&
-        (t._recurring_id === rp.id || t.recurring_payment_id === rp.id || (t.name === rp.name && t.amount === rp.amount))
+        (t._recurring_id === rp.id ||
+          t.recurring_payment_id === rp.id ||
+          (t.name === rp.name && t.amount === rp.amount)),
     );
     if (!alreadyExists) {
       const maxDay = new Date(year, now.getMonth() + 1, 0).getDate();
-      const day    = String(Math.min(rp.day_of_month, maxDay)).padStart(2, "0");
+      const day = String(Math.min(rp.day_of_month, maxDay)).padStart(2, "0");
 
       transactions.push({
-        id:                  nextId(),
-        name:                rp.name,
-        amount:              rp.amount,
-        category:            rp.category,
-        transaction_date:    `${prefix}-${day}`,
-        _recurring_id:       rp.id,
+        id: nextId(),
+        name: rp.name,
+        amount: rp.amount,
+        category: rp.category,
+        transaction_date: `${prefix}-${day}`,
+        _recurring_id: rp.id,
         recurring_payment_id: rp.id,
       });
       changed = true;
@@ -529,14 +2251,10 @@ function applyRecurringPayments() {
   if (recurringChanged) saveAll(RP_KEY, recurring);
 }
 
-// "YYYY-MM" for DEMO_TODAY - the bookkeeping key installments use to know
-// whether this month's payment has already been posted.
+// Current month as "YYYY-MM", used to check if this month's payment already posted.
 const demoCurrentMonth = () => DEMO_TODAY.slice(0, 7);
 
-// Mirrors transaction_service.apply_installments. Same opportunistic on-access
-// pattern as recurring payments, with one difference: an installment has a
-// finite term, so posting stops once payments_made reaches period_months rather
-// than repeating forever.
+// Mirrors transaction_service.apply_installments. Stops posting once the term ends.
 function applyInstallments() {
   const now = new Date(DEMO_TODAY + "T00:00:00");
   const today = now.getDate();
@@ -554,8 +2272,6 @@ function applyInstallments() {
     if ((inst.payments_made ?? 0) >= inst.period_months) return; // paid off
     if (inst.last_applied_month === currentMonth) return;
 
-    // Clamped in JS rather than compared raw: a payment due the 31st still has
-    // to fire in a 30-day month.
     const day = Math.min(inst.day_of_month, maxDay);
     if (day > today) return;
 
@@ -578,7 +2294,7 @@ function applyInstallments() {
   }
 }
 
-// ── Transactions ──────────────────────────────────────────────────────────────
+// Transactions
 export const getTransactions = () => {
   applyRecurringPayments();
   applyInstallments();
@@ -587,7 +2303,11 @@ export const getTransactions = () => {
 
 export const createTransaction = (data) => {
   const items = getAll(TX_KEY);
-  const item = { id: nextId(), ...data, amount: String(parseFloat(data.amount).toFixed(2)) };
+  const item = {
+    id: nextId(),
+    ...data,
+    amount: String(parseFloat(data.amount).toFixed(2)),
+  };
   saveAll(TX_KEY, [...items, item]);
   return respond(item);
 };
@@ -595,9 +2315,16 @@ export const createTransaction = (data) => {
 export const updateTransaction = (id, data) => {
   const items = getAll(TX_KEY);
   let updated;
-  const next = items.map(t => {
+  const next = items.map((t) => {
     if (t.id !== id) return t;
-    updated = { ...t, ...data, amount: data.amount != null ? String(parseFloat(data.amount).toFixed(2)) : t.amount };
+    updated = {
+      ...t,
+      ...data,
+      amount:
+        data.amount != null
+          ? String(parseFloat(data.amount).toFixed(2))
+          : t.amount,
+    };
     return updated;
   });
   saveAll(TX_KEY, next);
@@ -606,40 +2333,59 @@ export const updateTransaction = (id, data) => {
 
 export const deleteTransaction = (id) => {
   const transactions = getAll(TX_KEY);
-  const target = transactions.find(t => t.id === id);
-  saveAll(TX_KEY, transactions.filter(t => t.id !== id));
+  const target = transactions.find((t) => t.id === id);
+  saveAll(
+    TX_KEY,
+    transactions.filter((t) => t.id !== id),
+  );
 
   if (target?.paycheck_id) {
-    saveAll(PC_KEY, getAll(PC_KEY).map(p => p.id === target.paycheck_id ? { ...p, amount: null } : p));
+    saveAll(
+      PC_KEY,
+      getAll(PC_KEY).map((p) =>
+        p.id === target.paycheck_id ? { ...p, amount: null } : p,
+      ),
+    );
   }
 
   return Promise.resolve({ data: null, status: 204 });
 };
 
-// ── Import (demo mode has no backend, so parsing/dedup/categorization all
-// happen client-side here — always auto-detects, demo data is throwaway) ──
+// Import
 export const previewImport = async (file) => {
   const text = await file.text();
   const { headers, rows: rawRows } = parseCsvText(text);
   const detectedMapping = detectColumnMapping(headers);
-  const rows = annotateImportRows(rawRows, detectedMapping, "MM/DD/YYYY", "negative_expense", getAll(TX_KEY));
+  const rows = annotateImportRows(
+    rawRows,
+    detectedMapping,
+    "MM/DD/YYYY",
+    "negative_expense",
+    getAll(TX_KEY),
+  );
 
   return respond({ source_format: "csv", rows });
 };
 
 export const commitImport = async ({ rows, tip_deposit_rows }) => {
-  const toCreate = rows.filter(r => !r.skip);
+  const toCreate = rows.filter((r) => !r.skip);
   const created = [];
   for (const r of toCreate) {
     const res = await createTransaction({
-      name: r.name, amount: r.amount, category: r.category, transaction_date: r.transaction_date,
+      name: r.name,
+      amount: r.amount,
+      category: r.category,
+      transaction_date: r.transaction_date,
     });
     created.push(res.data);
   }
 
   const createdDeposits = [];
-  for (const d of (tip_deposit_rows || [])) {
-    const res = await createTipDeposit({ amount: d.amount, deposit_date: d.deposit_date });
+  for (const d of tip_deposit_rows || []) {
+    const res = await createTipDeposit({
+      amount: d.amount,
+      deposit_date: d.deposit_date,
+    });
     createdDeposits.push(res.data);
   }
 
@@ -652,17 +2398,30 @@ export const commitImport = async ({ rows, tip_deposit_rows }) => {
 };
 
 export const aiCleanupNames = () =>
-  Promise.reject({ response: { status: 503, data: { detail: "AI cleanup needs a real account — not available in demo mode." } } });
+  Promise.reject({
+    response: {
+      status: 503,
+      data: {
+        detail: "AI cleanup needs a real account — not available in demo mode.",
+      },
+    },
+  });
 
-// ── Recurring payments ────────────────────────────────────────────────────────
-// INCOME collides with PaycheckSchedule-generated income transactions; TIPS has
-// cash-on-hand semantics a scheduled recurring payment doesn't model. Mirrors
-// the backend's category validator (app/schemas/recurring_payment.py).
+// Recurring payments
+// INCOME and TIPS are excluded - they're handled by paychecks and cash tracking,
+// not recurring payments. Mirrors the backend's category validator.
 const RECURRING_BLOCKED_CATEGORIES = new Set(["INCOME", "TIPS"]);
 
 function rejectBlockedCategory(category) {
   if (RECURRING_BLOCKED_CATEGORIES.has(category)) {
-    return Promise.reject({ response: { status: 422, data: { detail: `${category} is not a valid category for a recurring payment` } } });
+    return Promise.reject({
+      response: {
+        status: 422,
+        data: {
+          detail: `${category} is not a valid category for a recurring payment`,
+        },
+      },
+    });
   }
   return null;
 }
@@ -695,19 +2454,28 @@ export const updateRecurringPayment = (id, data) => {
 
   const items = getAll(RP_KEY);
   let updated;
-  const next = items.map(r => {
+  const next = items.map((r) => {
     if (r.id !== id) return r;
-    updated = { ...r, ...data, amount: data.amount != null ? String(parseFloat(data.amount).toFixed(2)) : r.amount };
+    updated = {
+      ...r,
+      ...data,
+      amount:
+        data.amount != null
+          ? String(parseFloat(data.amount).toFixed(2))
+          : r.amount,
+    };
     return updated;
   });
   saveAll(RP_KEY, next);
   return respond(updated);
 };
 
-// Rolling average of a recurring payment's most recent linked-transaction
-// amounts - same shape as averageRecentAmounts (paychecks), used to populate
-// estimated_amount on a pending item.
-function averageRecentRecurringAmounts(recurringPaymentId, allTransactions, limit = 3) {
+// Average of a recurring payment's recent amounts, for estimating a pending item.
+function averageRecentRecurringAmounts(
+  recurringPaymentId,
+  allTransactions,
+  limit = 3,
+) {
   const amounts = allTransactions
     .filter((t) => t.recurring_payment_id === recurringPaymentId)
     .sort((a, b) => b.transaction_date.localeCompare(a.transaction_date))
@@ -717,25 +2485,33 @@ function averageRecentRecurringAmounts(recurringPaymentId, allTransactions, limi
   return amounts.reduce((a, b) => a + b, 0) / amounts.length;
 }
 
-// Mirrors transaction_service.get_upcoming_recurring_payments - every active,
-// dated recurring payment's occurrence for the current month, status derived
-// the same way: paid (linked transaction exists) / skipped (last_applied_month
-// set, no transaction) / pending (due day reached, unresolved) / upcoming.
+// Mirrors transaction_service.get_upcoming_recurring_payments.
 export const getUpcomingRecurringPayments = () => {
   applyRecurringPayments();
 
-  const today       = new Date(DEMO_TODAY + "T00:00:00");
-  const prefix      = demoCurrentMonth();
-  const maxDay      = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+  const today = new Date(DEMO_TODAY + "T00:00:00");
+  const prefix = demoCurrentMonth();
+  const maxDay = new Date(
+    today.getFullYear(),
+    today.getMonth() + 1,
+    0,
+  ).getDate();
   const transactions = getAll(TX_KEY);
 
   const items = getAll(RP_KEY)
-    .filter((rp) => rp.active !== false && rp.day_of_month != null && !RECURRING_BLOCKED_CATEGORIES.has(rp.category))
+    .filter(
+      (rp) =>
+        rp.active !== false &&
+        rp.day_of_month != null &&
+        !RECURRING_BLOCKED_CATEGORIES.has(rp.category),
+    )
     .map((rp) => {
       const day = Math.min(rp.day_of_month, maxDay);
       const dueDate = `${prefix}-${String(day).padStart(2, "0")}`;
       const linked = transactions.find(
-        (t) => t.recurring_payment_id === rp.id && t.transaction_date.startsWith(prefix)
+        (t) =>
+          t.recurring_payment_id === rp.id &&
+          t.transaction_date.startsWith(prefix),
       );
 
       let status;
@@ -753,7 +2529,11 @@ export const getUpcomingRecurringPayments = () => {
         is_estimate: !!rp.is_estimate,
         amount: rp.amount,
         actual_amount: linked ? linked.amount : null,
-        estimated_amount: status === "pending" ? averageRecentRecurringAmounts(rp.id, transactions)?.toFixed(2) ?? null : null,
+        estimated_amount:
+          status === "pending"
+            ? (averageRecentRecurringAmounts(rp.id, transactions)?.toFixed(2) ??
+              null)
+            : null,
       };
     })
     .sort((a, b) => a.due_date.localeCompare(b.due_date));
@@ -764,22 +2544,49 @@ export const getUpcomingRecurringPayments = () => {
 function findPendingRecurringPayment(id) {
   const rp = getAll(RP_KEY).find((r) => r.id === id);
   if (!rp) {
-    return { error: { response: { status: 404, data: { detail: "Recurring payment not found" } } } };
+    return {
+      error: {
+        response: {
+          status: 404,
+          data: { detail: "Recurring payment not found" },
+        },
+      },
+    };
   }
   if (!rp.active || !rp.is_estimate || rp.day_of_month == null) {
-    return { error: { response: { status: 400, data: { detail: "Recurring payment is not a pending bill" } } } };
+    return {
+      error: {
+        response: {
+          status: 400,
+          data: { detail: "Recurring payment is not a pending bill" },
+        },
+      },
+    };
   }
 
-  const today  = new Date(DEMO_TODAY + "T00:00:00");
+  const today = new Date(DEMO_TODAY + "T00:00:00");
   const prefix = demoCurrentMonth();
-  const maxDay = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+  const maxDay = new Date(
+    today.getFullYear(),
+    today.getMonth() + 1,
+    0,
+  ).getDate();
   const dueDate = `${prefix}-${String(Math.min(rp.day_of_month, maxDay)).padStart(2, "0")}`;
 
   if (rp.last_applied_month === prefix) {
-    return { error: { response: { status: 400, data: { detail: "Already resolved for this month" } } } };
+    return {
+      error: {
+        response: {
+          status: 400,
+          data: { detail: "Already resolved for this month" },
+        },
+      },
+    };
   }
   if (dueDate > toDateStr(today)) {
-    return { error: { response: { status: 400, data: { detail: "Not due yet" } } } };
+    return {
+      error: { response: { status: 400, data: { detail: "Not due yet" } } },
+    };
   }
 
   return { rp, dueDate, prefix };
@@ -799,7 +2606,12 @@ export const confirmRecurringPayment = (id, data) => {
     recurring_payment_id: rp.id,
   };
   saveAll(TX_KEY, [...getAll(TX_KEY), transaction]);
-  saveAll(RP_KEY, getAll(RP_KEY).map((r) => r.id === id ? { ...r, last_applied_month: prefix } : r));
+  saveAll(
+    RP_KEY,
+    getAll(RP_KEY).map((r) =>
+      r.id === id ? { ...r, last_applied_month: prefix } : r,
+    ),
+  );
 
   return respond(transaction);
 };
@@ -809,28 +2621,44 @@ export const skipRecurringPayment = (id) => {
   if (result.error) return Promise.reject(result.error);
   const { prefix } = result;
 
-  saveAll(RP_KEY, getAll(RP_KEY).map((r) => r.id === id ? { ...r, last_applied_month: prefix } : r));
+  saveAll(
+    RP_KEY,
+    getAll(RP_KEY).map((r) =>
+      r.id === id ? { ...r, last_applied_month: prefix } : r,
+    ),
+  );
   return Promise.resolve({ data: null, status: 204 });
 };
 
 export const deleteRecurringPayment = (id) => {
-  // Soft-deactivate rather than remove - stops generating new transactions,
-  // but existing transaction history (t.recurring_payment_id) stays untouched.
-  saveAll(RP_KEY, getAll(RP_KEY).map(r => r.id === id ? { ...r, active: false } : r));
+  saveAll(
+    RP_KEY,
+    getAll(RP_KEY).map((r) => (r.id === id ? { ...r, active: false } : r)),
+  );
   return Promise.resolve({ data: null, status: 204 });
 };
 
-// ── Paychecks ─────────────────────────────────────────────────────────────────
-// Mirrors app/services/paycheck_service.py so demo mode behaves the same as the
-// real backend: pay dates are generated per frequency, backfilled lazily on
-// read (past dates + one upcoming), and never invented with an amount.
+// Paychecks
+// Mirrors app/services/paycheck_service.py.
 
-const PAYCHECK_EXPENSE_CATEGORIES = new Set(["EXPENSE", "BILL", "SUBSCRIPTION", "SAVINGS", "DEBT"]);
+const PAYCHECK_EXPENSE_CATEGORIES = new Set([
+  "EXPENSE",
+  "BILL",
+  "SUBSCRIPTION",
+  "SAVINGS",
+  "DEBT",
+]);
 const PAYCHECK_INCOME_CATEGORIES = new Set(["INCOME", "REIMBURSEMENT", "TIPS"]);
 
-// Estimated-savings spend/obligation categories exclude SAVINGS (saving, not
-// spending - surfaced separately as "saved so far").
-const NON_SAVINGS_EXPENSE_CATEGORIES = new Set(["EXPENSE", "BILL", "SUBSCRIPTION", "DEBT"]);
+// Excludes SAVINGS - moving money into savings isn't spending it.
+const NON_SAVINGS_EXPENSE_CATEGORIES = new Set([
+  "EXPENSE",
+  "BILL",
+  "SUBSCRIPTION",
+  "DEBT",
+]);
+// Money that's actually arrived. Cash tips don't count until deposited (#131).
+const MONEY_IN_CATEGORIES = new Set(["INCOME", "REIMBURSEMENT"]);
 const SAVINGS_HISTORY_MONTHS = 3;
 
 function toDateStr(d) {
@@ -840,8 +2668,8 @@ function toDateStr(d) {
   return `${y}-${m}-${day}`;
 }
 
-// Adds `months` to `base`, clamping the day-of-month to the target month's length
-// (e.g. Jan 31 + 1 month -> Feb 28), same as the Python service's _add_months.
+// Adds months to a date, clamping the day if the target month is shorter
+// (Jan 31 + 1 month -> Feb 28). Mirrors _add_months.
 function addMonthsClamped(base, months) {
   const year = base.getFullYear();
   const month = base.getMonth();
@@ -853,8 +2681,8 @@ function addMonthsClamped(base, months) {
   return new Date(targetYear, targetMonth, Math.min(day, lastDay));
 }
 
-// Yields a schedule's pay dates in ascending order, indefinitely. SEMI_MONTHLY
-// is two dates 15 days apart per month, anchored to start_date's day-of-month.
+// Yields a schedule's pay dates going forward. SEMI_MONTHLY produces two dates
+// 15 days apart each month.
 function* iterPayDates(schedule) {
   const start = new Date(schedule.start_date + "T00:00:00");
 
@@ -895,13 +2723,32 @@ function generatePayDatesThrough(schedule, through) {
 }
 
 function nextOccurrence(dayOfMonth, fromDate) {
-  const lastDay = new Date(fromDate.getFullYear(), fromDate.getMonth() + 1, 0).getDate();
-  const candidate = new Date(fromDate.getFullYear(), fromDate.getMonth(), Math.min(dayOfMonth, lastDay));
+  const lastDay = new Date(
+    fromDate.getFullYear(),
+    fromDate.getMonth() + 1,
+    0,
+  ).getDate();
+  const candidate = new Date(
+    fromDate.getFullYear(),
+    fromDate.getMonth(),
+    Math.min(dayOfMonth, lastDay),
+  );
   if (candidate >= fromDate) return candidate;
 
-  const nextMonth = addMonthsClamped(new Date(fromDate.getFullYear(), fromDate.getMonth(), 1), 1);
-  const nextLastDay = new Date(nextMonth.getFullYear(), nextMonth.getMonth() + 1, 0).getDate();
-  return new Date(nextMonth.getFullYear(), nextMonth.getMonth(), Math.min(dayOfMonth, nextLastDay));
+  const nextMonth = addMonthsClamped(
+    new Date(fromDate.getFullYear(), fromDate.getMonth(), 1),
+    1,
+  );
+  const nextLastDay = new Date(
+    nextMonth.getFullYear(),
+    nextMonth.getMonth() + 1,
+    0,
+  ).getDate();
+  return new Date(
+    nextMonth.getFullYear(),
+    nextMonth.getMonth(),
+    Math.min(dayOfMonth, nextLastDay),
+  );
 }
 
 function backfillPaychecks(through) {
@@ -915,35 +2762,46 @@ function backfillPaychecks(through) {
   const horizon = through ?? new Date(new Date(DEMO_TODAY + "T00:00:00").getTime() + 30 * 24 * 60 * 60 * 1000);
   let changed = false;
 
-  schedules.filter((schedule) => schedule.active !== false).forEach((schedule) => {
-    const expected = generatePayDatesThrough(schedule, horizon);
-    const existingDates = new Set(
-      paychecks.filter((p) => p.schedule_id === schedule.id).map((p) => p.pay_date)
-    );
+  schedules
+    .filter((schedule) => schedule.active !== false)
+    .forEach((schedule) => {
+      const expected = generatePayDatesThrough(schedule, horizon);
+      const existingDates = new Set(
+        paychecks
+          .filter((p) => p.schedule_id === schedule.id)
+          .map((p) => p.pay_date),
+      );
 
-    expected.forEach((d) => {
-      const dateStr = toDateStr(d);
-      if (!existingDates.has(dateStr)) {
-        paychecks.push({
-          id: nextId(),
-          schedule_id: schedule.id,
-          pay_date: dateStr,
-          amount: null,
-        });
-        changed = true;
-      }
+      expected.forEach((d) => {
+        const dateStr = toDateStr(d);
+        if (!existingDates.has(dateStr)) {
+          paychecks.push({
+            id: nextId(),
+            schedule_id: schedule.id,
+            pay_date: dateStr,
+            amount: null,
+          });
+          changed = true;
+        }
+      });
     });
-  });
 
   if (changed) saveAll(PC_KEY, paychecks);
   return paychecks;
 }
 
-export const getPaycheckSchedules = () => respond(getAll(PS_KEY).filter((s) => s.active !== false));
+export const getPaycheckSchedules = () =>
+  respond(getAll(PS_KEY).filter((s) => s.active !== false));
 
 export const createPaycheckSchedule = (data) => {
   const items = getAll(PS_KEY);
-  const item = { id: nextId(), name: data.name, frequency: data.frequency, start_date: data.start_date, active: true };
+  const item = {
+    id: nextId(),
+    name: data.name,
+    frequency: data.frequency,
+    start_date: data.start_date,
+    active: true,
+  };
   saveAll(PS_KEY, [...items, item]);
   return respond(item);
 };
@@ -958,45 +2816,63 @@ export const updatePaycheckSchedule = (id, data) => {
   });
   saveAll(PS_KEY, next);
 
-  // Unfilled paychecks no longer match the old frequency/start_date - drop
-  // them so the next read backfills fresh ones. Entered amounts stay.
-  saveAll(PC_KEY, getAll(PC_KEY).filter((p) => p.schedule_id !== id || p.amount != null));
+  saveAll(
+    PC_KEY,
+    getAll(PC_KEY).filter((p) => p.schedule_id !== id || p.amount != null),
+  );
 
-  // A rename has to reach transactions already posted under this schedule
-  // (#97), mirroring paycheck_service.update_paycheck_schedule.
   if (data.name != null) {
-    const scheduled = new Set(getAll(PC_KEY).filter((p) => p.schedule_id === id).map((p) => p.id));
-    saveAll(TX_KEY, getAll(TX_KEY).map((t) => (
-      t.paycheck_id != null && scheduled.has(t.paycheck_id) ? { ...t, name: data.name } : t
-    )));
+    const scheduled = new Set(
+      getAll(PC_KEY)
+        .filter((p) => p.schedule_id === id)
+        .map((p) => p.id),
+    );
+    saveAll(
+      TX_KEY,
+      getAll(TX_KEY).map((t) =>
+        t.paycheck_id != null && scheduled.has(t.paycheck_id)
+          ? { ...t, name: data.name }
+          : t,
+      ),
+    );
   }
 
   return respond(updated);
 };
 
 export const deletePaycheckSchedule = (id) => {
-  // Soft-deactivate rather than remove - stops generating new paychecks, but
-  // past paychecks and their linked income transactions stay untouched.
-  saveAll(PS_KEY, getAll(PS_KEY).map((s) => s.id === id ? { ...s, active: false } : s));
+  saveAll(
+    PS_KEY,
+    getAll(PS_KEY).map((s) => (s.id === id ? { ...s, active: false } : s)),
+  );
   return Promise.resolve({ data: null, status: 204 });
 };
 
 export const getPaychecks = () => {
   const all = backfillPaychecks();
-  const scheduleNames = Object.fromEntries(getAll(PS_KEY).map((s) => [s.id, s.name]));
+  const scheduleNames = Object.fromEntries(
+    getAll(PS_KEY).map((s) => [s.id, s.name]),
+  );
 
-  // Guessed amount for still-unfilled paychecks, based on recent entries for
-  // that schedule - purely informational, never used in the spendable-surplus
-  // math (which only counts money actually received).
+  // A guessed amount for display only - never counted in the real spendable-surplus math.
   const withEstimates = all.map((p) => {
     const schedule_name = scheduleNames[p.schedule_id] ?? null;
-    if (p.amount != null) return { ...p, schedule_name, estimated_amount: null };
+    if (p.amount != null)
+      return { ...p, schedule_name, estimated_amount: null };
     const estimate = averageRecentAmounts(p.schedule_id, all);
-    return { ...p, schedule_name, estimated_amount: estimate != null ? estimate.toFixed(2) : null };
+    return {
+      ...p,
+      schedule_name,
+      estimated_amount: estimate != null ? estimate.toFixed(2) : null,
+    };
   });
 
-  const sorted = withEstimates.sort((a, b) => b.pay_date.localeCompare(a.pay_date));
-  const pending = sorted.filter((p) => p.pay_date <= DEMO_TODAY && p.amount == null);
+  const sorted = withEstimates.sort((a, b) =>
+    b.pay_date.localeCompare(a.pay_date),
+  );
+  const pending = sorted.filter(
+    (p) => p.pay_date <= DEMO_TODAY && p.amount == null,
+  );
   return respond({ paychecks: sorted, pending_paychecks: pending });
 };
 
@@ -1014,9 +2890,12 @@ export const updatePaycheckAmount = (id, data) => {
     const transactions = getAll(TX_KEY);
     const existingIdx = transactions.findIndex((t) => t.paycheck_id === id);
     if (existingIdx !== -1) {
-      transactions[existingIdx] = { ...transactions[existingIdx], amount: updated.amount, transaction_date: updated.pay_date };
+      transactions[existingIdx] = {
+        ...transactions[existingIdx],
+        amount: updated.amount,
+        transaction_date: updated.pay_date,
+      };
     } else {
-      // Named after the schedule, not a literal "Paycheck" (#97).
       const schedule = getAll(PS_KEY).find((s) => s.id === updated.schedule_id);
       transactions.push({
         id: nextId(),
@@ -1049,9 +2928,6 @@ export const setBalanceAnchor = (data) => {
   return respond(anchor);
 };
 
-// Signed contribution of a transaction to the checking balance. Tips are cash
-// on hand, not money in checking, so they never count here - cash reaches
-// checking only via a deposit. Mirrors _balance_delta in the Python service.
 function balanceDelta(t) {
   const amt = parseFloat(t.amount);
   if (t.category === "TIPS") return 0;
@@ -1063,16 +2939,19 @@ function computeRunningBalance() {
   if (!raw) return null;
   const anchor = JSON.parse(raw);
 
-  // Bounded to "today" - an already-entered future-dated paycheck transaction
-  // must not inflate the *current* running balance. Future income is instead
-  // surfaced explicitly via the projected-income sum in getSpendableSurplus.
   const net = getAll(TX_KEY)
-    .filter((t) => t.transaction_date >= anchor.as_of_date && t.transaction_date <= DEMO_TODAY)
+    .filter(
+      (t) =>
+        t.transaction_date >= anchor.as_of_date &&
+        t.transaction_date <= DEMO_TODAY,
+    )
     .reduce((sum, t) => sum + balanceDelta(t), 0);
 
-  // Cash deposits credit checking as transfers-in, over the same window.
   const depositTotal = getAll(TD_KEY)
-    .filter((d) => d.deposit_date >= anchor.as_of_date && d.deposit_date <= DEMO_TODAY)
+    .filter(
+      (d) =>
+        d.deposit_date >= anchor.as_of_date && d.deposit_date <= DEMO_TODAY,
+    )
     .reduce((sum, d) => sum + parseFloat(d.amount), 0);
 
   return parseFloat(anchor.current_balance) + net + depositTotal;
@@ -1081,10 +2960,15 @@ function computeRunningBalance() {
 export const getRunningBalance = () => {
   const raw = localStorage.getItem(BA_KEY);
   if (!raw) {
-    return Promise.reject({ response: { status: 404, data: { detail: "No starting balance set" } } });
+    return Promise.reject({
+      response: { status: 404, data: { detail: "No starting balance set" } },
+    });
   }
   const anchor = JSON.parse(raw);
-  return respond({ balance: computeRunningBalance().toFixed(2), as_of_date: anchor.as_of_date });
+  return respond({
+    balance: computeRunningBalance().toFixed(2),
+    as_of_date: anchor.as_of_date,
+  });
 };
 
 function nextMonthStart(today) {
@@ -1103,31 +2987,46 @@ function averageRecentAmounts(scheduleId, allPaychecks, limit = 3) {
   return amounts.reduce((a, b) => a + b, 0) / amounts.length;
 }
 
-// Bills committed before `horizon`, as { total, items } - mirrors the Python
-// service's _committed_items. Estimates (no fixed date) count in full with a
-// null due_date; items are sorted by due date, estimates last.
 function committedItems(recurring, today, horizon) {
   let total = 0;
   const items = [];
   recurring.forEach((rp) => {
     if (rp.day_of_month == null) {
       total += parseFloat(rp.amount);
-      items.push({ name: rp.name, amount: parseFloat(rp.amount).toFixed(2), day_of_month: null, due_date: null, category: rp.category });
+      items.push({
+        name: rp.name,
+        amount: parseFloat(rp.amount).toFixed(2),
+        day_of_month: null,
+        due_date: null,
+        category: rp.category,
+      });
     } else {
       const occurrence = nextOccurrence(rp.day_of_month, today);
       if (occurrence <= horizon) {
         total += parseFloat(rp.amount);
-        items.push({ name: rp.name, amount: parseFloat(rp.amount).toFixed(2), day_of_month: rp.day_of_month, due_date: toDateStr(occurrence), category: rp.category });
+        items.push({
+          name: rp.name,
+          amount: parseFloat(rp.amount).toFixed(2),
+          day_of_month: rp.day_of_month,
+          due_date: toDateStr(occurrence),
+          category: rp.category,
+        });
       }
     }
   });
-  items.sort((a, b) => (a.due_date == null) - (b.due_date == null) || (a.due_date ?? "").localeCompare(b.due_date ?? ""));
+  items.sort(
+    (a, b) =>
+      (a.due_date == null) - (b.due_date == null) ||
+      (a.due_date ?? "").localeCompare(b.due_date ?? ""),
+  );
   return { total, items };
 }
 
 export const getSpendingReserve = () => {
   const raw = localStorage.getItem(RES_KEY);
-  return respond({ spending_reserve: raw ? JSON.parse(raw).spending_reserve : "0.00" });
+  return respond({
+    spending_reserve: raw ? JSON.parse(raw).spending_reserve : "0.00",
+  });
 };
 
 export const setSpendingReserve = (data) => {
@@ -1144,12 +3043,19 @@ function getSpendingReserveValue() {
 export const getSpendableSurplus = () => {
   const runningBalance = computeRunningBalance();
   if (runningBalance == null) {
-    return Promise.reject({ response: { status: 404, data: { detail: "No starting balance set" } } });
+    return Promise.reject({
+      response: { status: 404, data: { detail: "No starting balance set" } },
+    });
   }
 
   const schedules = getAll(PS_KEY).filter((s) => s.active !== false);
   if (schedules.length === 0) {
-    return Promise.reject({ response: { status: 404, data: { detail: "No active paycheck schedule found" } } });
+    return Promise.reject({
+      response: {
+        status: 404,
+        data: { detail: "No active paycheck schedule found" },
+      },
+    });
   }
 
   const today = new Date(DEMO_TODAY + "T00:00:00");
@@ -1166,13 +3072,13 @@ export const getSpendableSurplus = () => {
       }
     }
   });
-  // Prefer the actual amount already entered for this specific pay date over
-  // the rolling average - backfill through nextPayday first so that row
-  // exists to check. Mirrors _next_payday_amount in the Python service (#79).
   const nextPaydayStr = toDateStr(nextPayday);
   const backfilled = backfillPaychecks(nextPayday);
   const enteredNextPaycheck = backfilled.find(
-    (p) => p.schedule_id === nextSchedule?.id && p.pay_date === nextPaydayStr && p.amount != null
+    (p) =>
+      p.schedule_id === nextSchedule?.id &&
+      p.pay_date === nextPaydayStr &&
+      p.amount != null,
   );
   const nextPaydayEstimate = enteredNextPaycheck
     ? parseFloat(enteredNextPaycheck.amount)
@@ -1180,14 +3086,15 @@ export const getSpendableSurplus = () => {
       ? averageRecentAmounts(nextSchedule.id, backfilled)
       : null;
 
-  const recurring = getAll(RP_KEY).filter((rp) => rp.active !== false && PAYCHECK_EXPENSE_CATEGORIES.has(rp.category));
+  const recurring = getAll(RP_KEY).filter(
+    (rp) => rp.active !== false && PAYCHECK_EXPENSE_CATEGORIES.has(rp.category),
+  );
 
-  // What's actually free to spend/save before the next paycheck lands - not
-  // the whole month, so this stays "live" instead of counting paychecks that
-  // haven't arrived yet.
-  const { total: billsBeforeNextPayday, items: billsBreakdown } = committedItems(recurring, today, nextPayday);
+  const { total: billsBeforeNextPayday, items: billsBreakdown } =
+    committedItems(recurring, today, nextPayday);
 
-  const spendableSurplus = runningBalance + (nextPaydayEstimate ?? 0) - billsBeforeNextPayday;
+  const spendableSurplus =
+    runningBalance + (nextPaydayEstimate ?? 0) - billsBeforeNextPayday;
   const freeToAllocate = spendableSurplus - getSpendingReserveValue();
 
   return respond({
@@ -1195,29 +3102,39 @@ export const getSpendableSurplus = () => {
     spendable_surplus: spendableSurplus.toFixed(2),
     free_to_allocate: freeToAllocate.toFixed(2),
     bills_before_next_payday: billsBeforeNextPayday.toFixed(2),
-    next_payday_estimate: nextPaydayEstimate != null ? nextPaydayEstimate.toFixed(2) : null,
+    next_payday_estimate:
+      nextPaydayEstimate != null ? nextPaydayEstimate.toFixed(2) : null,
     running_balance: runningBalance.toFixed(2),
     bills_breakdown: billsBreakdown,
   });
 };
 
-// Every dollar of income for [monthStart, monthEnd): real INCOME transactions
-// already logged (paycheck-linked or not - a manual entry like a freelance gig
-// counts the same as a formal paycheck) plus a projected amount for each
-// schedule's still-unfilled paycheck this month. Not a double count: a filled
-// paycheck's amount already exists as a linked INCOME transaction, so it's
-// covered by the actual-transactions sum. Mirrors _whole_month_income (#85).
 function computeWholeMonthIncome(schedules, monthStartStr, monthEndStr) {
-  const actualIncome = getAll(TX_KEY)
-    .filter((t) => t.category === "INCOME" && t.transaction_date >= monthStartStr && t.transaction_date < monthEndStr)
-    .reduce((sum, t) => sum + parseFloat(t.amount), 0);
+  const actualIncome =
+    getAll(TX_KEY)
+      .filter(
+        (t) =>
+          MONEY_IN_CATEGORIES.has(t.category) &&
+          t.transaction_date >= monthStartStr &&
+          t.transaction_date < monthEndStr,
+      )
+      .reduce((sum, t) => sum + parseFloat(t.amount), 0) +
+    getAll(TD_KEY)
+      .filter(
+        (d) => d.deposit_date >= monthStartStr && d.deposit_date < monthEndStr,
+      )
+      .reduce((sum, d) => sum + parseFloat(d.amount), 0);
 
   if (schedules.length === 0) return actualIncome;
 
   const allPaychecks = backfillPaychecks(new Date(monthEndStr + "T00:00:00"));
   const scheduleIds = new Set(schedules.map((s) => s.id));
   const unfilled = allPaychecks.filter(
-    (p) => scheduleIds.has(p.schedule_id) && p.pay_date >= monthStartStr && p.pay_date < monthEndStr && p.amount == null
+    (p) =>
+      scheduleIds.has(p.schedule_id) &&
+      p.pay_date >= monthStartStr &&
+      p.pay_date < monthEndStr &&
+      p.amount == null,
   );
 
   const projectedUnfilled = unfilled.reduce((sum, p) => {
@@ -1231,7 +3148,12 @@ function computeWholeMonthIncome(schedules, monthStartStr, monthEndStr) {
 export const getEstimatedSavings = () => {
   const schedules = getAll(PS_KEY).filter((s) => s.active !== false);
   if (schedules.length === 0) {
-    return Promise.reject({ response: { status: 404, data: { detail: "No active paycheck schedule found" } } });
+    return Promise.reject({
+      response: {
+        status: 404,
+        data: { detail: "No active paycheck schedule found" },
+      },
+    });
   }
 
   const today = new Date(DEMO_TODAY + "T00:00:00");
@@ -1240,31 +3162,40 @@ export const getEstimatedSavings = () => {
   const monthStartStr = toDateStr(monthStart);
   const monthEndStr = toDateStr(monthEnd);
 
-  // Without a known income figure the estimate is meaningless - a schedule whose
-  // checks have no amounts entered projects $0 and is treated as not-ready. This
-  // gate looks at the whole month (received + upcoming), not just what's left.
-  const wholeMonthIncome = computeWholeMonthIncome(schedules, monthStartStr, monthEndStr);
+  const wholeMonthIncome = computeWholeMonthIncome(
+    schedules,
+    monthStartStr,
+    monthEndStr,
+  );
   if (wholeMonthIncome <= 0) {
-    return Promise.reject({ response: { status: 404, data: { detail: "No paycheck amounts yet" } } });
+    return Promise.reject({
+      response: { status: 404, data: { detail: "No paycheck amounts yet" } },
+    });
   }
 
-  const historyStartStr = toDateStr(addMonthsClamped(monthStart, -SAVINGS_HISTORY_MONTHS));
+  const historyStartStr = toDateStr(
+    addMonthsClamped(monthStart, -SAVINGS_HISTORY_MONTHS),
+  );
 
-  // The real backend excludes recurring-linked transactions from the discretionary
-  // average via recurring_payment_id. Seed history predates that link, so mirror
-  // the intent by also excluding transactions whose name matches an active
-  // non-estimate recurring - those fixed bills are added back separately below.
   const recurringNames = new Set(
     getAll(RP_KEY)
-      .filter((rp) => rp.active !== false && !rp.is_estimate && NON_SAVINGS_EXPENSE_CATEGORIES.has(rp.category))
-      .map((rp) => rp.name)
+      .filter(
+        (rp) =>
+          rp.active !== false &&
+          !rp.is_estimate &&
+          NON_SAVINGS_EXPENSE_CATEGORIES.has(rp.category),
+      )
+      .map((rp) => rp.name),
   );
 
   const spendRows = getAll(TX_KEY).filter(
     (t) =>
       NON_SAVINGS_EXPENSE_CATEGORIES.has(t.category) &&
-      !t._recurring_id && !t.recurring_payment_id && !recurringNames.has(t.name) &&
-      t.transaction_date >= historyStartStr && t.transaction_date < monthStartStr
+      !t._recurring_id &&
+      !t.recurring_payment_id &&
+      !recurringNames.has(t.name) &&
+      t.transaction_date >= historyStartStr &&
+      t.transaction_date < monthStartStr,
   );
 
   const totalsByMonth = {};
@@ -1275,47 +3206,67 @@ export const getEstimatedSavings = () => {
 
   const expectedMonths = [];
   for (let n = 1; n <= SAVINGS_HISTORY_MONTHS; n++) {
-    expectedMonths.push(toDateStr(addMonthsClamped(monthStart, -n)).slice(0, 7));
+    expectedMonths.push(
+      toDateStr(addMonthsClamped(monthStart, -n)).slice(0, 7),
+    );
   }
   if (!expectedMonths.every((m) => m in totalsByMonth)) {
-    return Promise.reject({ response: { status: 404, data: { detail: "Not enough spending history" } } });
+    return Promise.reject({
+      response: {
+        status: 404,
+        data: { detail: "Not enough spending history" },
+      },
+    });
   }
 
   const totalSpend = Object.values(totalsByMonth).reduce((a, b) => a + b, 0);
   const monthlyDiscretionaryAvg = totalSpend / SAVINGS_HISTORY_MONTHS;
 
   const savedSoFar = getAll(TX_KEY)
-    .filter((t) => t.category === "SAVINGS" && t.transaction_date >= monthStartStr && t.transaction_date < monthEndStr)
+    .filter(
+      (t) =>
+        t.category === "SAVINGS" &&
+        t.transaction_date >= monthStartStr &&
+        t.transaction_date < monthEndStr,
+    )
     .reduce((sum, t) => sum + parseFloat(t.amount), 0);
 
-  // Fixed obligations for the whole month, regardless of already paid. Dated
-  // is_estimate rows (utility-style bills, #58) count too via their baseline
-  // amount - only pure budget-line estimates (no day_of_month) are excluded,
-  // since those never hit the ledger and are captured via discretionary spend
-  // instead. Mirrors get_estimated_savings in the Python service.
   const committedRecurring = getAll(RP_KEY)
-    .filter((rp) => rp.active !== false && !(rp.is_estimate && rp.day_of_month == null) && NON_SAVINGS_EXPENSE_CATEGORIES.has(rp.category))
+    .filter(
+      (rp) =>
+        rp.active !== false &&
+        !(rp.is_estimate && rp.day_of_month == null) &&
+        NON_SAVINGS_EXPENSE_CATEGORIES.has(rp.category),
+    )
     .reduce((sum, rp) => sum + parseFloat(rp.amount), 0);
 
-  // Discretionary spend, blended: what's actually posted so far this month
-  // (real data) plus the historical daily rate for the days strictly after
-  // today. Mirrors get_estimated_savings in the Python service (#85).
   const todayStr = toDateStr(today);
   const discretionarySpentSoFar = getAll(TX_KEY)
     .filter(
       (t) =>
         NON_SAVINGS_EXPENSE_CATEGORIES.has(t.category) &&
-        !t._recurring_id && !t.recurring_payment_id &&
-        t.transaction_date >= monthStartStr && t.transaction_date <= todayStr
+        !t._recurring_id &&
+        !t.recurring_payment_id &&
+        t.transaction_date >= monthStartStr &&
+        t.transaction_date <= todayStr,
     )
     .reduce((sum, t) => sum + parseFloat(t.amount), 0);
 
-  const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+  const daysInMonth = new Date(
+    today.getFullYear(),
+    today.getMonth() + 1,
+    0,
+  ).getDate();
   const daysAfterToday = daysInMonth - today.getDate();
-  const discretionaryProjectedRemaining = (monthlyDiscretionaryAvg / daysInMonth) * daysAfterToday;
+  const discretionaryProjectedRemaining =
+    (monthlyDiscretionaryAvg / daysInMonth) * daysAfterToday;
 
-  const rawCeiling = wholeMonthIncome - committedRecurring - discretionarySpentSoFar - discretionaryProjectedRemaining;
-  const estimatedSavings = Math.max(rawCeiling, savedSoFar);
+  const rawCeiling =
+    wholeMonthIncome -
+    committedRecurring -
+    discretionarySpentSoFar -
+    discretionaryProjectedRemaining;
+  const estimatedSavings = Math.max(rawCeiling, 0);
 
   return respond({
     month_start: monthStartStr,
@@ -1325,19 +3276,26 @@ export const getEstimatedSavings = () => {
     whole_month_income: wholeMonthIncome.toFixed(2),
     committed_recurring: committedRecurring.toFixed(2),
     discretionary_spent_so_far: discretionarySpentSoFar.toFixed(2),
-    discretionary_projected_remaining: discretionaryProjectedRemaining.toFixed(2),
+    discretionary_projected_remaining:
+      discretionaryProjectedRemaining.toFixed(2),
   });
 };
 
-// ── Tip deposits ──────────────────────────────────────────────────────────────
-// Lump-sum cash deposits into checking, logged separately from tip entries.
-// Cash on hand = total tips earned - total deposited.
+// Tip deposits
 export const getTipDeposits = () =>
-  respond(getAll(TD_KEY).slice().sort((a, b) => b.deposit_date.localeCompare(a.deposit_date)));
+  respond(
+    getAll(TD_KEY)
+      .slice()
+      .sort((a, b) => b.deposit_date.localeCompare(a.deposit_date)),
+  );
 
 export const createTipDeposit = (data) => {
   const items = getAll(TD_KEY);
-  const item = { id: nextId(), amount: String(parseFloat(data.amount).toFixed(2)), deposit_date: data.deposit_date };
+  const item = {
+    id: nextId(),
+    amount: String(parseFloat(data.amount).toFixed(2)),
+    deposit_date: data.deposit_date,
+  };
   saveAll(TD_KEY, [...items, item]);
   return respond(item);
 };
@@ -1346,7 +3304,14 @@ export const updateTipDeposit = (id, data) => {
   let updated;
   const next = getAll(TD_KEY).map((d) => {
     if (d.id !== id) return d;
-    updated = { ...d, ...data, amount: data.amount != null ? String(parseFloat(data.amount).toFixed(2)) : d.amount };
+    updated = {
+      ...d,
+      ...data,
+      amount:
+        data.amount != null
+          ? String(parseFloat(data.amount).toFixed(2))
+          : d.amount,
+    };
     return updated;
   });
   saveAll(TD_KEY, next);
@@ -1354,7 +3319,10 @@ export const updateTipDeposit = (id, data) => {
 };
 
 export const deleteTipDeposit = (id) => {
-  saveAll(TD_KEY, getAll(TD_KEY).filter((d) => d.id !== id));
+  saveAll(
+    TD_KEY,
+    getAll(TD_KEY).filter((d) => d.id !== id),
+  );
   return Promise.resolve({ data: null, status: 204 });
 };
 
@@ -1362,7 +3330,10 @@ export const getCashOnHand = () => {
   const tipsEarned = getAll(TX_KEY)
     .filter((t) => t.category === "TIPS")
     .reduce((s, t) => s + parseFloat(t.amount), 0);
-  const tipsDeposited = getAll(TD_KEY).reduce((s, d) => s + parseFloat(d.amount), 0);
+  const tipsDeposited = getAll(TD_KEY).reduce(
+    (s, d) => s + parseFloat(d.amount),
+    0,
+  );
   return respond({
     cash_on_hand: (tipsEarned - tipsDeposited).toFixed(2),
     tips_earned: tipsEarned.toFixed(2),
@@ -1370,11 +3341,8 @@ export const getCashOnHand = () => {
   });
 };
 
-// ── Installments ──────────────────────────────────────────────────────────────
-// Fixed-term payment obligations, tracked separately from the transactions feed
-// (never auto-posted). period_months is genuinely optional - monthly_payment is
-// a stored snapshot recomputed on create/update, staying null until a term is
-// set, mirroring the real backend rather than derived on every read.
+// Installments
+
 const NO_TERM_REASON = "Set a term for this installment to see insights";
 
 export const getInstallments = () =>
@@ -1389,7 +3357,9 @@ export const createInstallment = (data) => {
     name: data.name,
     total_amount: String(parseFloat(data.total_amount).toFixed(2)),
     period_months: hasTerm ? parseInt(data.period_months, 10) : null,
-    monthly_payment: hasTerm ? computeMonthlyPayment(data.total_amount, data.period_months).toFixed(2) : null,
+    monthly_payment: hasTerm
+      ? computeMonthlyPayment(data.total_amount, data.period_months).toFixed(2)
+      : null,
     day_of_month: hasDay ? parseInt(data.day_of_month, 10) : null,
     category: "DEBT", // always debt, not client-settable, mirrors the real backend
     payments_made: 0,
@@ -1406,36 +3376,31 @@ export const updateInstallment = (id, data) => {
     if (i.id !== id) return i;
     updated = { ...i };
     if (data.name !== undefined) updated.name = data.name;
-    if (data.total_amount != null) updated.total_amount = String(parseFloat(data.total_amount).toFixed(2));
-    // "period_months" in data distinguishes an explicit clear (null) from the
-    // field simply not being part of this update, matching the real backend's
-    // exclude_unset semantics.
+    if (data.total_amount != null)
+      updated.total_amount = String(parseFloat(data.total_amount).toFixed(2));
     if ("period_months" in data) {
-      updated.period_months = data.period_months != null && data.period_months !== ""
-        ? parseInt(data.period_months, 10)
-        : null;
+      updated.period_months =
+        data.period_months != null && data.period_months !== ""
+          ? parseInt(data.period_months, 10)
+          : null;
     }
     if ("day_of_month" in data) {
-      updated.day_of_month = data.day_of_month != null && data.day_of_month !== ""
-        ? parseInt(data.day_of_month, 10)
-        : null;
+      updated.day_of_month =
+        data.day_of_month != null && data.day_of_month !== ""
+          ? parseInt(data.day_of_month, 10)
+          : null;
     }
-    // Recompute the stored snapshot whenever either input changed - null out
-    // again if the term was cleared, since there's nothing to divide by.
     if (data.total_amount != null || "period_months" in data) {
       updated.monthly_payment = updated.period_months
-        ? computeMonthlyPayment(updated.total_amount, updated.period_months).toFixed(2)
+        ? computeMonthlyPayment(
+            updated.total_amount,
+            updated.period_months,
+          ).toFixed(2)
         : null;
     }
     return updated;
   });
 
-  // Mirrors the un-apply/mirror half of installment_service.update_installment.
-  // If this month's payment was already auto-posted but the edit means it is no
-  // longer actually due - term or day cleared, or the new day hasn't arrived -
-  // delete the linked transaction and roll the bookkeeping back so the apply
-  // pass picks it up again whenever it genuinely falls due. If it is still due,
-  // mirror the name/amount change onto that transaction instead.
   if (updated && updated.last_applied_month === demoCurrentMonth()) {
     const now = new Date(DEMO_TODAY + "T00:00:00");
     const maxDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
@@ -1446,7 +3411,9 @@ export const updateInstallment = (id, data) => {
 
     const transactions = getAll(TX_KEY);
     const idx = transactions.findIndex(
-      (t) => t.installment_id === id && t.transaction_date.startsWith(demoCurrentMonth())
+      (t) =>
+        t.installment_id === id &&
+        t.transaction_date.startsWith(demoCurrentMonth()),
     );
 
     if (!stillDue) {
@@ -1455,7 +3422,11 @@ export const updateInstallment = (id, data) => {
       updated.payments_made = Math.max(0, (updated.payments_made ?? 0) - 1);
       saveAll(TX_KEY, transactions);
     } else if (idx !== -1) {
-      transactions[idx] = { ...transactions[idx], name: updated.name, amount: updated.monthly_payment };
+      transactions[idx] = {
+        ...transactions[idx],
+        name: updated.name,
+        amount: updated.monthly_payment,
+      };
       saveAll(TX_KEY, transactions);
     }
   }
@@ -1465,19 +3436,21 @@ export const updateInstallment = (id, data) => {
 };
 
 export const deleteInstallment = (id) => {
-  // Soft-deactivate rather than remove, consistent with recurring payments.
-  saveAll(IN_KEY, getAll(IN_KEY).map((i) => (i.id === id ? { ...i, active: false } : i)));
+  saveAll(
+    IN_KEY,
+    getAll(IN_KEY).map((i) => (i.id === id ? { ...i, active: false } : i)),
+  );
   return Promise.resolve({ data: null, status: 204 });
 };
 
 export const getInstallmentInsights = (id) => {
   const installment = getAll(IN_KEY).find((i) => i.id === id);
   if (!installment) {
-    return Promise.reject({ response: { status: 404, data: { detail: "Installment not found" } } });
+    return Promise.reject({
+      response: { status: 404, data: { detail: "Installment not found" } },
+    });
   }
 
-  // No term set yet -> nothing to compare against the budget, gated before
-  // even touching getSpendableSurplus(), matching the real backend.
   if (installment.monthly_payment == null) {
     return respond({
       available: false,
@@ -1489,12 +3462,12 @@ export const getInstallmentInsights = (id) => {
     });
   }
 
-  // Never propagates getSpendableSurplus()'s rejection - "not enough budget
-  // data yet" is a legitimate widget state here, not an error, matching the
-  // real /installments/{id}/insights endpoint's always-200 contract.
   return getSpendableSurplus().then(
     (res) => {
-      const { status, ratio } = computeGaugeStatus(installment.monthly_payment, res.data.free_to_allocate);
+      const { status, ratio } = computeGaugeStatus(
+        installment.monthly_payment,
+        res.data.free_to_allocate,
+      );
       return respond({
         available: true,
         reason: null,
@@ -1504,13 +3477,14 @@ export const getInstallmentInsights = (id) => {
         status,
       });
     },
-    (err) => respond({
-      available: false,
-      reason: err.response?.data?.detail ?? "Not enough budget data yet",
-      monthly_payment: installment.monthly_payment,
-      available_cash: null,
-      ratio: null,
-      status: null,
-    })
+    (err) =>
+      respond({
+        available: false,
+        reason: err.response?.data?.detail ?? "Not enough budget data yet",
+        monthly_payment: installment.monthly_payment,
+        available_cash: null,
+        ratio: null,
+        status: null,
+      }),
   );
 };
