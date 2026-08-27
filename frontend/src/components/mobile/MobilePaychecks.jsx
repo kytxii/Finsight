@@ -429,7 +429,7 @@ export default function MobilePaychecks({ onSaved }) {
 
       {!loading && (
         <>
-          {/* ── Panel header ── */}
+          {/* Panel header */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <p style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: HOME_MUTED, margin: 0 }}>
               {view === "settings" ? "Settings" : "Paychecks"}
@@ -454,7 +454,7 @@ export default function MobilePaychecks({ onSaved }) {
 
           {view === "settings" ? (
             <>
-              {/* ── Schedules ── */}
+              {/* Schedules */}
               <div>
                 <SectionLabel>Paycheck Schedule</SectionLabel>
 
@@ -606,7 +606,7 @@ export default function MobilePaychecks({ onSaved }) {
                 )}
               </div>
 
-              {/* ── Starting balance ── */}
+              {/* Starting balance */}
               <div>
                 <SectionLabel>Starting Balance</SectionLabel>
 
@@ -675,7 +675,7 @@ export default function MobilePaychecks({ onSaved }) {
                 </p>
               </div>
 
-              {/* ── Spending reserve ── */}
+              {/* Spending reserve */}
               <div>
                 <SectionLabel>Spending Reserve</SectionLabel>
 
@@ -746,7 +746,7 @@ export default function MobilePaychecks({ onSaved }) {
                 <EmptyCTA message="No paycheck schedule yet" cta="Open Settings" onClick={() => setView("settings")} />
               ) : (
                 <>
-                  {/* ── Pending nudge ── */}
+                  {/* Pending nudge */}
                   {pending.length > 0 && (
                     <div style={{
                       padding: "11px 14px", borderRadius: 14,
@@ -758,7 +758,7 @@ export default function MobilePaychecks({ onSaved }) {
                     </div>
                   )}
 
-                  {/* ── Filters ── */}
+                  {/* Filters */}
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <select
                       value={yearFilter ?? ""}
@@ -801,7 +801,7 @@ export default function MobilePaychecks({ onSaved }) {
                     </button>
                   </div>
 
-                  {/* ── Paycheck list ── */}
+                  {/* Paycheck list */}
                   {visiblePaychecks.length === 0 ? (
                     <p style={{ fontSize: 13, color: HOME_MUTED, textAlign: "center", padding: "20px 0" }}>No paychecks match this filter</p>
                   ) : (

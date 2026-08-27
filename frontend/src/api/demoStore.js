@@ -2387,7 +2387,7 @@ export const deleteTransaction = (id) => {
   return Promise.resolve({ data: null, status: 204 });
 };
 
-// ── Import
+// Import
 export const previewImport = async (file) => {
   const text = await file.text();
   const { headers, rows: rawRows } = parseCsvText(text);
@@ -2443,7 +2443,7 @@ export const aiCleanupNames = () =>
     },
   });
 
-// ── Recurring payments ────────────────────────────────────────────────────────
+// Recurring payments
 // INCOME and TIPS are excluded - they're handled by paychecks and cash tracking,
 // not recurring payments. Mirrors the backend's category validator.
 const RECURRING_BLOCKED_CATEGORIES = new Set(["INCOME", "TIPS"]);
@@ -2674,7 +2674,7 @@ export const deleteRecurringPayment = (id) => {
   return Promise.resolve({ data: null, status: 204 });
 };
 
-// ── Paychecks ─────────────────────────────────────────────────────────────────
+// Paychecks
 // Mirrors app/services/paycheck_service.py.
 
 const PAYCHECK_EXPENSE_CATEGORIES = new Set([

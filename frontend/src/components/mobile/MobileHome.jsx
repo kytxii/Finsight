@@ -64,9 +64,7 @@ const NAV_ROWS = [
   "TIPS",
 ];
 
-const BILLS_DUE_PLACEHOLDER = 3;
-
-// ── Shared row (nav card / tools) ───────────────────────────────────────────
+// Shared row (nav card / tools)
 
 function Row({
   icon,
@@ -171,7 +169,7 @@ function Row({
   );
 }
 
-// ── Main component ──────────────────────────────────────────────────────────
+// Main component
 
 function ChangeBadge({ current, previous, goodWhenUp }) {
   if (!previous) return null;
@@ -339,6 +337,10 @@ export default function MobileHome({
     color: HOME_TEXT,
     margin: 0,
   };
+  const billCount =
+    safeToSpendStatus === "ok"
+      ? safeToSpend?.bills_breakdown?.length ?? 0
+      : null;
 
   return (
     <>
@@ -362,133 +364,138 @@ export default function MobileHome({
           >
             {periodLabel()}
           </span>
-          {!loading && (
+          <span
+            style={{
+              display: "flex",
+              alignItems: "center",
+              fontSize: 13,
+              fontWeight: 600,
+              fontVariantNumeric: "tabular-nums",
+              color: loading
+                ? HOME_MUTED
+                : dashSummary.net >= 0
+                ? HOME_INCOME
+                : HOME_EXPENSE,
+            }}
+          >
             <span
-              style={{
-                fontSize: 13,
-                fontWeight: 600,
-                fontVariantNumeric: "tabular-nums",
-                color: dashSummary.net >= 0 ? HOME_INCOME : HOME_EXPENSE,
-              }}
+              style={{ color: HOME_MUTED, fontWeight: 500, marginRight: 5 }}
             >
-              <span
-                style={{ color: HOME_MUTED, fontWeight: 500, marginRight: 5 }}
-              >
-                Net
-              </span>
-              {(dashSummary.net >= 0 ? "+" : "-") +
-                fmt(Math.abs(dashSummary.net))}
+              Net
             </span>
-          )}
+            {loading ? (
+              <Skel h={13} w={44} />
+            ) : (
+              (dashSummary.net >= 0 ? "+" : "-") +
+              fmt(Math.abs(dashSummary.net))
+            )}
+          </span>
         </div>
         <div style={{ display: "flex", gap: 10 }}>
-          {loading ? (
-            <>
-              <div style={{ flex: 1, ...cardStyle, padding: "12px 14px 13px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                  <Skel h={13} w="40%" />
-                  <Skel h={13} w={28} />
-                </div>
-                <Skel h={21} w="75%" />
-              </div>
-              <div style={{ flex: 1, ...cardStyle, padding: "12px 14px 13px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                  <Skel h={13} w="40%" />
-                  <Skel h={13} w={28} />
-                </div>
-                <Skel h={21} w="75%" />
-              </div>
-            </>
-          ) : (
-            <>
-              <button
-                type="button"
-                onClick={() => onOpenBreakdown("income")}
-                className="text-left active:scale-[0.98] transition-transform"
-                style={{ flex: 1, ...cardStyle, padding: "12px 14px 13px", border: "none", font: "inherit", color: "inherit" }}
+          <button
+            type="button"
+            disabled={loading}
+            onClick={loading ? undefined : () => onOpenBreakdown("income")}
+            className="text-left active:scale-[0.98] transition-transform"
+            style={{ flex: 1, ...cardStyle, padding: "12px 14px 13px", border: "none", font: "inherit", color: "inherit", cursor: loading ? "default" : "pointer" }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: 4,
+              }}
+            >
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: 13,
+                  fontWeight: 500,
+                  color: HOME_INCOME,
+                }}
               >
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    marginBottom: 4,
-                  }}
-                >
-                  <p
-                    style={{
-                      margin: 0,
-                      fontSize: 13,
-                      fontWeight: 500,
-                      color: HOME_INCOME,
-                    }}
-                  >
-                    Income
-                  </p>
-                  <ChangeBadge
-                    current={dashSummary.totalIn}
-                    previous={dashLastMonthSummary?.totalIn}
-                    goodWhenUp={true}
-                  />
-                </div>
-                <p
-                  style={{
-                    margin: 0,
-                    fontSize: 21,
-                    fontWeight: 700,
-                    letterSpacing: "-0.4px",
-                    color: HOME_INCOME,
-                    fontVariantNumeric: "tabular-nums",
-                  }}
-                >
-                  {fmt(dashSummary.totalIn)}
-                </p>
-              </button>
-              <button
-                type="button"
-                onClick={() => onOpenBreakdown("expenses")}
-                className="text-left active:scale-[0.98] transition-transform"
-                style={{ flex: 1, ...cardStyle, padding: "12px 14px 13px", border: "none", font: "inherit", color: "inherit" }}
+                Income
+              </p>
+              {loading ? (
+                <Skel h={13} w={28} />
+              ) : (
+                <ChangeBadge
+                  current={dashSummary.totalIn}
+                  previous={dashLastMonthSummary?.totalIn}
+                  goodWhenUp={true}
+                />
+              )}
+            </div>
+            {loading ? (
+              <Skel h={21} w="75%" style={{ marginTop: 4 }} />
+            ) : (
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: 21,
+                  fontWeight: 700,
+                  letterSpacing: "-0.4px",
+                  color: HOME_INCOME,
+                  fontVariantNumeric: "tabular-nums",
+                }}
               >
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    marginBottom: 4,
-                  }}
-                >
-                  <p
-                    style={{
-                      margin: 0,
-                      fontSize: 13,
-                      fontWeight: 500,
-                      color: HOME_EXPENSE,
-                    }}
-                  >
-                    Expenses
-                  </p>
-                  <ChangeBadge
-                    current={dashSummary.totalOut}
-                    previous={dashLastMonthSummary?.totalOut}
-                    goodWhenUp={false}
-                  />
-                </div>
-                <p
-                  style={{
-                    margin: 0,
-                    fontSize: 21,
-                    fontWeight: 700,
-                    letterSpacing: "-0.4px",
-                    color: HOME_EXPENSE,
-                    fontVariantNumeric: "tabular-nums",
-                  }}
-                >
-                  {fmt(dashSummary.totalOut)}
-                </p>
-              </button>
-            </>
-          )}
+                {fmt(dashSummary.totalIn)}
+              </p>
+            )}
+          </button>
+          <button
+            type="button"
+            disabled={loading}
+            onClick={loading ? undefined : () => onOpenBreakdown("expenses")}
+            className="text-left active:scale-[0.98] transition-transform"
+            style={{ flex: 1, ...cardStyle, padding: "12px 14px 13px", border: "none", font: "inherit", color: "inherit", cursor: loading ? "default" : "pointer" }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: 4,
+              }}
+            >
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: 13,
+                  fontWeight: 500,
+                  color: HOME_EXPENSE,
+                }}
+              >
+                Expenses
+              </p>
+              {loading ? (
+                <Skel h={13} w={28} />
+              ) : (
+                <ChangeBadge
+                  current={dashSummary.totalOut}
+                  previous={dashLastMonthSummary?.totalOut}
+                  goodWhenUp={false}
+                />
+              )}
+            </div>
+            {loading ? (
+              <Skel h={21} w="75%" style={{ marginTop: 4 }} />
+            ) : (
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: 21,
+                  fontWeight: 700,
+                  letterSpacing: "-0.4px",
+                  color: HOME_EXPENSE,
+                  fontVariantNumeric: "tabular-nums",
+                }}
+              >
+                {fmt(dashSummary.totalOut)}
+              </p>
+            )}
+          </button>
         </div>
       </div>
       {/* Month overview */}
@@ -513,7 +520,7 @@ export default function MobileHome({
               iconBg={TILE_COLOR[cat]}
               label={CATEGORY_CONFIG[cat]?.label ?? cat}
               trailing={loading ? <Skel w={50} h={14} /> : fmt(dashCategoryTotals[cat] ?? 0)}
-              badge={cat === "BILL" ? `${BILLS_DUE_PLACEHOLDER} due` : null}
+              badge={cat === "BILL" && billCount != null ? `${billCount} due` : null}
               badgeColor={TILE_COLOR.BILL}
               onClick={() => onViewCategory(cat)}
             />

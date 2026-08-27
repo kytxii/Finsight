@@ -194,7 +194,7 @@ export default function MobileTips({ transactions, loading, onBack, onEditTransa
         <div style={{ position: "fixed", inset: 0, zIndex: 5 }} onTouchStart={() => setOpenId(null)} onClick={() => setOpenId(null)} />
       )}
 
-      {/* ── Tips table ── */}
+      {/* Tips table */}
       <div style={{ marginBottom: 22 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "0 4px 12px" }}>
           <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, letterSpacing: "-0.4px", color: HOME_TEXT }}>Tips</h2>
@@ -247,7 +247,7 @@ export default function MobileTips({ transactions, loading, onBack, onEditTransa
         </div>
       </div>
 
-      {/* ── Deposits table ── */}
+      {/* Deposits table */}
       <div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "0 4px 12px" }}>
           <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, letterSpacing: "-0.4px", color: HOME_TEXT }}>Deposits</h2>
