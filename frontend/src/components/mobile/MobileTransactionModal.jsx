@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { updateTransaction } from "../../api/transactions";
 import { updateRecurringPayment } from "../../api/recurringPayments";
+import { createPaymentFromTransaction } from "../../api/creditCard";
 import { errorMessage } from "../../utils/errors";
 import { lockedNameFor } from "../../utils/finance";
 import CurrencyInput from "../shared/CurrencyInput";
@@ -36,7 +37,7 @@ function IconClear({ size = 15 }) {
   );
 }
 
-export default function MobileTransactionModal({ transaction, onClose, onSaved, onDelete, onLocate }) {
+export default function MobileTransactionModal({ transaction, onClose, onSaved, onDelete, onLocate, onSplitAsPayment }) {
   const [form, setForm] = useState({
     name: transaction.name,
     amount: String(transaction.amount),
@@ -48,6 +49,7 @@ export default function MobileTransactionModal({ transaction, onClose, onSaved, 
   const [deleting, setDeleting] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [error, setError] = useState("");
+  const [splitting, setSplitting] = useState(false);
 
   const Icon = CATEGORY_ICON[form.category];
   const tileColor = TILE_COLOR[form.category] ?? HOME_MUTED;
@@ -77,6 +79,19 @@ export default function MobileTransactionModal({ transaction, onClose, onSaved, 
       setError(errorMessage(err));
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleSplitTap() {
+    if (splitting) return;
+    setSplitting(true);
+    setError("");
+    try {
+      const res = await createPaymentFromTransaction(transaction.id);
+      onSplitAsPayment(res.data);
+    } catch (err) {
+      setError(errorMessage(err));
+      setSplitting(false);
     }
   }
 
@@ -218,6 +233,20 @@ export default function MobileTransactionModal({ transaction, onClose, onSaved, 
             }}
           >{saving ? "Saving…" : "Save Changes"}</button>
         </div>
+
+        {transaction.credit_card_charge_id && (
+          <p style={{ fontSize: 11.5, color: HOME_MUTED, margin: 0 }}>Part of a credit card payment — categorized automatically.</p>
+        )}
+
+        {!transaction.credit_card_payment_id && !transaction.credit_card_charge_id && onSplitAsPayment && (
+          <button type="button" onClick={handleSplitTap} disabled={busy || splitting}
+            style={{
+              padding: "9px 0", borderRadius: 10, border: `1px dashed ${HOME_DIVIDER}`, background: "none",
+              color: HOME_INCOME, fontSize: 13, fontWeight: 600, cursor: busy || splitting ? "default" : "pointer",
+              opacity: splitting ? 0.6 : 1,
+            }}
+          >{splitting ? "Starting…" : "Split as credit card payment"}</button>
+        )}
 
         <button type="button" onClick={handleDeleteTap} disabled={busy}
           style={{

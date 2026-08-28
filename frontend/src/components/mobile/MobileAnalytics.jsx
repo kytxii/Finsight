@@ -4,7 +4,7 @@ import Skel from "../shared/Skel";
 import { CATEGORY_CONFIG, MONEY_IN_TYPES, MONEY_OUT_TYPES, fmt } from "../../utils/finance";
 import { getNow } from "../../utils/time";
 import {
-  HOME_TEXT, HOME_MUTED, HOME_SURFACE, HOME_DIVIDER, HOME_INCOME, HOME_EXPENSE, HOME_ACCENT,
+  HOME_TEXT, HOME_MUTED, HOME_SURFACE, HOME_DIVIDER, HOME_INCOME, HOME_EXPENSE,
   TILE_COLOR, CATEGORY_ICON,
 } from "../shared/categoryVisuals";
 
@@ -362,7 +362,7 @@ export default function MobileAnalytics({ transactions, deposits = [], loading, 
                 return (
                   <div key={m.key} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center" }}>
                     <div style={{ flex: 1, display: "flex", alignItems: "flex-end", width: "100%", justifyContent: "center" }}>
-                      <div title={fmt(m.amount)} style={{ width: 14, height: `${h}%`, borderRadius: "3px 3px 0 0", backgroundColor: HOME_ACCENT }} />
+                      <div title={fmt(m.amount)} style={{ width: 14, height: `${h}%`, borderRadius: "3px 3px 0 0", backgroundColor: TILE_COLOR.SAVINGS }} />
                     </div>
                     <span style={{ fontSize: 11, fontWeight: 600, color: HOME_MUTED, marginTop: 4 }}>{m.label}</span>
                   </div>
@@ -375,7 +375,7 @@ export default function MobileAnalytics({ transactions, deposits = [], loading, 
                   <p style={{ margin: 0, fontSize: 11.5, fontWeight: 700, color: HOME_TEXT }}>{fmtShort(m.amount)}</p>
                   <p style={{
                     margin: "2px 0 0", fontSize: 10.5, fontWeight: 700,
-                    color: m.isNew ? HOME_ACCENT : m.change == null ? HOME_MUTED : m.change >= 0 ? HOME_INCOME : HOME_EXPENSE,
+                    color: m.isNew ? TILE_COLOR.SAVINGS : m.change == null ? HOME_MUTED : m.change >= 0 ? HOME_INCOME : HOME_EXPENSE,
                   }}>
                     {m.isNew ? "New" : m.change == null ? "—" : `${m.change >= 0 ? "+" : "-"}${Math.abs(m.change).toFixed(0)}%`}
                   </p>

@@ -16,6 +16,7 @@ import { getUpcomingRecurringPayments } from "../api/recurringPayments";
 import { getTipDeposits, deleteTipDeposit } from "../api/tipDeposits";
 import CurrencyInput from "../components/shared/CurrencyInput";
 import MobileTransactionModal from "../components/mobile/MobileTransactionModal";
+import CreditCardPaymentPanel from "../components/shared/CreditCardPaymentPanel";
 import MobileDepositModal from "../components/mobile/MobileDepositModal";
 import {
   CATEGORY_CONFIG,
@@ -41,6 +42,7 @@ import MobileTips from "../components/mobile/MobileTips";
 import MobilePaychecks from "../components/mobile/MobilePaychecks";
 import MobileRecurring from "../components/mobile/MobileRecurring";
 import MobileInstallments from "../components/mobile/MobileInstallments";
+import MobileCreditCards from "../components/mobile/MobileCreditCards";
 import MobileAnalytics from "../components/mobile/MobileAnalytics";
 import ImportPanel from "../components/desktop/ImportPanel";
 import { HOME_BG, HOME_TEXT, HOME_MUTED, HOME_DIVIDER, HOME_SURFACE, HOME_INCOME, HOME_EXPENSE, ACCENT, TILE_COLOR } from "../components/shared/categoryVisuals";
@@ -204,6 +206,8 @@ export default function MobileDashboard() {
   const devForceErrorRef = useRef(false);
   const [recurringOpen, setRecurringOpen] = useState(false);
   const [installmentsOpen, setInstallmentsOpen] = useState(false);
+  const [creditCardsOpen, setCreditCardsOpen] = useState(false);
+  const [creditCardsAddSignal, setCreditCardsAddSignal] = useState(0);
   const [installmentsAddSignal, setInstallmentsAddSignal] = useState(0);
   const [recurringAddSignal, setRecurringAddSignal] = useState(0);
   const [paychecksOpen, setPaychecksOpen] = useState(false);
@@ -1588,6 +1592,43 @@ export default function MobileDashboard() {
           <MobileInstallments onSaved={refresh} openAddSignal={installmentsAddSignal} />
       </MobileScreen>
 
+      {/* Credit Cards overlay */}
+      <MobileScreen open={creditCardsOpen} style={{ backgroundColor: HOME_BG, color: HOME_TEXT }}>
+          <div
+            className="px-4 pb-3 flex items-center justify-between shrink-0"
+            style={{ borderBottom: `1px solid ${HOME_DIVIDER}`, paddingTop: "calc(env(safe-area-inset-top, 0px) + 14px)" }}
+          >
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setCreditCardsOpen(false)}
+                aria-label="Back to home"
+                style={{
+                  width: 36, height: 36, borderRadius: "50%", flexShrink: 0, cursor: "pointer",
+                  background: HOME_SURFACE, border: "1px solid rgba(255,255,255,0.07)",
+                  display: "flex", alignItems: "center", justifyContent: "center", color: HOME_TEXT,
+                }}
+              >
+                <IconChevronLeft size={19} />
+              </button>
+              <span className="text-base font-semibold" style={{ color: HOME_TEXT }}>
+                Credit Cards
+              </span>
+            </div>
+            <button
+              onClick={() => setCreditCardsAddSignal(n => n + 1)}
+              aria-label="Split a transaction as a credit card payment"
+              style={{
+                width: 36, height: 36, borderRadius: "50%", flexShrink: 0, cursor: "pointer",
+                background: HOME_SURFACE, border: "1px solid rgba(255,255,255,0.07)",
+                display: "flex", alignItems: "center", justifyContent: "center", color: "#fff",
+              }}
+            >
+              <IconPlus size={19} />
+            </button>
+          </div>
+          <MobileCreditCards onSaved={refresh} openAddSignal={creditCardsAddSignal} />
+      </MobileScreen>
+
       {/* Paychecks overlay */}
       <MobileScreen open={paychecksOpen} style={{ backgroundColor: HOME_BG, color: HOME_TEXT }}>
           <div
@@ -1783,6 +1824,17 @@ export default function MobileDashboard() {
                   <circle cx="17.5" cy="17.5" r="2.5" />
                 </svg>
                 Installments
+              </button>
+              <button
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium cursor-pointer text-left active:scale-[0.97] transition-transform duration-150"
+                style={{ color: HOME_TEXT, border: "none", backgroundColor: "rgba(255,255,255,0.05)" }}
+                onClick={() => setCreditCardsOpen(true)}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="2" y="5" width="20" height="14" rx="2.2" />
+                  <line x1="2" y1="10" x2="22" y2="10" />
+                </svg>
+                Credit Cards
               </button>
             </div>
             <div className="mx-5 border-t" style={{ borderColor: HOME_DIVIDER }} />
@@ -2005,16 +2057,29 @@ export default function MobileDashboard() {
       </div>
 
       {editingTransaction && (
-        <MobileTransactionModal
-          transaction={editingTransaction}
-          onClose={() => setEditingTransaction(null)}
-          onSaved={() => {
-            setEditingTransaction(null);
-            refresh();
-          }}
-          onDelete={handleDelete}
-          onLocate={handleLocateTransaction}
-        />
+        editingTransaction.credit_card_payment_id ? (
+          <CreditCardPaymentPanel
+            key={editingTransaction.id}
+            paymentId={editingTransaction.credit_card_payment_id}
+            onClose={() => setEditingTransaction(null)}
+            onChanged={refresh}
+          />
+        ) : (
+          <MobileTransactionModal
+            transaction={editingTransaction}
+            onClose={() => setEditingTransaction(null)}
+            onSaved={() => {
+              setEditingTransaction(null);
+              refresh();
+            }}
+            onDelete={handleDelete}
+            onLocate={handleLocateTransaction}
+            onSplitAsPayment={(payment) => {
+              setEditingTransaction((prev) => prev && { ...prev, credit_card_payment_id: payment.id });
+              refresh();
+            }}
+          />
+        )
       )}
 
       {editingDeposit && (

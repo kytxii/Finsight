@@ -17,8 +17,6 @@ class User(Base):
     password_hash: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     avatar: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
-    # User-set "don't touch" floor for groceries/gas/eating-out, netted against
-    # spendable_surplus to produce free_to_allocate. Manual only, not derived.
     spending_reserve: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2), nullable=True, default=0)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))

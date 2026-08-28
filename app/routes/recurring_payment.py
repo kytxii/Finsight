@@ -20,8 +20,6 @@ async def get_recurring_payments(current_user: User = Depends(get_current_user),
     result = await recurring_payment_service.get_recurring_payments(current_user.id, db)
     return result
 
-# Declared before /{recurring_payment_id} - a literal path must win over the
-# UUID-typed param route, or "upcoming" fails UUID parsing.
 @router.get("/upcoming", response_model=list[UpcomingRecurringPaymentResponse])
 async def get_upcoming_recurring_payments(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     result = await transaction_service.get_upcoming_recurring_payments(current_user.id, db)

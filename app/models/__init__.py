@@ -9,3 +9,4 @@ from .paycheck import Paycheck
 from .balance_anchor import BalanceAnchor
 from .tip_deposit import TipDeposit
 from .installment import Installment
+from .credit_card import CreditCardPayment, CreditCardCharge, CreditCardChargeAllocation

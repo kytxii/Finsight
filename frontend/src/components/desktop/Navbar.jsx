@@ -2,24 +2,92 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { CATEGORY_CONFIG, fmt, matchesTransaction } from "../../utils/finance";
-import RecurringPaymentsModal from "./RecurringPaymentsModal";
 import AccountPanel from "../shared/AccountPanel";
 import NotePill from "../shared/NotePill";
-import PaychecksPanel from "./PaychecksPanel";
 import { Wordmark } from "../shared/Logo";
 import { HOME_SURFACE, HOME_TEXT, HOME_MUTED, HOME_DIVIDER, ACCENT, HOME_INCOME, HOME_EXPENSE, CATEGORY_ACCENT } from "../shared/categoryVisuals";
 
-export default function Navbar({ transactions = [], onSelectTransaction, onDeleteRecurringPayment, onSaveRecurringPayment, onPaycheckSaved, onCommand }) {
+// Menu is a pure launcher into the sidebar's own takeover pages (openTool) -
+// deliberately not a second, disagreeing copy of Paychecks/Recurring with its
+// own inline panels. That split used to mean the same tool rendered two
+// different ways depending on which control opened it, and Installments was
+// only reachable from one of the two (#134).
+const TOOL_TILES = [
+  {
+    key: "paychecks",
+    label: "Paychecks",
+    icon: (
+      <>
+        <rect x="3" y="6.5" width="18" height="11" rx="2.2" />
+        <circle cx="12" cy="12" r="2.3" />
+      </>
+    ),
+  },
+  {
+    key: "recurring",
+    label: "Recurring",
+    icon: (
+      <>
+        <path d="M17 3.5l3 3-3 3" />
+        <path d="M20 6.5H8.5a4.5 4.5 0 0 0-4.5 4.5" />
+        <path d="M7 20.5l-3-3 3-3" />
+        <path d="M4 17.5h11.5a4.5 4.5 0 0 0 4.5-4.5" />
+      </>
+    ),
+  },
+  {
+    key: "installments",
+    label: "Installments",
+    icon: (
+      <>
+        <line x1="19" y1="5" x2="5" y2="19" />
+        <circle cx="6.5" cy="6.5" r="2.5" />
+        <circle cx="17.5" cy="17.5" r="2.5" />
+      </>
+    ),
+  },
+  {
+    key: "creditCards",
+    label: "Credit Cards",
+    icon: (
+      <>
+        <rect x="2" y="5" width="20" height="14" rx="2.2" />
+        <line x1="2" y1="10" x2="22" y2="10" />
+      </>
+    ),
+  },
+];
+
+function ToolTile({ tool, hovered, onEnter, onLeave, onClick, text }) {
+  return (
+    <button
+      className="flex flex-col items-center justify-center gap-2 rounded-2xl cursor-pointer border aspect-square"
+      style={{
+        color: text,
+        borderColor: hovered ? `color-mix(in srgb, ${text} 40%, transparent)` : `color-mix(in srgb, ${text} 18%, transparent)`,
+        backgroundColor: hovered ? `color-mix(in srgb, ${text} 10%, transparent)` : `color-mix(in srgb, ${text} 5%, transparent)`,
+        transition: "background-color 150ms ease, border-color 150ms ease",
+      }}
+      onMouseEnter={onEnter}
+      onMouseLeave={onLeave}
+      onClick={onClick}
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24"
+        fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        {tool.icon}
+      </svg>
+      <span className="text-xs font-medium">{tool.label}</span>
+    </button>
+  );
+}
+
+export default function Navbar({ transactions = [], onSelectTransaction, onOpenTool, onCommand }) {
   const { logout, user, isDemo } = useAuth();
   const navigate = useNavigate();
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [recurringOpen, setRecurringOpen] = useState(false);
-  const [rpSave, setRpSave] = useState({ isDirty: false, isSaving: false, onSave: null });
   const [accountOpen, setAccountOpen] = useState(false);
   const [acctSave, setAcctSave] = useState({ isDirty: false, isSaving: false, saveStatus: null, onSave: null });
-  const [paychecksOpen, setPaychecksOpen] = useState(false);
-  const [paychecksHovered, setPaychecksHovered] = useState(false);
-  const [recurringHovered, setRecurringHovered] = useState(false);
+  const [hoveredTile, setHoveredTile] = useState(null);
   const [feedbackHovered, setFeedbackHovered] = useState(false);
   const [menuHovered, setMenuHovered] = useState(false);
   const [query, setQuery] = useState("");
@@ -241,7 +309,7 @@ export default function Navbar({ transactions = [], onSelectTransaction, onDelet
         <div
           className="fixed inset-0 z-40"
           style={{ backgroundColor: "rgba(0,0,0,0.4)" }}
-          onClick={() => { setDrawerOpen(false); setRecurringOpen(false); setAccountOpen(false); setPaychecksOpen(false); }}
+          onClick={() => { setDrawerOpen(false); setAccountOpen(false); }}
         />
       )}
 
@@ -249,7 +317,7 @@ export default function Navbar({ transactions = [], onSelectTransaction, onDelet
       <div
         className="fixed top-0 right-0 h-full z-50 flex flex-col border-l"
         style={{
-          width: recurringOpen ? "580px" : accountOpen ? "380px" : paychecksOpen ? "420px" : "288px",
+          width: accountOpen ? "380px" : "320px",
           backgroundColor: bg,
           borderColor: border,
           color: text,
@@ -260,9 +328,9 @@ export default function Navbar({ transactions = [], onSelectTransaction, onDelet
         {/* Header */}
         <div className="px-5 py-4 flex items-center justify-between border-b shrink-0" style={{ borderColor: border }}>
           <div className="flex items-center gap-2">
-            {(recurringOpen || accountOpen || paychecksOpen) && (
+            {accountOpen && (
               <button
-                onClick={() => { setRecurringOpen(false); setAccountOpen(false); setPaychecksOpen(false); setRpSave({ isDirty: false, isSaving: false, onSave: null }); }}
+                onClick={() => setAccountOpen(false)}
                 className="p-1 rounded-lg cursor-pointer"
                 style={{ color: muted }}
                 aria-label="Back"
@@ -274,29 +342,25 @@ export default function Navbar({ transactions = [], onSelectTransaction, onDelet
               </button>
             )}
             <span className="text-sm font-semibold" style={{ color: muted }}>
-              {recurringOpen ? "Recurring Payments" : accountOpen ? "Account" : paychecksOpen ? "Paychecks" : "Menu"}
+              {accountOpen ? "Account" : "Menu"}
             </span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            {(recurringOpen || accountOpen) && (() => {
-              const save = recurringOpen ? rpSave : acctSave;
-              const status = save.isSaving ? "Saving…" : save.isDirty ? "Unsaved" : save.saveStatus === "saved" ? "Saved" : null;
-              const statusColor = save.saveStatus === "saved" && !save.isDirty ? HOME_INCOME : `color-mix(in srgb, ${text} 40%, transparent)`;
+            {accountOpen && (() => {
+              const status = acctSave.isSaving ? "Saving…" : acctSave.isDirty ? "Unsaved" : acctSave.saveStatus === "saved" ? "Saved" : null;
+              const statusColor = acctSave.saveStatus === "saved" && !acctSave.isDirty ? HOME_INCOME : `color-mix(in srgb, ${text} 40%, transparent)`;
               return status ? <span style={{ fontSize: "11px", color: statusColor, transition: "color 0.3s" }}>{status}</span> : null;
             })()}
-            {(recurringOpen || accountOpen) && (() => {
-              const save = recurringOpen ? rpSave : acctSave;
-              return (
-                <button
-                  onClick={() => save.onSave?.()}
-                  disabled={!save.isDirty || save.isSaving}
-                  style={{ fontSize: "12px", fontWeight: 600, padding: "4px 12px", borderRadius: "8px", border: `1px solid ${HOME_INCOME}`, color: HOME_INCOME, backgroundColor: save.isDirty ? `color-mix(in srgb, ${HOME_INCOME} 18%, transparent)` : "transparent", boxShadow: save.isDirty ? `0 0 0 2px color-mix(in srgb, ${HOME_INCOME} 20%, transparent)` : "none", cursor: save.isDirty && !save.isSaving ? "pointer" : "default", opacity: save.isDirty ? (save.isSaving ? 0.6 : 1) : 0.25, transition: "all 0.2s ease" }}
-                >
-                  {save.isSaving ? "Saving…" : "Save"}
-                </button>
-              );
-            })()}
-          <button onClick={() => { setDrawerOpen(false); setRecurringOpen(false); setAccountOpen(false); setPaychecksOpen(false); }} className="p-1 rounded-lg cursor-pointer" aria-label="Close menu">
+            {accountOpen && (
+              <button
+                onClick={() => acctSave.onSave?.()}
+                disabled={!acctSave.isDirty || acctSave.isSaving}
+                style={{ fontSize: "12px", fontWeight: 600, padding: "4px 12px", borderRadius: "8px", border: `1px solid ${HOME_INCOME}`, color: HOME_INCOME, backgroundColor: acctSave.isDirty ? `color-mix(in srgb, ${HOME_INCOME} 18%, transparent)` : "transparent", boxShadow: acctSave.isDirty ? `0 0 0 2px color-mix(in srgb, ${HOME_INCOME} 20%, transparent)` : "none", cursor: acctSave.isDirty && !acctSave.isSaving ? "pointer" : "default", opacity: acctSave.isDirty ? (acctSave.isSaving ? 0.6 : 1) : 0.25, transition: "all 0.2s ease" }}
+              >
+                {acctSave.isSaving ? "Saving…" : "Save"}
+              </button>
+            )}
+          <button onClick={() => { setDrawerOpen(false); setAccountOpen(false); }} className="p-1 rounded-lg cursor-pointer" aria-label="Close menu">
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
               fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M18 6 6 18M6 6l12 12" />
@@ -305,13 +369,8 @@ export default function Navbar({ transactions = [], onSelectTransaction, onDelet
           </div>
         </div>
 
-        {/* Recurring panel */}
-        {recurringOpen ? (
-          <RecurringPaymentsModal inline onSaveStateChange={setRpSave} onDelete={onDeleteRecurringPayment} onSaved={onSaveRecurringPayment} />
-        ) : accountOpen ? (
+        {accountOpen ? (
           <AccountPanel onSaveStateChange={setAcctSave} />
-        ) : paychecksOpen ? (
-          <PaychecksPanel onSaved={onPaycheckSaved} />
         ) : (
           <>
             <button
@@ -338,54 +397,22 @@ export default function Navbar({ transactions = [], onSelectTransaction, onDelet
 
             <div className="mx-5 border-t" style={{ borderColor: border }} />
 
+            {/* Tool launcher - a 2-column tile grid opening the sidebar's own
+            takeover pages, not a second, disagreeing set of inline panels. */}
             <div className="px-3 py-3 flex-1">
-              <button
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium cursor-pointer text-left border"
-                style={{
-                  color: text,
-                  borderColor: recurringHovered
-                    ? `color-mix(in srgb, ${text} 40%, transparent)`
-                    : `color-mix(in srgb, ${text} 18%, transparent)`,
-                  backgroundColor: recurringHovered
-                    ? `color-mix(in srgb, ${text} 10%, transparent)`
-                    : `color-mix(in srgb, ${text} 5%, transparent)`,
-                  transition: "background-color 150ms ease, border-color 150ms ease",
-                }}
-                onMouseEnter={() => setRecurringHovered(true)}
-                onMouseLeave={() => setRecurringHovered(false)}
-                onClick={() => setRecurringOpen(true)}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
-                  fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                  <path d="M3 3v5h5" />
-                  <path d="M12 7v5l4 2" />
-                </svg>
-                Recurring Payments
-              </button>
-              <button
-                className="w-full flex items-center gap-3 px-3 py-2.5 mt-2 rounded-xl text-sm font-medium cursor-pointer text-left border"
-                style={{
-                  color: text,
-                  borderColor: paychecksHovered
-                    ? `color-mix(in srgb, ${text} 40%, transparent)`
-                    : `color-mix(in srgb, ${text} 18%, transparent)`,
-                  backgroundColor: paychecksHovered
-                    ? `color-mix(in srgb, ${text} 10%, transparent)`
-                    : `color-mix(in srgb, ${text} 5%, transparent)`,
-                  transition: "background-color 150ms ease, border-color 150ms ease",
-                }}
-                onMouseEnter={() => setPaychecksHovered(true)}
-                onMouseLeave={() => setPaychecksHovered(false)}
-                onClick={() => setPaychecksOpen(true)}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
-                  fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="2" y="5" width="20" height="14" rx="2" />
-                  <line x1="2" y1="10" x2="22" y2="10" />
-                </svg>
-                Paychecks
-              </button>
+              <div className="grid grid-cols-2 gap-2.5">
+                {TOOL_TILES.map((tool) => (
+                  <ToolTile
+                    key={tool.key}
+                    tool={tool}
+                    text={text}
+                    hovered={hoveredTile === tool.key}
+                    onEnter={() => setHoveredTile(tool.key)}
+                    onLeave={() => setHoveredTile(null)}
+                    onClick={() => { setDrawerOpen(false); onOpenTool?.(tool.key); }}
+                  />
+                ))}
+              </div>
             </div>
 
             <div className="mx-5 border-t" style={{ borderColor: border }} />

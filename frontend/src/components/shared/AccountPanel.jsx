@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
-import { updateUser, deleteUser } from "../../api/users";
+import { updateUser, deleteUser, getConnections, startLinkProvider, unlinkProvider } from "../../api/users";
+import client from "../../api/client";
 import {
   HOME_SURFACE,
   HOME_DIVIDER,
@@ -12,6 +13,10 @@ import {
 import { errorMessage } from "../../utils/errors";
 
 const CONFIRM_PHRASE = "DELETE MY ACCOUNT";
+const PROVIDERS = [
+  { key: "google", label: "Google" },
+  { key: "github", label: "GitHub" },
+];
 
 function resizeImage(file, size = 400) {
   return new Promise((resolve) => {
@@ -61,6 +66,48 @@ export default function AccountPanel({ onSaveStateChange }) {
   const [deleteError, setDeleteError] = useState("");
   const deleteInputRef = useRef(null);
   const fileInputRef = useRef(null);
+
+  // Connections (#25).
+  const [connections, setConnections] = useState(null); // null while loading
+  const [connectionsError, setConnectionsError] = useState("");
+  const [linkingProvider, setLinkingProvider] = useState(null);
+
+  useEffect(() => {
+    if (isDemo()) return;
+    getConnections()
+      .then((res) => setConnections(res.data))
+      .catch(() => setConnections([]));
+  }, []);
+
+  async function handleConnect(provider) {
+    if (isDemo() || linkingProvider) return;
+    setConnectionsError("");
+    setLinkingProvider(provider);
+    try {
+      await startLinkProvider(provider);
+      // Full navigation, not an XHR - the session cookie set by the call
+      // above rides along so /auth/{provider}/callback knows which
+      // logged-in account initiated this (see app/routes/users.py).
+      window.location.href = `${client.defaults.baseURL}/auth/${provider}/login`;
+    } catch (err) {
+      setConnectionsError(errorMessage(err));
+      setLinkingProvider(null);
+    }
+  }
+
+  async function handleDisconnect(provider) {
+    if (isDemo() || linkingProvider) return;
+    setConnectionsError("");
+    setLinkingProvider(provider);
+    try {
+      await unlinkProvider(provider);
+      setConnections((prev) => (prev ?? []).filter((p) => p !== provider));
+    } catch (err) {
+      setConnectionsError(errorMessage(err));
+    } finally {
+      setLinkingProvider(null);
+    }
+  }
 
   const isDirty =
     form.first_name.trim() !== (user?.first_name ?? "") ||
@@ -397,6 +444,56 @@ export default function AccountPanel({ onSaveStateChange }) {
 
         {error && (
           <p style={{ fontSize: "13px", color: danger, margin: 0 }}>{error}</p>
+        )}
+      </div>
+
+      {/* Connections (#25) */}
+      <div>
+        <p style={{ ...labelStyle, marginBottom: 8 }}>Connections</p>
+        {isDemo() ? (
+          <p style={{ fontSize: 11.5, color: muted, margin: 0 }}>Not available in demo mode.</p>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {PROVIDERS.map(({ key, label }) => {
+              const connected = connections?.includes(key);
+              const busy = linkingProvider === key;
+              return (
+                <div
+                  key={key}
+                  style={{
+                    display: "flex", alignItems: "center", justifyContent: "space-between",
+                    padding: "8px 12px", borderRadius: 10, border: `1px solid ${border}`, backgroundColor: bg,
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                    <span style={{
+                      width: 7, height: 7, borderRadius: "50%", flexShrink: 0,
+                      backgroundColor: connected ? "#52b757" : muted,
+                    }} />
+                    <span style={{ fontSize: 13, fontWeight: 600, color: text }}>{label}</span>
+                    <span style={{ fontSize: 11, color: muted }}>{connected ? "Connected" : "Not connected"}</span>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={connections === null || !!linkingProvider}
+                    onClick={() => (connected ? handleDisconnect(key) : handleConnect(key))}
+                    style={{
+                      fontSize: 11.5, fontWeight: 600, padding: "5px 12px", borderRadius: 8, cursor: "pointer",
+                      border: `1px solid ${connected ? border : "#52b757"}`,
+                      color: connected ? muted : "#52b757",
+                      backgroundColor: connected ? "transparent" : "color-mix(in srgb, #52b757 12%, transparent)",
+                      opacity: linkingProvider && !busy ? 0.5 : 1,
+                    }}
+                  >
+                    {busy ? "…" : connected ? "Disconnect" : "Connect"}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {connectionsError && (
+          <p style={{ fontSize: 11.5, color: danger, margin: "6px 0 0" }}>{connectionsError}</p>
         )}
       </div>
 

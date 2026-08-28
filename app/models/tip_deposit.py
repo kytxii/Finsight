@@ -7,11 +7,6 @@ import uuid
 
 
 class TipDeposit(Base):
-    """A lump-sum cash deposit into checking. Deposits are their own log, not
-    tied to individual tip entries - real deposits rarely match a single tip.
-    Cash on hand = total tips earned - total deposited; each deposit credits the
-    checking running balance as a transfer (not new income)."""
-
     __tablename__ = "tip_deposits"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

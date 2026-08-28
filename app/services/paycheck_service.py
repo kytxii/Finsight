@@ -378,8 +378,13 @@ def _balance_delta(t: Transaction) -> Decimal:
     Tips are cash on hand, not money in checking, so they never count here -
     cash reaches checking only via a TipDeposit. Other income adds, expenses
     subtract.
+
+    A settled CreditCardCharge (t.credit_card_charge_id set) is also 0: it's a
+    re-categorized breakdown of money that already left checking once, via its
+    CreditCardPayment's own anchor transaction. Counting it again here would
+    double the cash impact of a single real payment (#54).
     """
-    if t.category == Category.TIPS:
+    if t.category == Category.TIPS or t.credit_card_charge_id is not None:
         return Decimal("0")
     return t.amount if t.category in INCOME_CATEGORIES else -t.amount
 
@@ -616,8 +621,12 @@ async def get_estimated_savings(current_user: UUID, db: AsyncSession) -> Estimat
     one-off income transaction) is reflected immediately instead of vanishing
     once payday passes or being silently excluded.
     discretionary_projection blends real spending already logged this month
-    with a historical daily rate for the days left, so the estimate gets more
-    accurate (not just smaller) as the month plays out.
+    with whatever's left of the historical monthly average once actual spend
+    is netted out - not a full remaining-days share of the average stacked on
+    top of actual spend unconditionally, which double-billed a front-loaded
+    month (spend most of the average early and the model still projected a
+    full average's worth for the days left, #133). A month already spending
+    above its own average projects no further discretionary spend.
 
     The floor is 0, not saved_so_far: this figure is the ceiling the projection
     actually computed, and clamping it to whatever has already been saved threw
@@ -653,15 +662,18 @@ async def get_estimated_savings(current_user: UUID, db: AsyncSession) -> Estimat
         raise ValueError("No paycheck amounts yet")
 
     # Discretionary spend average over the completed months before this one.
-    # SAVINGS excluded (it's saving, surfaced separately) and recurring-linked
+    # SAVINGS excluded (it's saving, surfaced separately), recurring-linked
     # transactions excluded (fixed bills are added back separately, so
-    # counting them here too would double-count).
+    # counting them here too would double-count), and settled credit card
+    # charges excluded for the same reason - that spend is already counted via
+    # its payment's anchor transaction (#54).
     history_start = _add_months(month_start, -SAVINGS_HISTORY_MONTHS)
     spend_rows = (await db.execute(
         select(Transaction.transaction_date, Transaction.amount).where(
             Transaction.created_by == current_user,
             Transaction.category.in_(NON_SAVINGS_EXPENSE_CATEGORIES),
             Transaction.recurring_payment_id.is_(None),
+            Transaction.credit_card_charge_id.is_(None),
             Transaction.transaction_date >= history_start,
             Transaction.transaction_date < month_start,
         )
@@ -698,6 +710,11 @@ async def get_estimated_savings(current_user: UUID, db: AsyncSession) -> Estimat
     # once. Only pure budget-line estimates (is_estimate, no day_of_month, e.g.
     # a grocery forecast) are excluded: they never hit the ledger, so the
     # spend they model is already captured in the discretionary figures below.
+    #
+    # A dated bill explicitly skipped this month (skip_pending_bill sets
+    # last_applied_month without posting a transaction) never materialized and
+    # never will for this month - the money didn't leave, so it shouldn't
+    # still eat room in the ceiling (#133).
     recurring = (await db.scalars(
         select(RecurringPayment).where(
             RecurringPayment.created_by == current_user,
@@ -705,30 +722,48 @@ async def get_estimated_savings(current_user: UUID, db: AsyncSession) -> Estimat
             RecurringPayment.category.in_(NON_SAVINGS_EXPENSE_CATEGORIES),
         )
     )).all()
+
+    current_month = today.strftime("%Y-%m")
+    linked_this_month = set((await db.scalars(
+        select(Transaction.recurring_payment_id).where(
+            Transaction.recurring_payment_id.in_([rp.id for rp in recurring]),
+            Transaction.transaction_date >= month_start,
+            Transaction.transaction_date < month_end,
+        )
+    )).all())
+
+    def _was_skipped(rp: RecurringPayment) -> bool:
+        return rp.last_applied_month == current_month and rp.id not in linked_this_month
+
     committed_recurring = sum(
-        (rp.amount for rp in recurring if not (rp.is_estimate and rp.day_of_month is None)),
+        (rp.amount for rp in recurring
+         if not (rp.is_estimate and rp.day_of_month is None)
+         and not _was_skipped(rp)),
         start=Decimal("0"),
     )
 
     # Discretionary spend, blended: what's actually posted so far this month
-    # (real data, only gets more complete as the month goes on) plus the
-    # historical daily rate applied to the days strictly after today (not yet
-    # observed). This is what makes the estimate "live" - a month running
-    # lighter than the 3-month average shows more room immediately, instead of
-    # waiting for month-end to reflect it.
+    # (real data, only gets more complete as the month goes on) plus whatever
+    # of the historical monthly average hasn't been spent yet. This is what
+    # makes the estimate "live" - a month running lighter than the 3-month
+    # average shows more room immediately, instead of waiting for month-end to
+    # reflect it. Flooring the remainder at 0 (rather than re-adding a full
+    # remaining-days share of the average unconditionally) stops a front-
+    # loaded month from being billed for the same spend twice - once for what
+    # actually posted, again via a projection that assumed the average rate
+    # for every day regardless of what already happened (#133).
     discretionary_spent_so_far = sum((
         await db.scalars(select(Transaction.amount).where(
             Transaction.created_by == current_user,
             Transaction.category.in_(NON_SAVINGS_EXPENSE_CATEGORIES),
             Transaction.recurring_payment_id.is_(None),
+            Transaction.credit_card_charge_id.is_(None),
             Transaction.transaction_date >= month_start,
             Transaction.transaction_date <= today,
         ))
     ).all(), start=Decimal("0"))
 
-    days_in_month = calendar.monthrange(today.year, today.month)[1]
-    days_after_today = days_in_month - today.day
-    discretionary_projected_remaining = _cents(monthly_discretionary_avg / Decimal(days_in_month) * Decimal(days_after_today))
+    discretionary_projected_remaining = _cents(max(monthly_discretionary_avg - discretionary_spent_so_far, Decimal("0")))
 
     raw_ceiling = whole_month_income - committed_recurring - discretionary_spent_so_far - discretionary_projected_remaining
     estimated_savings = _cents(max(raw_ceiling, Decimal("0")))

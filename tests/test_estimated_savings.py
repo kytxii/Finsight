@@ -1,4 +1,3 @@
-import calendar
 import pytest
 from decimal import Decimal
 from uuid import UUID
@@ -111,9 +110,9 @@ async def test_savings_happy_path(test_user: dict, client: AsyncClient, clean_fi
     assert res.status_code == 200
     data = res.json()
 
-    days_in_month = calendar.monthrange(today.year, today.month)[1]
-    days_after_today = days_in_month - today.day
-    expected_remaining = _cents(Decimal("300.00") / Decimal(days_in_month) * Decimal(days_after_today))
+    # No discretionary spend posted yet this month, so the full historical
+    # average is still ahead of it.
+    expected_remaining = _cents(Decimal("300.00"))
     expected_ceiling = _cents(Decimal("5000.00") - expected_remaining)
 
     assert float(data["whole_month_income"]) == 5000.0
@@ -355,6 +354,76 @@ async def test_savings_excludes_budget_line_estimate_without_due_date(test_user:
     assert res.status_code == 201
     rp_id = res.json()["id"]
 
+    res = await client.get("/paychecks/savings", headers=auth_headers(token))
+    assert res.status_code == 200
+    assert float(res.json()["committed_recurring"]) == 0.0
+
+    await client.delete(f"/recurring-payments/{rp_id}", headers=auth_headers(token))
+
+
+async def test_savings_front_loaded_spend_not_double_billed(test_user: dict, client: AsyncClient, clean_finance):
+    """#133: heavy spend early in the month must not also get billed again via
+    a full remaining-days share of the historical average stacked on top of
+    it - once actual spend meets or exceeds the average, the projected
+    remainder floors at 0 instead of assuming the average rate continues
+    regardless of what already happened."""
+    token = test_user["token"]
+    today = date.today()
+    month_start = today.replace(day=1)
+
+    await _create_monthly_schedule(client, token, _add_months(month_start, -6))
+    await _set_current_month_amount(client, token, month_start, "5000.00")
+    await _seed_discretionary_history(client, token, month_start, amount="300.00")
+
+    # Already spent well above the $300 historical average this month.
+    res = await client.post("/transactions/", json={
+        "name": "Big Purchase",
+        "amount": "500.00",
+        "transaction_date": month_start.isoformat(),
+        "category": "EXPENSE",
+    }, headers=auth_headers(token))
+    assert res.status_code == 201
+
+    res = await client.get("/paychecks/savings", headers=auth_headers(token))
+    assert res.status_code == 200
+    data = res.json()
+
+    assert float(data["discretionary_spent_so_far"]) == 500.0
+    assert float(data["discretionary_projected_remaining"]) == 0.0
+    assert float(data["estimated_savings"]) == 4500.0
+
+
+async def test_savings_excludes_skipped_bill_from_committed_recurring(test_user: dict, client: AsyncClient, clean_finance):
+    """#133: a dated bill explicitly skipped this month (skip_pending_bill)
+    never posts a transaction and never will for this month - the obligation
+    didn't materialize, so it shouldn't still eat room in the ceiling."""
+    token = test_user["token"]
+    today = date.today()
+    month_start = today.replace(day=1)
+
+    await _create_monthly_schedule(client, token, _add_months(month_start, -6))
+    await _set_current_month_amount(client, token, month_start, "5000.00")
+    await _seed_discretionary_history(client, token, month_start)
+
+    res = await client.post("/recurring-payments/", json={
+        "name": "Water Bill",
+        "amount": "35.00",
+        "day_of_month": 1,
+        "category": "BILL",
+        "is_estimate": True,
+    }, headers=auth_headers(token))
+    assert res.status_code == 201
+    rp_id = res.json()["id"]
+
+    # Still an unresolved obligation - counts in full.
+    res = await client.get("/paychecks/savings", headers=auth_headers(token))
+    assert res.status_code == 200
+    assert float(res.json()["committed_recurring"]) == 35.0
+
+    res = await client.post(f"/recurring-payments/{rp_id}/skip", headers=auth_headers(token))
+    assert res.status_code == 204
+
+    # Skipped - the money never left, so it's out of the ceiling.
     res = await client.get("/paychecks/savings", headers=auth_headers(token))
     assert res.status_code == 200
     assert float(res.json()["committed_recurring"]) == 0.0
