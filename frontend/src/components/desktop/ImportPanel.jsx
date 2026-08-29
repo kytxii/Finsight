@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { CATEGORY_CONFIG, INCOME_TYPES } from "../../utils/finance";
 import { previewImport, commitImport, aiCleanupNames } from "../../api/imports";
+import { createPaymentFromTransaction, allocateCreditCardPayment } from "../../api/creditCard";
 import { LOADING_SYMBOLS, IMPORT_LOADING_PHRASES } from "../../utils/authFlavor";
 import { HOME_SURFACE, HOME_DIVIDER, HOME_TEXT, HOME_MUTED, HOME_INCOME, HOME_EXPENSE, HOME_ACCENT, CATEGORY_ACCENT, DUPLICATE_ALERT } from "../shared/categoryVisuals";
 
@@ -204,21 +205,70 @@ export default function ImportPanel({ active, onSaveStateChange, onSaved, onCanc
     if (isSaving || !isDirty) return;
     setIsSaving(true);
     try {
-      const commitRows = rows.filter(isRowValid).map(r => ({
+      const plainRows = rows.filter(isRowValid);
+      // A split row commits as ONE normal transaction first (the real
+      // lump-sum payment) - each split item then becomes a credit card
+      // charge allocated against it (#54), instead of the old behavior of
+      // discarding the lump sum and committing the items as independent,
+      // unlinked transactions.
+      const splitRows = rows.filter(r => r.is_split && !r.is_excluded && r.splitItems.some(isSplitItemValid));
+
+      const commitRows = [...plainRows, ...splitRows].map(r => ({
         name: r.name.trim(), note: r.note?.trim() || null, amount: parseFloat(r.amount), category: r.category, transaction_date: r.transaction_date, skip: false,
       }));
-      const splitCommitRows = rows.filter(r => r.is_split).flatMap(r => r.splitItems.filter(isSplitItemValid).map(item => ({
-        name: item.name.trim(), amount: parseFloat(item.amount), category: item.category, transaction_date: item.transaction_date, skip: false,
-      })));
       const tipDepositRows = rows.filter(isTipDepositRowValid).map(r => ({
         amount: parseFloat(r.amount), deposit_date: r.transaction_date,
       }));
-      const payload = { rows: [...commitRows, ...splitCommitRows], tip_deposit_rows: tipDepositRows };
+      const payload = { rows: commitRows, tip_deposit_rows: tipDepositRows };
       const res = await commitImport(payload);
+      const createdTransactions = res.data.transactions;
+
+      // commit_import preserves row order and none of these rows are
+      // skip:true, so the last splitRows.length created transactions
+      // correspond 1:1, in order, to splitRows.
+      const anchors = createdTransactions.slice(plainRows.length, plainRows.length + splitRows.length);
+      // allocateCreditCardPayment's response is the payment summary, not the
+      // promoted Transaction row - synthesize one from what we already sent
+      // (matches what a refetch would show) so it's visible immediately
+      // instead of waiting for the next full reload.
+      const promotedTransactions = [];
+      for (let i = 0; i < splitRows.length; i++) {
+        const anchor = anchors[i];
+        if (!anchor) continue;
+        try {
+          const paymentRes = await createPaymentFromTransaction(anchor.id);
+          for (const item of splitRows[i].splitItems.filter(isSplitItemValid)) {
+            const allocateRes = await allocateCreditCardPayment(paymentRes.data.id, {
+              name: item.name.trim(),
+              total_amount: parseFloat(item.amount),
+              category: item.category,
+              charge_date: item.transaction_date,
+            });
+            const charge = allocateRes.data.charges.find(
+              (c) => c.name === item.name.trim() && c.total_amount === parseFloat(item.amount).toFixed(2) && c.settled,
+            );
+            if (charge?.settled_transaction_id) {
+              promotedTransactions.push({
+                id: charge.settled_transaction_id,
+                name: item.name.trim(),
+                amount: parseFloat(item.amount).toFixed(2),
+                category: item.category,
+                transaction_date: item.transaction_date,
+                credit_card_charge_id: charge.id,
+              });
+            }
+          }
+        } catch {
+          // Best effort - the anchor transaction is already committed either
+          // way, so a failed allocation just leaves it unsplit rather than
+          // losing the imported row.
+        }
+      }
+
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus("idle"), 2500);
       reset();
-      onSaved?.(res.data.transactions);
+      onSaved?.([...createdTransactions, ...promotedTransactions]);
     } catch {
     } finally { setIsSaving(false); }
   };

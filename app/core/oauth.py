@@ -5,6 +5,8 @@ from app.schemas import OAuthUserInfo
 
 oauth = OAuth()
 
+OAUTH_PROVIDERS = {"google", "github"}
+
 oauth.register(
     name="google",
     client_id=settings.GOOGLE_CLIENT_ID,

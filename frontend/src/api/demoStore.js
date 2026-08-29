@@ -17,6 +17,9 @@ const RES_KEY = "demo_spending_reserve";
 const TD_KEY = "demo_tip_deposits";
 const IN_KEY = "demo_installments";
 const ID_KEY = "demo_next_id";
+const CCP_KEY = "demo_credit_card_payments";
+const CCC_KEY = "demo_credit_card_charges";
+const CCA_KEY = "demo_credit_card_allocations";
 
 const getAll = (key) => JSON.parse(localStorage.getItem(key) || "[]");
 const saveAll = (key, data) => localStorage.setItem(key, JSON.stringify(data));
@@ -2022,6 +2025,33 @@ const SEED_TRANSACTIONS = [
     category: "TIPS",
     transaction_date: "2026-04-26",
   },
+  // Settled charges for the demo credit card balance below (SEED_CREDIT_CARD_CHARGES)
+  // - mirrors the real "settled" transaction allocateCreditCardPayment creates,
+  // tagged so balance/spend math skips them (already counted via the payment).
+  {
+    id: "demo-t-cc-1",
+    name: "Amazon",
+    amount: "245.00",
+    category: "EXPENSE",
+    transaction_date: "2026-04-04",
+    credit_card_charge_id: "demo-ccc-1",
+  },
+  {
+    id: "demo-t-cc-2",
+    name: "Whole Foods Market",
+    amount: "165.00",
+    category: "EXPENSE",
+    transaction_date: "2026-04-12",
+    credit_card_charge_id: "demo-ccc-2",
+  },
+  {
+    id: "demo-t-cc-3",
+    name: "Spotify Family (Annual)",
+    amount: "90.00",
+    category: "SUBSCRIPTION",
+    transaction_date: "2026-04-20",
+    credit_card_charge_id: "demo-ccc-3",
+  },
 ];
 
 const SEED_RECURRING = [
@@ -2159,6 +2189,53 @@ const SEED_INSTALLMENTS = [
   },
 ];
 
+// One demo card, partially paid off (#54) - total_amount bigger than what's
+// been allocated to charges so far, so "left" > 0 and the progress bar reads
+// as in-progress instead of empty or fully paid.
+const SEED_CREDIT_CARD_PAYMENTS = [
+  {
+    id: "demo-ccp-1",
+    name: "Credit Card Payment",
+    total_amount: "780.00",
+    payment_date: "2026-04-01",
+    due_date: "2026-04-30",
+    created_at: "2026-04-01T12:00:00.000Z",
+  },
+];
+
+const SEED_CREDIT_CARD_CHARGES = [
+  {
+    id: "demo-ccc-1",
+    name: "Amazon",
+    total_amount: "245.00",
+    category: "EXPENSE",
+    charge_date: "2026-04-04",
+    created_at: "2026-04-04T12:00:00.000Z",
+  },
+  {
+    id: "demo-ccc-2",
+    name: "Whole Foods Market",
+    total_amount: "165.00",
+    category: "EXPENSE",
+    charge_date: "2026-04-12",
+    created_at: "2026-04-12T12:00:00.000Z",
+  },
+  {
+    id: "demo-ccc-3",
+    name: "Spotify Family (Annual)",
+    total_amount: "90.00",
+    category: "SUBSCRIPTION",
+    charge_date: "2026-04-20",
+    created_at: "2026-04-20T12:00:00.000Z",
+  },
+];
+
+const SEED_CREDIT_CARD_ALLOCATIONS = [
+  { id: "demo-cca-1", charge_id: "demo-ccc-1", payment_id: "demo-ccp-1", amount_applied: "245.00", created_at: "2026-04-04T12:00:00.000Z" },
+  { id: "demo-cca-2", charge_id: "demo-ccc-2", payment_id: "demo-ccp-1", amount_applied: "165.00", created_at: "2026-04-12T12:00:00.000Z" },
+  { id: "demo-cca-3", charge_id: "demo-ccc-3", payment_id: "demo-ccp-1", amount_applied: "90.00", created_at: "2026-04-20T12:00:00.000Z" },
+];
+
 // Init
 export function initDemo() {
   if (!localStorage.getItem(TX_KEY)) {
@@ -2182,6 +2259,15 @@ export function initDemo() {
   if (!localStorage.getItem(IN_KEY)) {
     localStorage.setItem(IN_KEY, JSON.stringify(SEED_INSTALLMENTS));
   }
+  if (!localStorage.getItem(CCP_KEY)) {
+    localStorage.setItem(CCP_KEY, JSON.stringify(SEED_CREDIT_CARD_PAYMENTS));
+  }
+  if (!localStorage.getItem(CCC_KEY)) {
+    localStorage.setItem(CCC_KEY, JSON.stringify(SEED_CREDIT_CARD_CHARGES));
+  }
+  if (!localStorage.getItem(CCA_KEY)) {
+    localStorage.setItem(CCA_KEY, JSON.stringify(SEED_CREDIT_CARD_ALLOCATIONS));
+  }
 }
 
 export function clearDemo() {
@@ -2194,6 +2280,9 @@ export function clearDemo() {
   localStorage.removeItem(TD_KEY);
   localStorage.removeItem(IN_KEY);
   localStorage.removeItem(ID_KEY);
+  localStorage.removeItem(CCP_KEY);
+  localStorage.removeItem(CCC_KEY);
+  localStorage.removeItem(CCA_KEY);
   localStorage.removeItem("demo");
 }
 
@@ -2930,7 +3019,13 @@ export const setBalanceAnchor = (data) => {
 
 function balanceDelta(t) {
   const amt = parseFloat(t.amount);
-  if (t.category === "TIPS") return 0;
+  // A settled credit card charge (#54) already had its cash counted once via
+  // its payment's own transaction - counting it again here would double it.
+  // An expense paid_with_cash never touched checking either, same reasoning
+  // from the other direction - the cash tips that funded it were never
+  // counted as income here (#131), so counting the expense side without the
+  // income side would be the asymmetry #151 fixes.
+  if (t.category === "TIPS" || t.credit_card_charge_id || t.paid_with_cash) return 0;
   return PAYCHECK_INCOME_CATEGORIES.has(t.category) ? amt : -amt;
 }
 
@@ -3193,6 +3288,8 @@ export const getEstimatedSavings = () => {
       NON_SAVINGS_EXPENSE_CATEGORIES.has(t.category) &&
       !t._recurring_id &&
       !t.recurring_payment_id &&
+      !t.credit_card_charge_id &&
+      !t.paid_with_cash &&
       !recurringNames.has(t.name) &&
       t.transaction_date >= historyStartStr &&
       t.transaction_date < monthStartStr,
@@ -3231,12 +3328,32 @@ export const getEstimatedSavings = () => {
     )
     .reduce((sum, t) => sum + parseFloat(t.amount), 0);
 
+  // A dated bill explicitly skipped this month (skipRecurringPayment sets
+  // last_applied_month without posting a transaction) never materialized and
+  // never will for this month - it shouldn't still eat room in the ceiling
+  // (#133), same fix as the real backend.
+  const currentMonthPrefix = demoCurrentMonth();
+  const linkedThisMonth = new Set(
+    getAll(TX_KEY)
+      .filter(
+        (t) =>
+          t.recurring_payment_id &&
+          t.transaction_date >= monthStartStr &&
+          t.transaction_date < monthEndStr,
+      )
+      .map((t) => t.recurring_payment_id),
+  );
+  const wasSkipped = (rp) =>
+    rp.last_applied_month === currentMonthPrefix &&
+    !linkedThisMonth.has(rp.id);
+
   const committedRecurring = getAll(RP_KEY)
     .filter(
       (rp) =>
         rp.active !== false &&
         !(rp.is_estimate && rp.day_of_month == null) &&
-        NON_SAVINGS_EXPENSE_CATEGORIES.has(rp.category),
+        NON_SAVINGS_EXPENSE_CATEGORIES.has(rp.category) &&
+        !wasSkipped(rp),
     )
     .reduce((sum, rp) => sum + parseFloat(rp.amount), 0);
 
@@ -3247,19 +3364,21 @@ export const getEstimatedSavings = () => {
         NON_SAVINGS_EXPENSE_CATEGORIES.has(t.category) &&
         !t._recurring_id &&
         !t.recurring_payment_id &&
+        !t.credit_card_charge_id &&
+        !t.paid_with_cash &&
         t.transaction_date >= monthStartStr &&
         t.transaction_date <= todayStr,
     )
     .reduce((sum, t) => sum + parseFloat(t.amount), 0);
 
-  const daysInMonth = new Date(
-    today.getFullYear(),
-    today.getMonth() + 1,
+  // Whatever's left of the historical average once actual spend is netted
+  // out, floored at 0 - not a full remaining-days share of the average
+  // stacked on top of actual spend unconditionally, which double-billed a
+  // front-loaded month (#133), same fix as the real backend.
+  const discretionaryProjectedRemaining = Math.max(
+    monthlyDiscretionaryAvg - discretionarySpentSoFar,
     0,
-  ).getDate();
-  const daysAfterToday = daysInMonth - today.getDate();
-  const discretionaryProjectedRemaining =
-    (monthlyDiscretionaryAvg / daysInMonth) * daysAfterToday;
+  );
 
   const rawCeiling =
     wholeMonthIncome -
@@ -3487,4 +3606,305 @@ export const getInstallmentInsights = (id) => {
         status: null,
       }),
   );
+};
+
+// Credit card payment allocation (#54) - mirrors app/services/credit_card_service.py.
+// The anchor payment transaction keeps its full amount/category untouched;
+// allocating breaks it down into real, categorized charge transactions
+// without double-counting the cash movement (see cents/_balanceDelta below).
+
+function ccCents(n) {
+  return Math.round(n * 100) / 100;
+}
+
+function paidOnPayment(paymentId) {
+  return ccCents(
+    getAll(CCA_KEY)
+      .filter((a) => a.payment_id === paymentId)
+      .reduce((sum, a) => sum + parseFloat(a.amount_applied), 0),
+  );
+}
+
+function paidOnCharge(chargeId) {
+  return ccCents(
+    getAll(CCA_KEY)
+      .filter((a) => a.charge_id === chargeId)
+      .reduce((sum, a) => sum + parseFloat(a.amount_applied), 0),
+  );
+}
+
+function settledTransactionIdFor(chargeId) {
+  const settled = getAll(TX_KEY).find((t) => t.credit_card_charge_id === chargeId);
+  return settled ? settled.id : null;
+}
+
+function chargeSummary(charge) {
+  const paid = paidOnCharge(charge.id);
+  return {
+    id: charge.id,
+    name: charge.name,
+    total_amount: charge.total_amount,
+    amount_paid: paid.toFixed(2),
+    category: charge.category,
+    charge_date: charge.charge_date,
+    settled: paid >= parseFloat(charge.total_amount),
+    settled_transaction_id: settledTransactionIdFor(charge.id),
+  };
+}
+
+function creditCardPaymentDetail(payment) {
+  const chargeIds = [
+    ...new Set(getAll(CCA_KEY).filter((a) => a.payment_id === payment.id).map((a) => a.charge_id)),
+  ];
+  const charges = getAll(CCC_KEY)
+    .filter((c) => chargeIds.includes(c.id))
+    .sort((a, b) => (a.charge_date + a.created_at).localeCompare(b.charge_date + b.created_at))
+    .map(chargeSummary);
+
+  const paid = paidOnPayment(payment.id);
+  return {
+    id: payment.id,
+    name: payment.name,
+    total_amount: payment.total_amount,
+    payment_date: payment.payment_date,
+    due_date: payment.due_date ?? null,
+    paid: paid.toFixed(2),
+    left: ccCents(parseFloat(payment.total_amount) - paid).toFixed(2),
+    charges,
+  };
+}
+
+export const getCreditCardPayments = () => {
+  const payments = getAll(CCP_KEY)
+    .slice()
+    .sort((a, b) => b.payment_date.localeCompare(a.payment_date));
+  return respond(payments.map(creditCardPaymentDetail));
+};
+
+// Plain balance, no linked transaction - contrast with
+// createCreditCardPaymentFromTransaction below, which anchors the payment to
+// a real, already-recorded transaction.
+export const createCreditCardPayment = (totalAmount, paymentDate, dueDate) => {
+  const payment = {
+    id: nextId(),
+    name: "Credit Card Payment",
+    total_amount: String(parseFloat(totalAmount).toFixed(2)),
+    payment_date: paymentDate,
+    due_date: dueDate ?? null,
+    created_at: new Date().toISOString(),
+  };
+  saveAll(CCP_KEY, [...getAll(CCP_KEY), payment]);
+  return respond(creditCardPaymentDetail(payment));
+};
+
+export const createCreditCardPaymentFromTransaction = (transactionId, dueDate) => {
+  const transaction = getAll(TX_KEY).find((t) => t.id === transactionId);
+  if (!transaction) {
+    return Promise.reject({ response: { status: 404, data: { detail: "Transaction not found" } } });
+  }
+  if (transaction.credit_card_payment_id) {
+    return Promise.reject({ response: { status: 404, data: { detail: "Transaction is already a credit card payment" } } });
+  }
+  if (transaction.credit_card_charge_id) {
+    return Promise.reject({ response: { status: 404, data: { detail: "Transaction is a settled credit card charge, not a payment" } } });
+  }
+
+  const payment = {
+    id: nextId(),
+    name: transaction.name,
+    total_amount: String(parseFloat(transaction.amount).toFixed(2)),
+    payment_date: transaction.transaction_date,
+    due_date: dueDate ?? null,
+    created_at: new Date().toISOString(),
+  };
+  saveAll(CCP_KEY, [...getAll(CCP_KEY), payment]);
+  saveAll(
+    TX_KEY,
+    getAll(TX_KEY).map((t) => (t.id === transactionId ? { ...t, credit_card_payment_id: payment.id } : t)),
+  );
+
+  return respond(creditCardPaymentDetail(payment));
+};
+
+export const getCreditCardPayment = (paymentId) => {
+  const payment = getAll(CCP_KEY).find((p) => p.id === paymentId);
+  if (!payment) {
+    return Promise.reject({ response: { status: 404, data: { detail: "Credit card payment not found" } } });
+  }
+  return respond(creditCardPaymentDetail(payment));
+};
+
+export const allocateCreditCardPayment = (paymentId, data) => {
+  const payment = getAll(CCP_KEY).find((p) => p.id === paymentId);
+  if (!payment) {
+    return Promise.reject({ response: { status: 404, data: { detail: "Credit card payment not found" } } });
+  }
+
+  // A third allocate shape: reuse an already-recorded, unlinked transaction
+  // as the charge, applied in full - it already IS the charge, no duplicate
+  // transaction gets created the way a from-scratch charge's promotion does.
+  if (data.transaction_id) {
+    const transaction = getAll(TX_KEY).find((t) => t.id === data.transaction_id);
+    if (!transaction) {
+      return Promise.reject({ response: { status: 404, data: { detail: "Transaction not found" } } });
+    }
+    if (transaction.credit_card_payment_id || transaction.credit_card_charge_id) {
+      return Promise.reject({ response: { status: 400, data: { detail: "Transaction is already linked to a credit card payment or charge" } } });
+    }
+    const amount = parseFloat(transaction.amount);
+    const leftOnPayment = ccCents(parseFloat(payment.total_amount) - paidOnPayment(paymentId));
+    if (amount > leftOnPayment) {
+      return Promise.reject({ response: { status: 400, data: { detail: "Amount exceeds what's left on this payment" } } });
+    }
+
+    const charge = {
+      id: nextId(),
+      name: transaction.name,
+      total_amount: transaction.amount,
+      category: transaction.category,
+      charge_date: transaction.transaction_date,
+      created_at: new Date().toISOString(),
+    };
+    saveAll(CCC_KEY, [...getAll(CCC_KEY), charge]);
+    saveAll(CCA_KEY, [...getAll(CCA_KEY), {
+      id: nextId(),
+      charge_id: charge.id,
+      payment_id: paymentId,
+      amount_applied: transaction.amount,
+      created_at: new Date().toISOString(),
+    }]);
+    saveAll(
+      TX_KEY,
+      getAll(TX_KEY).map((t) => (t.id === transaction.id ? { ...t, credit_card_charge_id: charge.id } : t)),
+    );
+
+    return respond(creditCardPaymentDetail(payment));
+  }
+
+  // A new charge is always allocated in full against this payment (#147) -
+  // no partial/rollover concept, so this is rejected outright rather than
+  // accepted partially if there isn't enough left to cover it.
+  const totalAmount = parseFloat(data.total_amount);
+  const leftOnPayment = ccCents(parseFloat(payment.total_amount) - paidOnPayment(paymentId));
+  if (totalAmount > leftOnPayment) {
+    return Promise.reject({ response: { status: 400, data: { detail: "Amount exceeds what's left on this payment" } } });
+  }
+
+  const charge = {
+    id: nextId(),
+    name: data.name,
+    total_amount: totalAmount.toFixed(2),
+    category: data.category,
+    charge_date: data.charge_date,
+    created_at: new Date().toISOString(),
+  };
+  saveAll(CCC_KEY, [...getAll(CCC_KEY), charge]);
+
+  saveAll(CCA_KEY, [...getAll(CCA_KEY), {
+    id: nextId(),
+    charge_id: charge.id,
+    payment_id: paymentId,
+    amount_applied: charge.total_amount,
+    created_at: new Date().toISOString(),
+  }]);
+
+  // Always fully paid the moment it's created - a real, categorized
+  // transaction, tagged so balance/spend-ceiling math (getEstimatedSavings,
+  // _get_running_balance equivalents below) skips it: that cash already
+  // left via the payment's own transaction.
+  const settled = {
+    id: nextId(),
+    name: charge.name,
+    amount: charge.total_amount,
+    category: charge.category,
+    transaction_date: charge.charge_date,
+    credit_card_charge_id: charge.id,
+  };
+  saveAll(TX_KEY, [...getAll(TX_KEY), settled]);
+
+  return respond(creditCardPaymentDetail(payment));
+};
+
+export const deleteCreditCardPayment = (paymentId) => {
+  const payment = getAll(CCP_KEY).find((p) => p.id === paymentId);
+  if (!payment) {
+    return Promise.reject({ response: { status: 404, data: { detail: "Credit card payment not found" } } });
+  }
+
+  // Unlink the anchor transaction rather than deleting it - real money left
+  // the account regardless of how it was categorized (#54 follow-up).
+  saveAll(
+    TX_KEY,
+    getAll(TX_KEY).map((t) => (t.credit_card_payment_id === paymentId ? { ...t, credit_card_payment_id: null } : t)),
+  );
+
+  const allocations = getAll(CCA_KEY).filter((a) => a.payment_id === paymentId);
+  const contributionByCharge = {};
+  for (const a of allocations) {
+    contributionByCharge[a.charge_id] = ccCents((contributionByCharge[a.charge_id] ?? 0) + parseFloat(a.amount_applied));
+  }
+
+  let charges = getAll(CCC_KEY);
+  let transactions = getAll(TX_KEY);
+  for (const [chargeId, contribution] of Object.entries(contributionByCharge)) {
+    const charge = charges.find((c) => c.id === chargeId);
+    if (!charge) continue;
+
+    const paidNow = paidOnCharge(chargeId);
+    const paidAfter = ccCents(paidNow - contribution);
+    const total = parseFloat(charge.total_amount);
+
+    if (paidNow >= total && paidAfter < total) {
+      // Unlink rather than delete - real money already left the account,
+      // same reasoning as the anchor transaction above.
+      transactions = transactions.map((t) =>
+        t.credit_card_charge_id === chargeId ? { ...t, credit_card_charge_id: null } : t,
+      );
+    }
+    if (paidAfter <= 0) {
+      charges = charges.filter((c) => c.id !== chargeId);
+    }
+  }
+  saveAll(TX_KEY, transactions);
+  saveAll(CCC_KEY, charges);
+  saveAll(CCA_KEY, getAll(CCA_KEY).filter((a) => a.payment_id !== paymentId));
+  saveAll(CCP_KEY, getAll(CCP_KEY).filter((p) => p.id !== paymentId));
+
+  return respond(null);
+};
+
+// Removes just this payment's allocation(s) toward one charge, without
+// touching the rest of the payment (#146) - the balance detail page's own
+// edit mode, distinct from deleting the whole payment above.
+export const removeChargeFromPayment = (paymentId, chargeId) => {
+  const payment = getAll(CCP_KEY).find((p) => p.id === paymentId);
+  if (!payment) {
+    return Promise.reject({ response: { status: 404, data: { detail: "Credit card payment not found" } } });
+  }
+  const charge = getAll(CCC_KEY).find((c) => c.id === chargeId);
+  if (!charge) {
+    return Promise.reject({ response: { status: 404, data: { detail: "Charge not found" } } });
+  }
+
+  const matching = getAll(CCA_KEY).filter((a) => a.payment_id === paymentId && a.charge_id === chargeId);
+  if (matching.length === 0) {
+    return Promise.reject({ response: { status: 404, data: { detail: "Charge is not allocated to this payment" } } });
+  }
+
+  const paidNow = paidOnCharge(chargeId);
+  const total = parseFloat(charge.total_amount);
+  saveAll(CCA_KEY, getAll(CCA_KEY).filter((a) => !(a.payment_id === paymentId && a.charge_id === chargeId)));
+  const paidAfter = paidOnCharge(chargeId);
+
+  if (paidNow >= total && paidAfter < total) {
+    saveAll(
+      TX_KEY,
+      getAll(TX_KEY).map((t) => (t.credit_card_charge_id === chargeId ? { ...t, credit_card_charge_id: null } : t)),
+    );
+  }
+  if (paidAfter <= 0) {
+    saveAll(CCC_KEY, getAll(CCC_KEY).filter((c) => c.id !== chargeId));
+  }
+
+  return respond(creditCardPaymentDetail(payment));
 };

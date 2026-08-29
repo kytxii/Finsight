@@ -2,24 +2,16 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from urllib.parse import quote
+import uuid
 from app.schemas.user import RegisterRequest, LoginRequest, UserResponse, TokenResponse
-from app.services.auth_service import register_user, login_user, refresh_session, logout_user, oauth_login
+from app.services.auth_service import register_user, login_user, refresh_session, logout_user, oauth_login, link_oauth_account
 from app.dependencies import get_db
 from app.core.config import settings
 from app.core.limiter import limiter
-from app.core.oauth import oauth, fetch_oauth_userinfo
+from app.core.oauth import oauth, fetch_oauth_userinfo, OAUTH_PROVIDERS
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-OAUTH_PROVIDERS = {"google", "github"}
-
-# `Secure` cookies are silently dropped by the browser on a plain-HTTP origin,
-# which local dev always is (FRONTEND_URL=http://localhost:5173) - hardcoding
-# secure=True broke "remember me" there entirely, not just in production
-# (#106). Derive both from the same FRONTEND_URL that already drives CORS,
-# instead of adding a separate env flag. `SameSite=None` requires `Secure`
-# per spec, so the insecure/dev case pairs with `Lax` instead - fine for local
-# dev's same-origin-via-Vite-proxy requests.
 _IS_SECURE = settings.FRONTEND_URL.startswith("https://")
 
 _COOKIE_KWARGS = dict(
@@ -76,9 +68,6 @@ async def oauth_login_redirect(provider: str, request: Request):
         redirect_uri = settings.REDIRECT_URI.format(provider=provider)
         return await client.authorize_redirect(request, redirect_uri)
     except Exception:
-        # A misconfigured provider (missing client id/secret, bad redirect URI) would
-        # otherwise surface as a raw unhandled error instead of ever reaching the
-        # provider's consent screen (#126). Send the user back with a visible message.
         return RedirectResponse(url=f"{settings.FRONTEND_URL}/login?error={quote('Something went wrong signing in.')}")
 
 
@@ -88,14 +77,22 @@ async def oauth_callback(provider: str, request: Request, db: AsyncSession = Dep
         raise HTTPException(status_code=404, detail="Unknown provider")
     client = oauth.create_client(provider)
 
+    link_user_id = request.session.pop("link_user_id", None)
+
     try:
         token = await client.authorize_access_token(request)
         info = await fetch_oauth_userinfo(provider, client, token)
+        if link_user_id:
+            await link_oauth_account(db, provider, info, uuid.UUID(link_user_id))
+            return RedirectResponse(url=f"{settings.FRONTEND_URL}/?connected={provider}")
         _, refresh_token_raw = await oauth_login(db, provider, info)
     except HTTPException as exc:
-        return RedirectResponse(url=f"{settings.FRONTEND_URL}/login?error={quote(exc.detail)}")
+        redirect_path = "/" if link_user_id else "/login"
+        return RedirectResponse(url=f"{settings.FRONTEND_URL}{redirect_path}?error={quote(exc.detail)}")
     except Exception:
-        return RedirectResponse(url=f"{settings.FRONTEND_URL}/login?error={quote('Something went wrong signing in.')}")
+        redirect_path = "/" if link_user_id else "/login"
+        message = "Something went wrong connecting that account." if link_user_id else "Something went wrong signing in."
+        return RedirectResponse(url=f"{settings.FRONTEND_URL}{redirect_path}?error={quote(message)}")
 
     response = RedirectResponse(url=f"{settings.FRONTEND_URL}/")
     response.set_cookie(value=refresh_token_raw, **_COOKIE_KWARGS)

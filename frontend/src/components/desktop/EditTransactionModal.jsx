@@ -1,15 +1,16 @@
 import { useState, useEffect } from "react";
-import { CATEGORY_CONFIG, lockedNameFor } from "../../utils/finance";
+import { CATEGORY_CONFIG, lockedNameFor, MONEY_OUT_TYPES } from "../../utils/finance";
 import { updateTransaction } from "../../api/transactions";
 import { updateRecurringPayment } from "../../api/recurringPayments";
-import { HOME_SURFACE, HOME_DIVIDER, HOME_TEXT, HOME_MUTED, HOME_EXPENSE, FIELD, CATEGORY_ACCENT } from "../shared/categoryVisuals";
+import { createPaymentFromTransaction } from "../../api/creditCard";
+import { HOME_SURFACE, HOME_DIVIDER, HOME_TEXT, HOME_MUTED, HOME_INCOME, HOME_EXPENSE, FIELD, CATEGORY_ACCENT } from "../shared/categoryVisuals";
 import CurrencyInput from "../shared/CurrencyInput";
 
 const CATEGORY_OPTIONS = Object.entries(CATEGORY_CONFIG).map(([key, { label }]) => ({ value: key, label }));
 
 const EXIT_MS = 240;
 
-export default function EditTransactionModal({ transaction, onClose, onSaved, onDelete, onLocate }) {
+export default function EditTransactionModal({ transaction, onClose, onSaved, onDelete, onLocate, onSplitAsPayment }) {
   const bg     = HOME_SURFACE;
   const border = HOME_DIVIDER;
   const text   = HOME_TEXT;
@@ -22,6 +23,7 @@ export default function EditTransactionModal({ transaction, onClose, onSaved, on
     category: transaction.category,
     transaction_date: transaction.transaction_date,
     note: transaction.note ?? "",
+    paid_with_cash: transaction.paid_with_cash ?? false,
   });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -32,6 +34,9 @@ export default function EditTransactionModal({ transaction, onClose, onSaved, on
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
+
+  const [splitting, setSplitting] = useState(false);
+  const [splitError, setSplitError] = useState("");
 
   const [closing, setClosing] = useState(false);
   const requestClose = () => setClosing(true);
@@ -51,7 +56,12 @@ export default function EditTransactionModal({ transaction, onClose, onSaved, on
   const handleChange = (e) => {
     const { name, value } = e.target;
     if (name === "category") {
-      setForm((f) => ({ ...f, category: value, name: lockedNameFor(value) ?? f.name }));
+      // Cash on hand only applies to spend categories - drop the flag along
+      // with the checkbox once it's switched away from one (#151).
+      setForm((f) => ({
+        ...f, category: value, name: lockedNameFor(value) ?? f.name,
+        paid_with_cash: MONEY_OUT_TYPES.has(value) ? f.paid_with_cash : false,
+      }));
     } else {
       setForm((f) => ({ ...f, [name]: value }));
     }
@@ -96,6 +106,19 @@ export default function EditTransactionModal({ transaction, onClose, onSaved, on
       setDeleteError(err.response?.data?.detail ?? "Couldn't delete — try again");
       setDeleting(false);
       setDeleteConfirm(false);
+    }
+  }
+
+  async function handleSplitAsPayment() {
+    if (splitting) return;
+    setSplitting(true);
+    setSplitError("");
+    try {
+      const res = await createPaymentFromTransaction(transaction.id);
+      onSplitAsPayment(res.data);
+    } catch (err) {
+      setSplitError(err.response?.data?.detail ?? "Couldn't start a credit card payment");
+      setSplitting(false);
     }
   }
 
@@ -210,6 +233,18 @@ export default function EditTransactionModal({ transaction, onClose, onSaved, on
             />
           </div>
 
+          {MONEY_OUT_TYPES.has(form.category) && (
+            <label className="flex items-center gap-2 cursor-pointer" style={{ fontSize: 13, color: muted }}>
+              <input
+                type="checkbox"
+                checked={form.paid_with_cash}
+                onChange={(e) => setForm((f) => ({ ...f, paid_with_cash: e.target.checked }))}
+                style={{ width: 16, height: 16, accentColor: catColor, cursor: "pointer" }}
+              />
+              Paid with cash on hand
+            </label>
+          )}
+
           <div>
             <label className="block text-sm font-medium mb-1.5">Note <span className="font-normal opacity-60">(optional)</span></label>
             <input
@@ -262,6 +297,32 @@ export default function EditTransactionModal({ transaction, onClose, onSaved, on
             </button>
           </div>
         </form>
+
+        {transaction.credit_card_charge_id && (
+          <div className="px-4 sm:px-6 pb-1">
+            <p style={{ fontSize: 11.5, color: muted, margin: 0 }}>
+              Part of a credit card payment — categorized automatically from an allocation.
+            </p>
+          </div>
+        )}
+
+        {!transaction.credit_card_payment_id && !transaction.credit_card_charge_id && onSplitAsPayment && (
+          <div className="px-4 sm:px-6 pb-1">
+            <button
+              type="button"
+              onClick={handleSplitAsPayment}
+              disabled={splitting}
+              className="w-full text-center cursor-pointer"
+              style={{
+                background: "none", border: `1px dashed ${border}`, borderRadius: 10, padding: "8px 0",
+                fontSize: 12.5, fontWeight: 600, color: HOME_INCOME, opacity: splitting ? 0.6 : 1,
+              }}
+            >
+              {splitting ? "Starting…" : "Split as credit card payment"}
+            </button>
+            {splitError && <p style={{ fontSize: 11, color: HOME_EXPENSE, textAlign: "center", marginTop: 6 }}>{splitError}</p>}
+          </div>
+        )}
 
         <div className="px-4 sm:px-6 pb-4" style={{ borderTop: `1px solid ${border}`, paddingTop: 12 }}>
           <button

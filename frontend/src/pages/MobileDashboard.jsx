@@ -16,6 +16,7 @@ import { getUpcomingRecurringPayments } from "../api/recurringPayments";
 import { getTipDeposits, deleteTipDeposit } from "../api/tipDeposits";
 import CurrencyInput from "../components/shared/CurrencyInput";
 import MobileTransactionModal from "../components/mobile/MobileTransactionModal";
+import CreditCardPaymentPanel from "../components/shared/CreditCardPaymentPanel";
 import MobileDepositModal from "../components/mobile/MobileDepositModal";
 import {
   CATEGORY_CONFIG,
@@ -41,6 +42,7 @@ import MobileTips from "../components/mobile/MobileTips";
 import MobilePaychecks from "../components/mobile/MobilePaychecks";
 import MobileRecurring from "../components/mobile/MobileRecurring";
 import MobileInstallments from "../components/mobile/MobileInstallments";
+import MobileCreditCards from "../components/mobile/MobileCreditCards";
 import MobileAnalytics from "../components/mobile/MobileAnalytics";
 import ImportPanel from "../components/desktop/ImportPanel";
 import { HOME_BG, HOME_TEXT, HOME_MUTED, HOME_DIVIDER, HOME_SURFACE, HOME_INCOME, HOME_EXPENSE, ACCENT, TILE_COLOR } from "../components/shared/categoryVisuals";
@@ -204,6 +206,35 @@ export default function MobileDashboard() {
   const devForceErrorRef = useRef(false);
   const [recurringOpen, setRecurringOpen] = useState(false);
   const [installmentsOpen, setInstallmentsOpen] = useState(false);
+  const [creditCardsOpen, setCreditCardsOpen] = useState(false);
+  const [creditCardsAddSignal, setCreditCardsAddSignal] = useState(0);
+  const [creditCardsEditState, setCreditCardsEditState] = useState({
+    editMode: false,
+    hasRows: false,
+    toggleEdit: () => {},
+    hasSelection: false,
+    selectionCount: 0,
+    deleteSelected: () => {},
+  });
+  // Hold-to-delete on the Credit Cards header button: press and hold fills
+  // the ring around the trash icon; releasing early cancels, holding the
+  // full duration commits the delete. Mirrors the desktop header button.
+  const HOLD_DELETE_MS = 1200;
+  const HOLD_DELETE_RING_R = 16;
+  const HOLD_DELETE_RING_C = 2 * Math.PI * HOLD_DELETE_RING_R;
+  const [holdingDelete, setHoldingDelete] = useState(false);
+  function startDeleteHold() {
+    if (!(creditCardsEditState.editMode && creditCardsEditState.hasSelection)) return;
+    setHoldingDelete(true);
+  }
+  function cancelDeleteHold() {
+    setHoldingDelete(false);
+  }
+  function onDeleteRingTransitionEnd(e) {
+    if (e.propertyName !== "stroke-dashoffset" || !holdingDelete) return;
+    setHoldingDelete(false);
+    creditCardsEditState.deleteSelected();
+  }
   const [installmentsAddSignal, setInstallmentsAddSignal] = useState(0);
   const [recurringAddSignal, setRecurringAddSignal] = useState(0);
   const [paychecksOpen, setPaychecksOpen] = useState(false);
@@ -324,6 +355,7 @@ export default function MobileDashboard() {
     amount: "",
     transaction_date: getToday(),
     note: "",
+    paid_with_cash: false,
   });
   const [quickLoading, setQuickLoading] = useState(false);
   const [quickError, setQuickError] = useState("");
@@ -368,12 +400,14 @@ export default function MobileDashboard() {
         transaction_date: quickForm.transaction_date,
         category: quickCat,
         note: quickForm.note.trim() || null,
+        paid_with_cash: quickForm.paid_with_cash,
       });
       setQuickForm((f) => ({
         ...f,
         name: lockedNameFor(quickCat) ?? "",
         amount: "",
         note: "",
+        paid_with_cash: false,
       }));
       setEntrySheetOpen(false);
       setAddSheetOpen(false);
@@ -743,6 +777,7 @@ export default function MobileDashboard() {
                     onOpenRecurring={() => setRecurringOpen(true)}
                     onOpenInstallments={() => setInstallmentsOpen(true)}
                     onOpenPaychecks={() => setPaychecksOpen(true)}
+                    onOpenCreditCards={() => setCreditCardsOpen(true)}
                     onOpenBreakdown={(key) => setBreakdownCell(key)}
                     onViewCategory={(cat) => setCategoryView(cat)}
                     onSeeAllTransactions={() => setNavTab("activity")}
@@ -1045,7 +1080,12 @@ export default function MobileDashboard() {
             value={quickCat}
             onChange={(key) => {
               setQuickCat(key);
-              setQuickForm((f) => ({ ...f, name: lockedNameFor(key) ?? f.name }));
+              // Cash on hand only applies to spend categories - drop the flag
+              // along with the checkbox once it's switched away from one (#151).
+              setQuickForm((f) => ({
+                ...f, name: lockedNameFor(key) ?? f.name,
+                paid_with_cash: MONEY_OUT_TYPES.has(key) ? f.paid_with_cash : false,
+              }));
             }}
           />
           <form onSubmit={handleQuickSubmit} className="space-y-3">
@@ -1101,6 +1141,17 @@ export default function MobileDashboard() {
               className="w-full rounded-xl px-4 py-2.5 text-sm border"
               style={quickFieldStyle}
             />
+            {MONEY_OUT_TYPES.has(quickCat) && (
+              <label className="flex items-center gap-2 cursor-pointer" style={{ fontSize: 13.5, color: HOME_MUTED }}>
+                <input
+                  type="checkbox"
+                  checked={quickForm.paid_with_cash}
+                  onChange={(e) => setQuickForm((f) => ({ ...f, paid_with_cash: e.target.checked }))}
+                  style={{ width: 17, height: 17, accentColor: quickTileColor, cursor: "pointer" }}
+                />
+                Paid with cash on hand
+              </label>
+            )}
             {quickError && <p className="text-xs text-red-500">{quickError}</p>}
             <button
               type="submit"
@@ -1588,6 +1639,161 @@ export default function MobileDashboard() {
           <MobileInstallments onSaved={refresh} openAddSignal={installmentsAddSignal} />
       </MobileScreen>
 
+      {/* Credit Cards overlay */}
+      <MobileScreen open={creditCardsOpen} style={{ backgroundColor: HOME_BG, color: HOME_TEXT }}>
+          <div
+            className="px-4 pb-3 flex items-center justify-between shrink-0"
+            style={{ borderBottom: `1px solid ${HOME_DIVIDER}`, paddingTop: "calc(env(safe-area-inset-top, 0px) + 14px)" }}
+          >
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setCreditCardsOpen(false)}
+                aria-label="Back to home"
+                style={{
+                  width: 36, height: 36, borderRadius: "50%", flexShrink: 0, cursor: "pointer",
+                  background: HOME_SURFACE, border: "1px solid rgba(255,255,255,0.07)",
+                  display: "flex", alignItems: "center", justifyContent: "center", color: HOME_TEXT,
+                }}
+              >
+                <IconChevronLeft size={19} />
+              </button>
+              <span className="text-base font-semibold" style={{ color: HOME_TEXT }}>
+                Credit Cards
+              </span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              {(() => {
+                const showDelete = creditCardsEditState.editMode && creditCardsEditState.hasSelection;
+                return (
+                  <button
+                    onMouseDown={startDeleteHold}
+                    onMouseUp={cancelDeleteHold}
+                    onMouseLeave={cancelDeleteHold}
+                    onTouchStart={startDeleteHold}
+                    onTouchEnd={cancelDeleteHold}
+                    aria-label={`Hold to delete ${creditCardsEditState.selectionCount} selected`}
+                    tabIndex={showDelete ? 0 : -1}
+                    style={{
+                      width: showDelete ? 36 : 0,
+                      height: 36,
+                      borderRadius: "50%",
+                      flexShrink: 0,
+                      overflow: "hidden",
+                      cursor: showDelete ? "pointer" : "default",
+                      background: `color-mix(in srgb, ${HOME_EXPENSE} 16%, ${HOME_SURFACE})`,
+                      border: `1px solid ${HOME_EXPENSE}`,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      position: "relative",
+                      color: HOME_EXPENSE,
+                      opacity: showDelete ? 1 : 0,
+                      transform: showDelete ? "scale(1)" : "scale(0.5)",
+                      marginLeft: showDelete ? 0 : -10,
+                      marginRight: showDelete ? 0 : -10,
+                      pointerEvents: showDelete ? "auto" : "none",
+                      userSelect: "none",
+                      transition:
+                        "width 220ms ease, margin 220ms ease, opacity 180ms ease, transform 220ms ease",
+                    }}
+                  >
+                    {/* Ring and icon share one 36x36 coordinate space so they're
+                        guaranteed to center on the same point - same pattern as
+                        the desktop header button. */}
+                    <svg
+                      width="36" height="36" viewBox="0 0 36 36"
+                      style={{ position: "absolute", inset: 0, pointerEvents: "none" }}
+                    >
+                      <g transform="translate(-1 -1)">
+                        <circle
+                          cx="18" cy="18" r={HOLD_DELETE_RING_R} fill="none" stroke={HOME_EXPENSE} strokeWidth="2.5"
+                          strokeLinecap="round"
+                          strokeDasharray={HOLD_DELETE_RING_C}
+                          strokeDashoffset={holdingDelete ? 0 : HOLD_DELETE_RING_C}
+                          transform="rotate(-90 18 18)"
+                          onTransitionEnd={onDeleteRingTransitionEnd}
+                          style={{
+                            transition: holdingDelete
+                              ? `stroke-dashoffset ${HOLD_DELETE_MS}ms linear`
+                              : "stroke-dashoffset 150ms ease",
+                          }}
+                        />
+                        <svg x="10" y="10" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M3 6h18M19 6l-1 14H6L5 6M10 11v6M14 11v6M9 6V4h6v2" />
+                        </svg>
+                      </g>
+                    </svg>
+                  </button>
+                );
+              })()}
+              <button
+                onClick={creditCardsEditState.toggleEdit}
+                aria-label={creditCardsEditState.editMode ? "Done editing" : "Edit credit card balances"}
+                tabIndex={creditCardsEditState.hasRows ? 0 : -1}
+                style={{
+                  width: creditCardsEditState.hasRows ? 36 : 0,
+                  height: 36,
+                  borderRadius: "50%",
+                  flexShrink: 0,
+                  overflow: "hidden",
+                  cursor: creditCardsEditState.hasRows ? "pointer" : "default",
+                  background: creditCardsEditState.editMode
+                    ? `color-mix(in srgb, ${HOME_INCOME} 18%, ${HOME_SURFACE})`
+                    : HOME_SURFACE,
+                  border: `1px solid ${creditCardsEditState.editMode ? HOME_INCOME : "rgba(255,255,255,0.07)"}`,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  position: "relative",
+                  color: creditCardsEditState.editMode ? HOME_INCOME : "#fff",
+                  opacity: creditCardsEditState.hasRows ? 1 : 0,
+                  transform: creditCardsEditState.hasRows ? "scale(1)" : "scale(0.5)",
+                  marginLeft: creditCardsEditState.hasRows ? 0 : -10,
+                  marginRight: creditCardsEditState.hasRows ? 0 : -10,
+                  pointerEvents: creditCardsEditState.hasRows ? "auto" : "none",
+                  transition:
+                    "width 220ms ease, margin 220ms ease, opacity 180ms ease, transform 220ms ease, background 200ms ease, border-color 200ms ease, color 200ms ease",
+                }}
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                  style={{
+                    position: "absolute",
+                    opacity: creditCardsEditState.editMode ? 1 : 0,
+                    transform: creditCardsEditState.editMode ? "scale(1) rotate(0deg)" : "scale(0.4) rotate(-45deg)",
+                    transition: "opacity 200ms ease, transform 200ms ease",
+                  }}
+                >
+                  <path d="M20 6 9 17l-5-5" />
+                </svg>
+                <svg
+                  xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                  style={{
+                    position: "absolute",
+                    opacity: creditCardsEditState.editMode ? 0 : 1,
+                    transform: creditCardsEditState.editMode ? "scale(0.4) rotate(45deg)" : "scale(1) rotate(0deg)",
+                    transition: "opacity 200ms ease, transform 200ms ease",
+                  }}
+                >
+                  <path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                </svg>
+              </button>
+              <button
+                onClick={() => setCreditCardsAddSignal(n => n + 1)}
+                aria-label="Split a transaction as a credit card payment"
+                style={{
+                  width: 36, height: 36, borderRadius: "50%", flexShrink: 0, cursor: "pointer",
+                  background: HOME_SURFACE, border: "1px solid rgba(255,255,255,0.07)",
+                  display: "flex", alignItems: "center", justifyContent: "center", color: "#fff",
+                }}
+              >
+                <IconPlus size={19} />
+              </button>
+            </div>
+          </div>
+          <MobileCreditCards onSaved={refresh} openAddSignal={creditCardsAddSignal} onEditStateChange={setCreditCardsEditState} />
+      </MobileScreen>
+
       {/* Paychecks overlay */}
       <MobileScreen open={paychecksOpen} style={{ backgroundColor: HOME_BG, color: HOME_TEXT }}>
           <div
@@ -1783,6 +1989,17 @@ export default function MobileDashboard() {
                   <circle cx="17.5" cy="17.5" r="2.5" />
                 </svg>
                 Installments
+              </button>
+              <button
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium cursor-pointer text-left active:scale-[0.97] transition-transform duration-150"
+                style={{ color: HOME_TEXT, border: "none", backgroundColor: "rgba(255,255,255,0.05)" }}
+                onClick={() => setCreditCardsOpen(true)}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="2" y="5" width="20" height="14" rx="2.2" />
+                  <line x1="2" y1="10" x2="22" y2="10" />
+                </svg>
+                Credit Cards
               </button>
             </div>
             <div className="mx-5 border-t" style={{ borderColor: HOME_DIVIDER }} />
@@ -2005,16 +2222,29 @@ export default function MobileDashboard() {
       </div>
 
       {editingTransaction && (
-        <MobileTransactionModal
-          transaction={editingTransaction}
-          onClose={() => setEditingTransaction(null)}
-          onSaved={() => {
-            setEditingTransaction(null);
-            refresh();
-          }}
-          onDelete={handleDelete}
-          onLocate={handleLocateTransaction}
-        />
+        editingTransaction.credit_card_payment_id ? (
+          <CreditCardPaymentPanel
+            key={editingTransaction.id}
+            paymentId={editingTransaction.credit_card_payment_id}
+            onClose={() => setEditingTransaction(null)}
+            onChanged={refresh}
+          />
+        ) : (
+          <MobileTransactionModal
+            transaction={editingTransaction}
+            onClose={() => setEditingTransaction(null)}
+            onSaved={() => {
+              setEditingTransaction(null);
+              refresh();
+            }}
+            onDelete={handleDelete}
+            onLocate={handleLocateTransaction}
+            onSplitAsPayment={(payment) => {
+              setEditingTransaction((prev) => prev && { ...prev, credit_card_payment_id: payment.id });
+              refresh();
+            }}
+          />
+        )
       )}
 
       {editingDeposit && (

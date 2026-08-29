@@ -1,5 +1,5 @@
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timezone, timedelta
 import uuid
@@ -163,3 +163,48 @@ async def oauth_login(db: AsyncSession, provider: str, info: OAuthUserInfo) -> t
     refresh_token_raw, _ = await _issue_refresh_token(db, user_id)
     await db.commit()
     return access_token, refresh_token_raw
+
+
+async def get_linked_providers(db: AsyncSession, user_id: uuid.UUID) -> list[str]:
+    result = await db.execute(select(OAuthAccount.provider).where(OAuthAccount.user_id == user_id))
+    return list(result.scalars().all())
+
+
+async def link_oauth_account(db: AsyncSession, provider: str, info: OAuthUserInfo, user_id: uuid.UUID) -> None:
+    """Attach a provider identity to an already-logged-in account (Account >
+    Connections), as opposed to oauth_login's sign-in-or-create-account flow
+    (#25)."""
+    result = await db.execute(
+        select(OAuthAccount).where(
+            OAuthAccount.provider == provider,
+            OAuthAccount.provider_user_id == info.provider_user_id,
+        )
+    )
+    existing = result.scalar_one_or_none()
+    if existing:
+        if existing.user_id != user_id:
+            raise HTTPException(status_code=409, detail=f"This {provider} account is already linked to a different FinSight account")
+        return  # Already linked to this same account - idempotent.
+
+    db.add(OAuthAccount(user_id=user_id, provider=provider, provider_user_id=info.provider_user_id))
+    await db.commit()
+
+
+async def unlink_oauth_account(db: AsyncSession, provider: str, user: User) -> None:
+    result = await db.execute(
+        select(OAuthAccount).where(OAuthAccount.user_id == user.id, OAuthAccount.provider == provider)
+    )
+    account = result.scalar_one_or_none()
+    if not account:
+        raise HTTPException(status_code=404, detail="Not linked")
+
+    # A password-less (OAuth-only) account can't unlink its last provider -
+    # same reasoning as never letting a password account drop its password
+    # with no OAuth fallback: there must always be at least one way in.
+    if user.password_hash is None:
+        count = await db.scalar(select(func.count()).select_from(OAuthAccount).where(OAuthAccount.user_id == user.id))
+        if count <= 1:
+            raise HTTPException(status_code=400, detail="Can't unlink your only way to sign in")
+
+    await db.delete(account)
+    await db.commit()

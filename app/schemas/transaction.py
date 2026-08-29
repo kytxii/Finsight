@@ -10,6 +10,7 @@ class TransactionBase(BaseModel):
     transaction_date: date
     category: Category
     note: str | None = Field(default=None, max_length=100)
+    paid_with_cash: bool = False
 
 class CreateTransaction(TransactionBase):
     pass
@@ -28,5 +29,8 @@ class TransactionResponse(TransactionBase):
     updated_by: UUID
     recurring_payment_id: UUID | None = None
     paycheck_id: UUID | None = None
+    installment_id: UUID | None = None
+    credit_card_payment_id: UUID | None = None
+    credit_card_charge_id: UUID | None = None
 
     model_config = ConfigDict(from_attributes=True)

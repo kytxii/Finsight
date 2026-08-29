@@ -69,6 +69,29 @@ async def test_tip_never_counts_toward_checking(test_user: dict, client: AsyncCl
     assert await _running_balance(client, token) == 1000.0
 
 
+async def test_cash_funded_expense_never_counts_toward_checking(test_user: dict, client: AsyncClient, clean_finance):
+    """#151: an expense paid with cash on hand never touched checking, so it
+    shouldn't reduce the running balance either - same reasoning as a cash
+    tip never adding to it above."""
+    token = test_user["token"]
+    await _set_balance(client, token, "1000.00")
+
+    res = await client.post("/transactions/", json={
+        "name": "Cash Lunch", "amount": "40.00", "transaction_date": date.today().isoformat(),
+        "category": "EXPENSE", "paid_with_cash": True,
+    }, headers=auth_headers(token))
+    assert res.status_code == 201
+    assert await _running_balance(client, token) == 1000.0
+
+    # A normal (bank-paid) expense still reduces it as usual.
+    res = await client.post("/transactions/", json={
+        "name": "Card Lunch", "amount": "40.00", "transaction_date": date.today().isoformat(),
+        "category": "EXPENSE",
+    }, headers=auth_headers(token))
+    assert res.status_code == 201
+    assert await _running_balance(client, token) == 960.0
+
+
 async def test_deposit_adds_to_checking(test_user: dict, client: AsyncClient, clean_finance):
     token = test_user["token"]
     await _set_balance(client, token, "1000.00")

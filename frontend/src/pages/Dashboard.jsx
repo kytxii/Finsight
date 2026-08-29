@@ -61,6 +61,8 @@ import CategoryTrendPanel from "../components/desktop/CategoryTrendPanel";
 import CategoryDetailPanel from "../components/desktop/CategoryDetailPanel";
 import CategoryUpcomingPanel from "../components/desktop/CategoryUpcomingPanel";
 import EditTransactionModal from "../components/desktop/EditTransactionModal";
+import CreditCardPaymentPanel from "../components/shared/CreditCardPaymentPanel";
+import CreditCardsPanel from "../components/desktop/CreditCardsPanel";
 import {
   BalanceBody,
   BillsBody,
@@ -401,6 +403,7 @@ const TOOL_TITLES = {
   paychecks: "Paychecks",
   recurring: "Recurring Payments",
   installments: "Installments",
+  creditCards: "Credit Cards",
   add: "Add Transaction",
 };
 const TOOL_TRANSITION_MS = 280;
@@ -583,6 +586,34 @@ export default function Dashboard() {
   });
   const [recurringAddSignal, setRecurringAddSignal] = useState(0);
   const [installmentsAddSignal, setInstallmentsAddSignal] = useState(0);
+  const [creditCardsAddSignal, setCreditCardsAddSignal] = useState(0);
+  const [creditCardsEditState, setCreditCardsEditState] = useState({
+    editMode: false,
+    hasRows: false,
+    toggleEdit: () => {},
+    hasSelection: false,
+    selectionCount: 0,
+    deleteSelected: () => {},
+  });
+  // Hold-to-delete on the Credit Cards header button: press and hold fills
+  // the ring around the trash icon; releasing early cancels, holding the
+  // full duration commits the delete.
+  const HOLD_DELETE_MS = 1200;
+  const HOLD_DELETE_RING_R = 16;
+  const HOLD_DELETE_RING_C = 2 * Math.PI * HOLD_DELETE_RING_R;
+  const [holdingDelete, setHoldingDelete] = useState(false);
+  function startDeleteHold() {
+    if (!(creditCardsEditState.editMode && creditCardsEditState.hasSelection)) return;
+    setHoldingDelete(true);
+  }
+  function cancelDeleteHold() {
+    setHoldingDelete(false);
+  }
+  function onDeleteRingTransitionEnd(e) {
+    if (e.propertyName !== "stroke-dashoffset" || !holdingDelete) return;
+    setHoldingDelete(false);
+    creditCardsEditState.deleteSelected();
+  }
   function openTool(mode) {
     clearTimeout(toolCloseTimer.current);
     setToolClosing(false);
@@ -1414,9 +1445,7 @@ export default function Dashboard() {
       <Navbar
         transactions={transactions}
         onSelectTransaction={handleSelectTransaction}
-        onDeleteRecurringPayment={refreshTransactions}
-        onSaveRecurringPayment={refreshTransactions}
-        onPaycheckSaved={refreshTransactions}
+        onOpenTool={openTool}
         onCommand={(cmd, val) => {
           if (cmd === "devtools") setDevMenuOpen(val);
         }}
@@ -1611,6 +1640,16 @@ export default function Dashboard() {
                       </>
                     ),
                   },
+                  {
+                    key: "creditCards",
+                    label: "Credit Cards",
+                    icon: (
+                      <>
+                        <rect x="2" y="5" width="20" height="14" rx="2.2" />
+                        <line x1="2" y1="10" x2="22" y2="10" />
+                      </>
+                    ),
+                  },
                 ].map((tool) => {
                   const isActive = toolMode === tool.key;
                   const isHov = toolHov === tool.key;
@@ -1663,7 +1702,12 @@ export default function Dashboard() {
               className="px-6 py-6 flex-1"
               style={{
                 opacity: toolClosing ? 0 : 1,
-                transform: toolClosing ? "translateX(-32px)" : "translateX(0)",
+                // Only set a transform while actually animating - any value
+                // here (even translateX(0)) makes this the containing block
+                // for position:fixed descendants, breaking them out of true
+                // viewport-fixed positioning (panels like the credit card
+                // "+" picker would size/scroll against this div instead).
+                transform: toolClosing ? "translateX(-32px)" : undefined,
                 transition: `opacity ${TOOL_TRANSITION_MS}ms ease, transform ${TOOL_TRANSITION_MS}ms ease`,
                 animation: toolClosing
                   ? undefined
@@ -1702,13 +1746,13 @@ export default function Dashboard() {
                 >
                   {TOOL_TITLES[toolMode]}
                 </h1>
-                {(toolMode === "recurring" || toolMode === "installments") && (
+                {(toolMode === "recurring" || toolMode === "installments" || toolMode === "creditCards") && (
                   <div
                     style={{
                       marginLeft: "auto",
                       display: "flex",
                       alignItems: "center",
-                      gap: 10,
+                      gap: 14,
                     }}
                   >
                     {toolMode === "recurring" &&
@@ -1748,17 +1792,142 @@ export default function Dashboard() {
                         {recurringSaveState.isSaving ? "Saving…" : "Save"}
                       </button>
                     )}
+                    {toolMode === "creditCards" && (() => {
+                      const showDelete = creditCardsEditState.editMode && creditCardsEditState.hasSelection;
+                      return (
+                        <button
+                          onMouseDown={startDeleteHold}
+                          onMouseUp={cancelDeleteHold}
+                          onMouseLeave={cancelDeleteHold}
+                          onTouchStart={startDeleteHold}
+                          onTouchEnd={cancelDeleteHold}
+                          aria-label={`Hold to delete ${creditCardsEditState.selectionCount} selected`}
+                          tabIndex={showDelete ? 0 : -1}
+                          style={{
+                            width: showDelete ? 36 : 0,
+                            height: 36,
+                            borderRadius: "50%",
+                            flexShrink: 0,
+                            overflow: "hidden",
+                            cursor: showDelete ? "pointer" : "default",
+                            background: `color-mix(in srgb, ${HOME_EXPENSE} 16%, ${surface})`,
+                            border: `1px solid ${HOME_EXPENSE}`,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            position: "relative",
+                            color: HOME_EXPENSE,
+                            opacity: showDelete ? 1 : 0,
+                            transform: showDelete ? "scale(1)" : "scale(0.5)",
+                            marginLeft: showDelete ? 0 : -10,
+                            marginRight: showDelete ? 0 : -10,
+                            pointerEvents: showDelete ? "auto" : "none",
+                            userSelect: "none",
+                            transition:
+                              "width 220ms ease, margin 220ms ease, opacity 180ms ease, transform 220ms ease",
+                          }}
+                        >
+                          {/* Ring and icon share one 36x36 coordinate space so they're
+                              guaranteed to center on the same point - two separate
+                              overlapping SVGs left room for the two boxes to drift
+                              apart from each other. */}
+                          <svg
+                            width="36" height="36" viewBox="0 0 36 36"
+                            style={{ position: "absolute", inset: 0, pointerEvents: "none" }}
+                          >
+                            <g transform="translate(-1 -1)">
+                              <circle
+                                cx="18" cy="18" r={HOLD_DELETE_RING_R} fill="none" stroke={HOME_EXPENSE} strokeWidth="2.5"
+                                strokeLinecap="round"
+                                strokeDasharray={HOLD_DELETE_RING_C}
+                                strokeDashoffset={holdingDelete ? 0 : HOLD_DELETE_RING_C}
+                                transform="rotate(-90 18 18)"
+                                onTransitionEnd={onDeleteRingTransitionEnd}
+                                style={{
+                                  transition: holdingDelete
+                                    ? `stroke-dashoffset ${HOLD_DELETE_MS}ms linear`
+                                    : "stroke-dashoffset 150ms ease",
+                                }}
+                              />
+                              {/* Nested SVG viewport, not a hand-computed transform - x/y/width/height
+                                  place a 16x16 box at (10,10)-(26,26), i.e. centered in this 36x36
+                                  space ((36-16)/2 = 10 on each side), and its own viewBox handles
+                                  scaling the 24x24-authored icon down to fit. */}
+                              <svg x="10" y="10" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M3 6h18M19 6l-1 14H6L5 6M10 11v6M14 11v6M9 6V4h6v2" />
+                              </svg>
+                            </g>
+                          </svg>
+                        </button>
+                      );
+                    })()}
+                    {toolMode === "creditCards" && (
+                      <button
+                        onClick={creditCardsEditState.toggleEdit}
+                        aria-label={creditCardsEditState.editMode ? "Done editing" : "Edit credit card balances"}
+                        tabIndex={creditCardsEditState.hasRows ? 0 : -1}
+                        style={{
+                          width: creditCardsEditState.hasRows ? 36 : 0,
+                          height: 36,
+                          borderRadius: "50%",
+                          flexShrink: 0,
+                          overflow: "hidden",
+                          cursor: creditCardsEditState.hasRows ? "pointer" : "default",
+                          background: creditCardsEditState.editMode
+                            ? `color-mix(in srgb, ${HOME_INCOME} 18%, ${surface})`
+                            : surface,
+                          border: `1px solid ${creditCardsEditState.editMode ? HOME_INCOME : "rgba(255,255,255,0.07)"}`,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          position: "relative",
+                          color: creditCardsEditState.editMode ? HOME_INCOME : "#fff",
+                          opacity: creditCardsEditState.hasRows ? 1 : 0,
+                          transform: creditCardsEditState.hasRows ? "scale(1)" : "scale(0.5)",
+                          marginLeft: creditCardsEditState.hasRows ? 0 : -10,
+                          marginRight: creditCardsEditState.hasRows ? 0 : -10,
+                          pointerEvents: creditCardsEditState.hasRows ? "auto" : "none",
+                          transition:
+                            "width 220ms ease, margin 220ms ease, opacity 180ms ease, transform 220ms ease, background 200ms ease, border-color 200ms ease, color 200ms ease",
+                        }}
+                      >
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                          style={{
+                            position: "absolute",
+                            opacity: creditCardsEditState.editMode ? 1 : 0,
+                            transform: creditCardsEditState.editMode ? "scale(1) rotate(0deg)" : "scale(0.4) rotate(-45deg)",
+                            transition: "opacity 200ms ease, transform 200ms ease",
+                          }}
+                        >
+                          <path d="M20 6 9 17l-5-5" />
+                        </svg>
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                          style={{
+                            position: "absolute",
+                            opacity: creditCardsEditState.editMode ? 0 : 1,
+                            transform: creditCardsEditState.editMode ? "scale(0.4) rotate(45deg)" : "scale(1) rotate(0deg)",
+                            transition: "opacity 200ms ease, transform 200ms ease",
+                          }}
+                        >
+                          <path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                        </svg>
+                      </button>
+                    )}
                     {/* Same circular "+" mobile uses; the add UI lives in the panel. */}
                     <button
-                      onClick={() =>
-                        toolMode === "recurring"
-                          ? setRecurringAddSignal((n) => n + 1)
-                          : setInstallmentsAddSignal((n) => n + 1)
-                      }
+                      onClick={() => {
+                        if (toolMode === "recurring") setRecurringAddSignal((n) => n + 1);
+                        else if (toolMode === "installments") setInstallmentsAddSignal((n) => n + 1);
+                        else setCreditCardsAddSignal((n) => n + 1);
+                      }}
                       aria-label={
                         toolMode === "recurring"
                           ? "Add recurring payment"
-                          : "Add installment"
+                          : toolMode === "installments"
+                          ? "Add installment"
+                          : "Split a transaction as a credit card payment"
                       }
                       style={{
                         width: 36,
@@ -1827,6 +1996,19 @@ export default function Dashboard() {
                     desktop
                     addSignal={installmentsAddSignal}
                     onSaved={refreshTransactions}
+                  />
+                </div>
+              )}
+              {openedTools.has("creditCards") && (
+                <div
+                  style={{
+                    display: toolMode === "creditCards" ? "block" : "none",
+                  }}
+                >
+                  <CreditCardsPanel
+                    addSignal={creditCardsAddSignal}
+                    onChanged={refreshTransactions}
+                    onEditStateChange={setCreditCardsEditState}
                   />
                 </div>
               )}
@@ -3436,22 +3618,39 @@ export default function Dashboard() {
       )}
 
       {editingTransaction && (
-        <EditTransactionModal
-          // Keyed by id, or switching rows keeps the previous form values (#81).
-          key={editingTransaction.id}
-          transaction={editingTransaction}
-          onClose={() => {
-            setEditingTransaction(null);
-            setEditingFromSearch(false);
-          }}
-          onSaved={() => {
-            setEditingTransaction(null);
-            setEditingFromSearch(false);
-            refreshTransactions();
-          }}
-          onDelete={handleDelete}
-          onLocate={editingFromSearch ? handleLocateTransaction : undefined}
-        />
+        editingTransaction.credit_card_payment_id ? (
+          <CreditCardPaymentPanel
+            key={editingTransaction.id}
+            desktop
+            paymentId={editingTransaction.credit_card_payment_id}
+            onClose={() => {
+              setEditingTransaction(null);
+              setEditingFromSearch(false);
+            }}
+            onChanged={refreshTransactions}
+          />
+        ) : (
+          <EditTransactionModal
+            // Keyed by id, or switching rows keeps the previous form values (#81).
+            key={editingTransaction.id}
+            transaction={editingTransaction}
+            onClose={() => {
+              setEditingTransaction(null);
+              setEditingFromSearch(false);
+            }}
+            onSaved={() => {
+              setEditingTransaction(null);
+              setEditingFromSearch(false);
+              refreshTransactions();
+            }}
+            onDelete={handleDelete}
+            onLocate={editingFromSearch ? handleLocateTransaction : undefined}
+            onSplitAsPayment={(payment) => {
+              setEditingTransaction((prev) => prev && { ...prev, credit_card_payment_id: payment.id });
+              refreshTransactions();
+            }}
+          />
+        )
       )}
     </div>
   );

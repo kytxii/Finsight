@@ -1,5 +1,5 @@
 import { useState, useRef, useLayoutEffect } from "react";
-import { CATEGORY_CONFIG, lockedNameFor } from "../../utils/finance";
+import { CATEGORY_CONFIG, lockedNameFor, MONEY_OUT_TYPES } from "../../utils/finance";
 import { createTransaction } from "../../api/transactions";
 import { getToday } from "../../utils/time";
 import { HOME_SURFACE, HOME_DIVIDER, HOME_TEXT, HOME_MUTED, HOME_INCOME, HOME_EXPENSE, HOME_ACCENT, ACCENT, CATEGORY_ACCENT } from "../shared/categoryVisuals";
@@ -206,14 +206,19 @@ function SingleForm({ onSaved }) {
   const border = HOME_DIVIDER;
   const text   = HOME_TEXT;
 
-  const [form, setForm] = useState({ name: "", amount: "", category: "EXPENSE", transaction_date: getToday(), note: "" });
+  const [form, setForm] = useState({ name: "", amount: "", category: "EXPENSE", transaction_date: getToday(), note: "", paid_with_cash: false });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
     if (name === "category") {
-      setForm((f) => ({ ...f, category: value, name: lockedNameFor(value) ?? f.name }));
+      // Cash on hand only applies to spend categories - drop the flag along
+      // with the checkbox once it's switched away from one (#151).
+      setForm((f) => ({
+        ...f, category: value, name: lockedNameFor(value) ?? f.name,
+        paid_with_cash: MONEY_OUT_TYPES.has(value) ? f.paid_with_cash : false,
+      }));
     } else {
       setForm((f) => ({ ...f, [name]: value }));
     }
@@ -225,7 +230,7 @@ function SingleForm({ onSaved }) {
     setLoading(true);
     try {
       await createTransaction({ ...form, amount: parseFloat(form.amount) });
-      setForm((f) => ({ name: "", amount: "", category: f.category, transaction_date: getToday(), note: "" }));
+      setForm((f) => ({ name: "", amount: "", category: f.category, transaction_date: getToday(), note: "", paid_with_cash: false }));
       onSaved();
     } catch (err) {
       setError(err.response?.data?.detail ?? "Something went wrong");
@@ -306,6 +311,18 @@ function SingleForm({ onSaved }) {
           />
         </div>
       </div>
+
+      {MONEY_OUT_TYPES.has(form.category) && (
+        <label className="flex items-center gap-2 cursor-pointer" style={{ fontSize: 14, color: HOME_MUTED, marginTop: -8 }}>
+          <input
+            type="checkbox"
+            checked={form.paid_with_cash}
+            onChange={(e) => setForm((f) => ({ ...f, paid_with_cash: e.target.checked }))}
+            style={{ width: 16, height: 16, accentColor: catColor, cursor: "pointer" }}
+          />
+          Paid with cash on hand
+        </label>
+      )}
 
       <div>
         <label className="block text-sm font-medium mb-1.5">Note <span className="font-normal opacity-60">(optional)</span></label>
