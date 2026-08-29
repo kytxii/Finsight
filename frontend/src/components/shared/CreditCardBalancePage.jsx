@@ -67,6 +67,14 @@ export default function CreditCardBalancePage({ paymentId, mobile, onBack, onCha
   const [editMode, setEditMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState(() => new Set());
 
+  // Mobile only: "New transaction" / "Existing transactions" start collapsed
+  // behind an "Add a payment" toggle so the balance itself (stats, what it
+  // covers) is what's on screen first when the page opens, not two forms.
+  // Desktop keeps all three as always-visible columns (unaffected).
+  const [addOpen, setAddOpen] = useState(false);
+  // Which side of the mobile add card is showing - "new" | "existing".
+  const [addMode, setAddMode] = useState("new");
+
   function loadDetail() {
     setLoading(true);
     setLoadError(false);
@@ -302,20 +310,37 @@ export default function CreditCardBalancePage({ paymentId, mobile, onBack, onCha
           <Skel w={70} h={12} />
         </div>
 
-        <div
-          className={`grid ${mobile ? "grid-cols-2" : "grid-cols-3"} rounded-2xl overflow-hidden`}
-          style={{ backgroundColor: HOME_SURFACE, border: `1px solid ${border}` }}
-        >
-          {[0, 1, 2].map((i) => (
-            <div
-              key={i}
-              style={{ padding: mobile ? "13px 15px" : "15px 18px", borderLeft: i === 0 ? "none" : `1px solid ${border}` }}
-            >
+        {mobile ? (
+          <div className="rounded-2xl overflow-hidden" style={{ backgroundColor: HOME_SURFACE, border: `1px solid ${border}` }}>
+            <div style={{ padding: "13px 15px" }}>
               <Skel w={38} h={10} />
-              <Skel w={64} h={mobile ? 19 : 23} style={{ marginTop: 6 }} />
+              <Skel w={64} h={19} style={{ marginTop: 6 }} />
             </div>
-          ))}
-        </div>
+            <div className="grid grid-cols-2" style={{ borderTop: `1px solid ${border}` }}>
+              {[0, 1].map((i) => (
+                <div key={i} style={{ padding: "13px 15px", borderLeft: i === 0 ? "none" : `1px solid ${border}` }}>
+                  <Skel w={38} h={10} />
+                  <Skel w={64} h={19} style={{ marginTop: 6 }} />
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div
+            className="grid grid-cols-3 rounded-2xl overflow-hidden"
+            style={{ backgroundColor: HOME_SURFACE, border: `1px solid ${border}` }}
+          >
+            {[0, 1, 2].map((i) => (
+              <div
+                key={i}
+                style={{ padding: "15px 18px", borderLeft: i === 0 ? "none" : `1px solid ${border}` }}
+              >
+                <Skel w={38} h={10} />
+                <Skel w={64} h={23} style={{ marginTop: 6 }} />
+              </div>
+            ))}
+          </div>
+        )}
 
         <Skel h={8} style={{ borderRadius: 999 }} />
 
@@ -350,6 +375,272 @@ export default function CreditCardBalancePage({ paymentId, mobile, onBack, onCha
 
   const fullyAllocated = left <= 0;
 
+  // Inner content only, no card wrapper or title - desktop wraps each in its
+  // own standalone column below; mobile's single tabbed card (mobileAddCard)
+  // swaps between them under one shared "New / Existing" header instead.
+  const newTransactionForm = (
+    <form onSubmit={handleAllocate} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div>
+        <p style={labelStyle}>Name</p>
+        <input
+          type="text" value={draft.name} onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
+          onFocus={focusAccent} onBlur={blurAccent} placeholder="e.g. Gas"
+          className="w-full px-1 py-2 text-sm focus:outline-none transition-colors" style={underline()}
+        />
+      </div>
+      <div>
+        <p style={labelStyle}>Amount</p>
+        <CurrencyInput
+          value={draft.total_amount} onChange={(v) => setDraft((d) => ({ ...d, total_amount: v }))}
+          onFocus={focusAccent} onBlur={blurAccent} placeholder="0.00"
+          className="w-full px-1 py-2 text-sm focus:outline-none transition-colors" style={underline()}
+        />
+      </div>
+      <div>
+        <p style={labelStyle}>Category</p>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ width: 8, height: 8, borderRadius: "50%", flexShrink: 0, backgroundColor: CATEGORY_ACCENT[draft.category] }} />
+          <select
+            value={draft.category} onChange={(e) => setDraft((d) => ({ ...d, category: e.target.value }))}
+            onFocus={focusAccent} onBlur={blurAccent}
+            className="flex-1 min-w-0 px-1 py-2 text-sm focus:outline-none transition-colors cursor-pointer"
+            style={underline()}
+          >
+            {CATEGORY_OPTIONS.map((opt) => <option key={opt.value} value={opt.value} style={{ backgroundColor: HOME_SURFACE, color: text }}>{opt.label}</option>)}
+          </select>
+        </div>
+      </div>
+      <div>
+        <p style={labelStyle}>Date</p>
+        <input
+          type="date" value={draft.charge_date} onChange={(e) => setDraft((d) => ({ ...d, charge_date: e.target.value }))}
+          onFocus={focusAccent} onBlur={blurAccent}
+          className="w-full px-1 py-2 text-sm focus:outline-none transition-colors"
+          style={{ ...underline(), WebkitAppearance: "none", appearance: "none", colorScheme: "dark" }}
+        />
+      </div>
+      {parseFloat(draft.total_amount) > left && (
+        <p style={{ fontSize: 11, color: HOME_EXPENSE, margin: 0 }}>
+          Only {fmt(left)} left on this payment - lower the amount or use a bigger payment.
+        </p>
+      )}
+      <button
+        type="submit" disabled={parseFloat(draft.total_amount) > left}
+        className="transition-transform active:scale-[0.98]"
+        style={{
+          display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
+          padding: "12px 0", borderRadius: 11, border: "none",
+          backgroundColor: HOME_INCOME, color: "#04120a", fontSize: 13.5, fontWeight: 700,
+          cursor: "pointer", opacity: parseFloat(draft.total_amount) > left ? 0.5 : 1,
+        }}
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="14.5" height="14.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 5v14M5 12h14" />
+        </svg>
+        Add transaction
+      </button>
+    </form>
+  );
+
+  const existingTransactionsPicker = (
+    <>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <button type="button" onClick={() => setMonthOffset((m) => m - 1)} aria-label="Previous month" style={{ background: "none", border: "none", color: muted, cursor: "pointer", padding: 4, display: "flex" }}>
+          <IconChevron dir="left" />
+        </button>
+        <span style={{ fontSize: 13.5, fontWeight: 700, color: text }}>{monthLabel}</span>
+        <button type="button" onClick={() => setMonthOffset((m) => m + 1)} aria-label="Next month" style={{ background: "none", border: "none", color: muted, cursor: "pointer", padding: 4, display: "flex" }}>
+          <IconChevron dir="right" />
+        </button>
+      </div>
+      {txnOptions === null ? (
+        <Skel h={100} style={{ borderRadius: 8 }} />
+      ) : txnLoadFailed ? (
+        <p style={{ fontSize: 12, color: muted, margin: 0 }}>Couldn't load transactions.</p>
+      ) : txnForMonth.length === 0 ? (
+        <p style={{ fontSize: 12, color: muted, margin: 0 }}>Nothing available in {monthLabel}.</p>
+      ) : (
+        <div
+          className="no-scrollbar"
+          style={
+            mobile
+              ? { display: "flex", flexDirection: "column", gap: 6, maxHeight: 260, overflowY: "auto" }
+              : { display: "flex", flexDirection: "column", gap: 6, flex: 1, minHeight: 0, overflowY: "auto" }
+          }
+        >
+          {txnForMonth.map((t) => (
+            <button
+              key={t.id} type="button" onClick={() => pickTransaction(t)} disabled={coolingDown}
+              style={{
+                display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
+                padding: "10px 12px", borderRadius: 10, border: "none", textAlign: "left",
+                cursor: coolingDown ? "default" : "pointer",
+                backgroundColor: "rgba(255,255,255,0.05)", color: text, flexShrink: 0,
+                opacity: coolingDown ? 0.5 : 1,
+                transition: "background-color 150ms ease, opacity 150ms ease",
+              }}
+              onMouseEnter={(e) => { if (!coolingDown) e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.09)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.05)"; }}
+            >
+              <span style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                <span style={{ width: 8, height: 8, borderRadius: "50%", flexShrink: 0, backgroundColor: CATEGORY_ACCENT[t.category] ?? muted }} />
+                <span style={{ minWidth: 0 }}>
+                  <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 13.5, fontWeight: 600 }}>{t.name}</span>
+                  <span style={{ display: "block", marginTop: 1, fontSize: 11.5, color: muted }}>{shortDate(t.transaction_date)}</span>
+                </span>
+              </span>
+              <span style={{ flexShrink: 0, fontSize: 13, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
+                {fmt(t.amount)}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </>
+  );
+
+  const newTransactionBlock = (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: mobile ? 20 : 22, borderRadius: 14, border: `1px solid ${border}`, minHeight: 0 }}>
+      <p style={{ margin: 0, fontSize: 15, fontWeight: 700, color: text }}>New transaction</p>
+      {newTransactionForm}
+    </div>
+  );
+
+  const existingTransactionsBlock = (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: mobile ? 20 : 22, borderRadius: 14, border: `1px solid ${border}`, minHeight: 0 }}>
+      <p style={{ margin: 0, fontSize: 15, fontWeight: 700, color: text }}>Existing transactions</p>
+      {existingTransactionsPicker}
+    </div>
+  );
+
+  // Mobile only: one card with a "New / Existing" tab switcher instead of
+  // the two stacked standalone cards desktop uses - tapping a side swaps the
+  // card's content to that tool (#54 follow-up).
+  const mobileAddCard = (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14, padding: 20, borderRadius: 14, border: `1px solid ${border}`, minHeight: 0 }}>
+      <div style={{ display: "flex", gap: 6 }}>
+        {[["new", "New"], ["existing", "Existing"]].map(([key, label]) => (
+          <button
+            key={key} type="button" onClick={() => setAddMode(key)}
+            style={{
+              flex: 1, padding: "8px 8px", borderRadius: 9, border: "none", cursor: "pointer", fontSize: 12.5, fontWeight: 700,
+              color: addMode === key ? "#04120a" : muted,
+              backgroundColor: addMode === key ? HOME_INCOME : "rgba(255,255,255,0.06)",
+              transition: "background-color 150ms ease, color 150ms ease",
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {addMode === "new" ? newTransactionForm : existingTransactionsPicker}
+    </div>
+  );
+
+  const chargesBlock = (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: mobile ? 20 : 22, borderRadius: 14, border: `1px solid ${border}`, minHeight: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <p style={{ margin: 0, fontSize: 15, fontWeight: 700, color: text }}>CC Payments</p>
+          <span
+            style={{
+              padding: "2px 8px", borderRadius: 999, fontSize: 11, fontWeight: 700,
+              color: muted, backgroundColor: `color-mix(in srgb, ${muted} 16%, transparent)`,
+            }}
+          >
+            {detail.charges.length}
+          </span>
+        </div>
+        {/* Tucked into the header instead of its own full-width row above -
+            same toggle, just compact so it doesn't eat vertical space (#54). */}
+        {mobile && !fullyAllocated && (
+          <button
+            type="button"
+            onClick={() => setAddOpen((o) => !o)}
+            aria-label={addOpen ? "Hide add payment form" : "Add a payment"}
+            style={{
+              width: 28, height: 28, borderRadius: "50%", flexShrink: 0, cursor: "pointer",
+              border: "none", backgroundColor: HOME_INCOME, color: "#04120a",
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+              style={{ transform: addOpen ? "rotate(45deg)" : "none", transition: "transform 200ms ease" }}
+            >
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+          </button>
+        )}
+      </div>
+      {mobile && !fullyAllocated && (
+        // Always mounted (not addOpen &&) so the grid-rows transition below
+        // has real content to animate between 0fr and 1fr - conditionally
+        // mounting would just pop the content in/out instead of sliding it.
+        <div
+          style={{
+            display: "grid",
+            gridTemplateRows: addOpen ? "1fr" : "0fr",
+            transition: "grid-template-rows 280ms ease",
+          }}
+        >
+          <div style={{ overflow: "hidden", minHeight: 0 }}>
+            <div style={{ paddingBottom: 6 }}>
+              {mobileAddCard}
+            </div>
+          </div>
+        </div>
+      )}
+      {detail.charges.length === 0 ? (
+        <p style={{ fontSize: 12.5, color: muted, margin: 0 }}>Nothing allocated yet.</p>
+      ) : (
+        <div
+          className="no-scrollbar"
+          style={{
+            display: "flex", flexDirection: "column", gap: 6, overflowY: "auto", paddingRight: 2,
+            padding: editMode ? 8 : 0,
+            borderRadius: 12,
+            border: `1px solid ${editMode ? HOME_INCOME : "transparent"}`,
+            transition: "padding 200ms ease, border-color 200ms ease",
+            ...(mobile ? { maxHeight: 260 } : { flex: 1, minHeight: 0 }),
+          }}
+        >
+          {detail.charges.map((c) => {
+            const catColor = CATEGORY_ACCENT[c.category] ?? muted;
+            const checked = selectedIds.has(c.id);
+            return (
+              <div
+                key={c.id}
+                onClick={editMode ? () => toggleSelect(c.id) : undefined}
+                className={editMode ? "transition-colors" : undefined}
+                style={{
+                  display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
+                  padding: checked ? "9px 11px" : "10px 12px",
+                  borderRadius: 10,
+                  border: `${checked ? 2 : 1}px solid ${checked ? HOME_INCOME : "transparent"}`,
+                  backgroundColor: "rgba(255,255,255,0.05)", flexShrink: 0,
+                  cursor: editMode ? "pointer" : "default",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", flexShrink: 0, backgroundColor: catColor }} />
+                  <div style={{ minWidth: 0 }}>
+                    <p style={{ margin: 0, fontSize: 13.5, fontWeight: 600, color: text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</p>
+                    <p style={{ margin: "1px 0 0", fontSize: 11.5, color: muted }}>{formatDate(c.charge_date)}</p>
+                  </div>
+                </div>
+                <div style={{ textAlign: "right", flexShrink: 0 }}>
+                  <p style={{ margin: 0, fontSize: 13.5, fontWeight: 700, color: text, fontVariantNumeric: "tabular-nums" }}>{fmt(c.total_amount)}</p>
+                  <p style={{ margin: "1px 0 0", fontSize: 11, color: HOME_INCOME, fontWeight: 600 }}>Paid</p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: mobile ? 16 : 18 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
@@ -357,43 +648,79 @@ export default function CreditCardBalancePage({ paymentId, mobile, onBack, onCha
         <p style={{ margin: 0, fontSize: 12.5, color: muted }}>{formatDate(detail.payment_date)}</p>
       </div>
 
-      <div
-        className={`grid ${mobile ? "grid-cols-2" : "grid-cols-3"} rounded-2xl overflow-hidden`}
-        style={{ backgroundColor: HOME_SURFACE, border: `1px solid ${border}` }}
-      >
-        {[
-          ["Total", detail.total_amount, text],
-          ["Paid", detail.paid, HOME_INCOME],
-          ["Left", detail.left, left > 0 ? HOME_EXPENSE : muted],
-        ].map(([label, value, color], i) => {
-          const dueLabel = label === "Total" && detail.due_date ? `Due ${shortDate(detail.due_date)}` : null;
-          return (
-            <div
-              key={label}
-              style={{
-                padding: mobile ? "13px 15px" : "15px 18px",
-                borderLeft: i === 0 || (mobile && i === 2) ? "none" : `1px solid ${border}`,
-                borderTop: mobile && i >= 2 ? `1px solid ${border}` : "none",
-                position: "relative",
-              }}
-            >
-              <p style={{ fontSize: 11, fontWeight: 600, color: muted, textTransform: "uppercase", letterSpacing: "0.05em", margin: 0 }}>{label}</p>
-              <p style={{ fontSize: mobile ? 19 : 23, fontWeight: 700, color, margin: "4px 0 0", fontVariantNumeric: "tabular-nums" }}>{fmt(value)}</p>
-              {dueLabel && (
-                <span
-                  style={{
-                    position: "absolute", bottom: mobile ? 10 : 12, right: mobile ? 12 : 16,
-                    padding: "3px 9px", borderRadius: 999, fontSize: 10.5, fontWeight: 700,
-                    color: muted, backgroundColor: `color-mix(in srgb, ${muted} 16%, transparent)`,
-                  }}
-                >
-                  {dueLabel}
-                </span>
-              )}
-            </div>
-          );
-        })}
-      </div>
+      {mobile ? (
+        // Total gets its own full-width row on top - stacked into the same
+        // 3 columns as desktop below, Left would land alone on its own
+        // half-width row instead of lining up under Paid.
+        <div
+          className="rounded-2xl overflow-hidden"
+          style={{ backgroundColor: HOME_SURFACE, border: `1px solid ${border}` }}
+        >
+          <div style={{ padding: "13px 15px", position: "relative" }}>
+            <p style={{ fontSize: 11, fontWeight: 600, color: muted, textTransform: "uppercase", letterSpacing: "0.05em", margin: 0 }}>Total</p>
+            <p style={{ fontSize: 19, fontWeight: 700, color: text, margin: "4px 0 0", fontVariantNumeric: "tabular-nums" }}>{fmt(detail.total_amount)}</p>
+            {detail.due_date && (
+              <span
+                style={{
+                  position: "absolute", bottom: 10, right: 12,
+                  padding: "3px 9px", borderRadius: 999, fontSize: 10.5, fontWeight: 700,
+                  color: muted, backgroundColor: `color-mix(in srgb, ${muted} 16%, transparent)`,
+                }}
+              >
+                Due {shortDate(detail.due_date)}
+              </span>
+            )}
+          </div>
+          <div className="grid grid-cols-2" style={{ borderTop: `1px solid ${border}` }}>
+            {[
+              ["Paid", detail.paid, HOME_INCOME],
+              ["Left", detail.left, left > 0 ? HOME_EXPENSE : muted],
+            ].map(([label, value, color], i) => (
+              <div key={label} style={{ padding: "13px 15px", borderLeft: i === 0 ? "none" : `1px solid ${border}` }}>
+                <p style={{ fontSize: 11, fontWeight: 600, color: muted, textTransform: "uppercase", letterSpacing: "0.05em", margin: 0 }}>{label}</p>
+                <p style={{ fontSize: 19, fontWeight: 700, color, margin: "4px 0 0", fontVariantNumeric: "tabular-nums" }}>{fmt(value)}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div
+          className="grid grid-cols-3 rounded-2xl overflow-hidden"
+          style={{ backgroundColor: HOME_SURFACE, border: `1px solid ${border}` }}
+        >
+          {[
+            ["Total", detail.total_amount, text],
+            ["Paid", detail.paid, HOME_INCOME],
+            ["Left", detail.left, left > 0 ? HOME_EXPENSE : muted],
+          ].map(([label, value, color], i) => {
+            const dueLabel = label === "Total" && detail.due_date ? `Due ${shortDate(detail.due_date)}` : null;
+            return (
+              <div
+                key={label}
+                style={{
+                  padding: "15px 18px",
+                  borderLeft: i === 0 ? "none" : `1px solid ${border}`,
+                  position: "relative",
+                }}
+              >
+                <p style={{ fontSize: 11, fontWeight: 600, color: muted, textTransform: "uppercase", letterSpacing: "0.05em", margin: 0 }}>{label}</p>
+                <p style={{ fontSize: 23, fontWeight: 700, color, margin: "4px 0 0", fontVariantNumeric: "tabular-nums" }}>{fmt(value)}</p>
+                {dueLabel && (
+                  <span
+                    style={{
+                      position: "absolute", bottom: 12, right: 16,
+                      padding: "3px 9px", borderRadius: 999, fontSize: 10.5, fontWeight: 700,
+                      color: muted, backgroundColor: `color-mix(in srgb, ${muted} 16%, transparent)`,
+                    }}
+                  >
+                    {dueLabel}
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       <style>{`@keyframes cc-progress-stripes { from { background-position: 0 0; } to { background-position: 20px 0; } }`}</style>
       <div style={{ height: 8, borderRadius: 999, backgroundColor: `color-mix(in srgb, ${text} 10%, transparent)`, overflow: "hidden" }}>
@@ -454,213 +781,15 @@ export default function CreditCardBalancePage({ paymentId, mobile, onBack, onCha
           height: mobile || fullyAllocated ? undefined : 460,
         }}
       >
-        {!fullyAllocated && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: mobile ? 20 : 22, borderRadius: 14, border: `1px solid ${border}`, minHeight: 0 }}>
-            <p style={{ margin: 0, fontSize: 15, fontWeight: 700, color: text }}>New transaction</p>
-            <form onSubmit={handleAllocate} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              <div>
-                <p style={labelStyle}>Name</p>
-                <input
-                  type="text" value={draft.name} onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
-                  onFocus={focusAccent} onBlur={blurAccent} placeholder="e.g. Gas"
-                  className="w-full px-1 py-2 text-sm focus:outline-none transition-colors" style={underline()}
-                />
-              </div>
-              <div>
-                <p style={labelStyle}>Amount</p>
-                <CurrencyInput
-                  value={draft.total_amount} onChange={(v) => setDraft((d) => ({ ...d, total_amount: v }))}
-                  onFocus={focusAccent} onBlur={blurAccent} placeholder="0.00"
-                  className="w-full px-1 py-2 text-sm focus:outline-none transition-colors" style={underline()}
-                />
-              </div>
-              <div>
-                <p style={labelStyle}>Category</p>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ width: 8, height: 8, borderRadius: "50%", flexShrink: 0, backgroundColor: CATEGORY_ACCENT[draft.category] }} />
-                  <select
-                    value={draft.category} onChange={(e) => setDraft((d) => ({ ...d, category: e.target.value }))}
-                    onFocus={focusAccent} onBlur={blurAccent}
-                    className="flex-1 min-w-0 px-1 py-2 text-sm focus:outline-none transition-colors cursor-pointer"
-                    style={underline()}
-                  >
-                    {CATEGORY_OPTIONS.map((opt) => <option key={opt.value} value={opt.value} style={{ backgroundColor: HOME_SURFACE, color: text }}>{opt.label}</option>)}
-                  </select>
-                </div>
-                {/* Trying this as an alternative to the dropdown above - both shown for now (#54). */}
-                <div style={{ display: "flex", borderRadius: 999, overflow: "hidden", border: `1px solid ${border}`, marginTop: 8 }}>
-                  {CATEGORY_OPTIONS.map((opt, i) => {
-                    const active = draft.category === opt.value;
-                    return (
-                      <button
-                        key={opt.value} type="button" onClick={() => setDraft((d) => ({ ...d, category: opt.value }))}
-                        style={{
-                          flex: 1, padding: "7px 4px", border: "none",
-                          borderLeft: i === 0 ? "none" : `1px solid ${border}`,
-                          fontSize: 10.5, fontWeight: 700, cursor: "pointer", textAlign: "center",
-                          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                          backgroundColor: active ? CATEGORY_ACCENT[opt.value] : "transparent",
-                          color: active ? "#fff" : muted,
-                          transition: "background-color 150ms ease, color 150ms ease",
-                        }}
-                      >
-                        {opt.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-              <div>
-                <p style={labelStyle}>Date</p>
-                <input
-                  type="date" value={draft.charge_date} onChange={(e) => setDraft((d) => ({ ...d, charge_date: e.target.value }))}
-                  onFocus={focusAccent} onBlur={blurAccent}
-                  className="w-full px-1 py-2 text-sm focus:outline-none transition-colors"
-                  style={{ ...underline(), WebkitAppearance: "none", appearance: "none", colorScheme: "dark" }}
-                />
-              </div>
-              {parseFloat(draft.total_amount) > left && (
-                <p style={{ fontSize: 11, color: HOME_EXPENSE, margin: 0 }}>
-                  Only {fmt(left)} left on this payment - lower the amount or use a bigger payment.
-                </p>
-              )}
-              <button
-                type="submit" disabled={parseFloat(draft.total_amount) > left}
-                className="transition-transform active:scale-[0.98]"
-                style={{
-                  display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
-                  padding: "12px 0", borderRadius: 11, border: "none",
-                  backgroundColor: HOME_INCOME, color: "#04120a", fontSize: 13.5, fontWeight: 700,
-                  cursor: "pointer", opacity: parseFloat(draft.total_amount) > left ? 0.5 : 1,
-                }}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="14.5" height="14.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12 5v14M5 12h14" />
-                </svg>
-                Add transaction
-              </button>
-            </form>
-          </div>
+        {mobile ? (
+          chargesBlock
+        ) : (
+          <>
+            {!fullyAllocated && newTransactionBlock}
+            {!fullyAllocated && existingTransactionsBlock}
+            {chargesBlock}
+          </>
         )}
-
-        {!fullyAllocated && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: mobile ? 20 : 22, borderRadius: 14, border: `1px solid ${border}`, minHeight: 0 }}>
-            <p style={{ margin: 0, fontSize: 15, fontWeight: 700, color: text }}>Existing transactions</p>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <button type="button" onClick={() => setMonthOffset((m) => m - 1)} aria-label="Previous month" style={{ background: "none", border: "none", color: muted, cursor: "pointer", padding: 4, display: "flex" }}>
-                <IconChevron dir="left" />
-              </button>
-              <span style={{ fontSize: 13.5, fontWeight: 700, color: text }}>{monthLabel}</span>
-              <button type="button" onClick={() => setMonthOffset((m) => m + 1)} aria-label="Next month" style={{ background: "none", border: "none", color: muted, cursor: "pointer", padding: 4, display: "flex" }}>
-                <IconChevron dir="right" />
-              </button>
-            </div>
-            {txnOptions === null ? (
-              <Skel h={100} style={{ borderRadius: 8 }} />
-            ) : txnLoadFailed ? (
-              <p style={{ fontSize: 12, color: muted, margin: 0 }}>Couldn't load transactions.</p>
-            ) : txnForMonth.length === 0 ? (
-              <p style={{ fontSize: 12, color: muted, margin: 0 }}>Nothing available in {monthLabel}.</p>
-            ) : (
-              <div
-                className="no-scrollbar"
-                style={
-                  mobile
-                    ? { display: "flex", flexDirection: "column", gap: 6, maxHeight: 260, overflowY: "auto" }
-                    : { display: "flex", flexDirection: "column", gap: 6, flex: 1, minHeight: 0, overflowY: "auto" }
-                }
-              >
-                {txnForMonth.map((t) => (
-                  <button
-                    key={t.id} type="button" onClick={() => pickTransaction(t)} disabled={coolingDown}
-                    style={{
-                      display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
-                      padding: "10px 12px", borderRadius: 10, border: "none", textAlign: "left",
-                      cursor: coolingDown ? "default" : "pointer",
-                      backgroundColor: "rgba(255,255,255,0.05)", color: text, flexShrink: 0,
-                      opacity: coolingDown ? 0.5 : 1,
-                      transition: "background-color 150ms ease, opacity 150ms ease",
-                    }}
-                    onMouseEnter={(e) => { if (!coolingDown) e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.09)"; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.05)"; }}
-                  >
-                    <span style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-                      <span style={{ width: 8, height: 8, borderRadius: "50%", flexShrink: 0, backgroundColor: CATEGORY_ACCENT[t.category] ?? muted }} />
-                      <span style={{ minWidth: 0 }}>
-                        <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 13.5, fontWeight: 600 }}>{t.name}</span>
-                        <span style={{ display: "block", marginTop: 1, fontSize: 11.5, color: muted }}>{shortDate(t.transaction_date)}</span>
-                      </span>
-                    </span>
-                    <span style={{ flexShrink: 0, fontSize: 13, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
-                      {fmt(t.amount)}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: mobile ? 20 : 22, borderRadius: 14, border: `1px solid ${border}`, minHeight: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <p style={{ margin: 0, fontSize: 15, fontWeight: 700, color: text }}>CC Payments</p>
-            <span
-              style={{
-                padding: "2px 8px", borderRadius: 999, fontSize: 11, fontWeight: 700,
-                color: muted, backgroundColor: `color-mix(in srgb, ${muted} 16%, transparent)`,
-              }}
-            >
-              {detail.charges.length}
-            </span>
-          </div>
-          {detail.charges.length === 0 ? (
-            <p style={{ fontSize: 12.5, color: muted, margin: 0 }}>Nothing allocated yet.</p>
-          ) : (
-            <div
-              className="no-scrollbar"
-              style={{
-                display: "flex", flexDirection: "column", gap: 6, overflowY: "auto", paddingRight: 2,
-                padding: editMode ? 8 : 0,
-                borderRadius: 12,
-                border: `1px solid ${editMode ? HOME_INCOME : "transparent"}`,
-                transition: "padding 200ms ease, border-color 200ms ease",
-                ...(mobile ? { maxHeight: 260 } : { flex: 1, minHeight: 0 }),
-              }}
-            >
-              {detail.charges.map((c) => {
-                const catColor = CATEGORY_ACCENT[c.category] ?? muted;
-                const checked = selectedIds.has(c.id);
-                return (
-                  <div
-                    key={c.id}
-                    onClick={editMode ? () => toggleSelect(c.id) : undefined}
-                    className={editMode ? "transition-colors" : undefined}
-                    style={{
-                      display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
-                      padding: checked ? "9px 11px" : "10px 12px",
-                      borderRadius: 10,
-                      border: `${checked ? 2 : 1}px solid ${checked ? HOME_INCOME : "transparent"}`,
-                      backgroundColor: "rgba(255,255,255,0.05)", flexShrink: 0,
-                      cursor: editMode ? "pointer" : "default",
-                    }}
-                  >
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-                      <span style={{ width: 8, height: 8, borderRadius: "50%", flexShrink: 0, backgroundColor: catColor }} />
-                      <div style={{ minWidth: 0 }}>
-                        <p style={{ margin: 0, fontSize: 13.5, fontWeight: 600, color: text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</p>
-                        <p style={{ margin: "1px 0 0", fontSize: 11.5, color: muted }}>{formatDate(c.charge_date)}</p>
-                      </div>
-                    </div>
-                    <div style={{ textAlign: "right", flexShrink: 0 }}>
-                      <p style={{ margin: 0, fontSize: 13.5, fontWeight: 700, color: text, fontVariantNumeric: "tabular-nums" }}>{fmt(c.total_amount)}</p>
-                      <p style={{ margin: "1px 0 0", fontSize: 11, color: HOME_INCOME, fontWeight: 600 }}>Paid</p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
       </div>
       {formError && <p style={{ fontSize: 11.5, color: HOME_EXPENSE, margin: 0 }}>{formError}</p>}
     </div>

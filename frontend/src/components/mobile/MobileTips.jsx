@@ -97,6 +97,12 @@ export default function MobileTips({ transactions, loading, onBack, onEditTransa
   const shownTips = showAllTips ? tips : tips.slice(0, TIPS_PAGE);
   const shownDeposits = showAllDeposits ? monthDeposits : monthDeposits.slice(0, DEPOSITS_PAGE);
 
+  function startNewDeposit() {
+    setEditingId(null);
+    setDraft({ amount: "", deposit_date: getToday() });
+    setShowForm(true);
+  }
+
   function startEditDeposit(d) {
     setEditingId(d.id);
     setDraft({ amount: String(d.amount), deposit_date: d.deposit_date });
@@ -251,11 +257,24 @@ export default function MobileTips({ transactions, loading, onBack, onEditTransa
       <div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "0 4px 12px" }}>
           <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, letterSpacing: "-0.4px", color: HOME_TEXT }}>Deposits</h2>
-          {monthDeposits.length > DEPOSITS_PAGE && (
-            <span onClick={() => setShowAllDeposits((v) => !v)} style={{ color: HOME_ACCENT, fontSize: 15, fontWeight: 600, cursor: "pointer" }}>
-              {showAllDeposits ? "See less" : "See all"}
-            </span>
-          )}
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            {monthDeposits.length > DEPOSITS_PAGE && (
+              <span onClick={() => setShowAllDeposits((v) => !v)} style={{ color: HOME_ACCENT, fontSize: 15, fontWeight: 600, cursor: "pointer" }}>
+                {showAllDeposits ? "See less" : "See all"}
+              </span>
+            )}
+            <button
+              onClick={startNewDeposit}
+              aria-label="Add deposit"
+              style={{
+                width: 32, height: 32, borderRadius: "50%", flexShrink: 0, cursor: "pointer",
+                background: `color-mix(in srgb, ${TIPS_DEPOSITED} 16%, transparent)`, border: `1px solid ${TIPS_DEPOSITED}`,
+                color: TIPS_DEPOSITED, display: "flex", alignItems: "center", justifyContent: "center",
+              }}
+            >
+              <IconPlus />
+            </button>
+          </div>
         </div>
 
         {showForm && (

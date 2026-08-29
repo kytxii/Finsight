@@ -10,6 +10,7 @@ class TransactionBase(BaseModel):
     transaction_date: date
     category: Category
     note: str | None = Field(default=None, max_length=100)
+    paid_with_cash: bool = False
 
 class CreateTransaction(TransactionBase):
     pass

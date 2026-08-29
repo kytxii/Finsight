@@ -181,11 +181,10 @@ export default function MobileAnalytics({ transactions, deposits = [], loading, 
   }, [transactions, deposits, periodKey]);
 
   const months = useMemo(() => lastMonths(TREND_MONTHS), []);
-  const extendedMonths = useMemo(() => lastMonths(TREND_MONTHS + 1), []);
 
   const monthlyTotals = useMemo(() => {
     const byMonth = {};
-    extendedMonths.forEach((m) => { byMonth[m.key] = { income: 0, expense: 0, savings: 0 }; });
+    months.forEach((m) => { byMonth[m.key] = { income: 0, expense: 0, savings: 0 }; });
     transactions.forEach((t) => {
       const key = monthKey(t.transaction_date);
       const bucket = byMonth[key];
@@ -200,7 +199,7 @@ export default function MobileAnalytics({ transactions, deposits = [], loading, 
       if (bucket) bucket.income += parseFloat(d.amount);
     });
     return byMonth;
-  }, [transactions, deposits, extendedMonths]);
+  }, [transactions, deposits, months]);
 
   const trendMax = useMemo(
     () => Math.max(1, ...months.map((m) => Math.max(monthlyTotals[m.key].income, monthlyTotals[m.key].expense))),
@@ -209,16 +208,12 @@ export default function MobileAnalytics({ transactions, deposits = [], loading, 
 
   const hasTrendData = months.some((m) => monthlyTotals[m.key].income > 0 || monthlyTotals[m.key].expense > 0);
 
-  const savingsSummary = useMemo(() => {
-    return months.map((m, i) => {
-      const prevKey = extendedMonths[i].key; // one slot behind - extendedMonths has the extra lead-in month
-      const prevAmount = monthlyTotals[prevKey]?.savings ?? 0;
-      const amount = monthlyTotals[m.key]?.savings ?? 0;
-      if (prevAmount > 0) return { ...m, amount, change: ((amount - prevAmount) / prevAmount) * 100, isNew: false };
-      if (amount > 0) return { ...m, amount, change: null, isNew: true }; // started from $0 - no meaningful %
-      return { ...m, amount, change: null, isNew: false };
-    });
-  }, [months, extendedMonths, monthlyTotals]);
+  // Plain $ saved per month (#78) - no rate/ratio framing, so there's no
+  // >100% case to fake an answer for. Just the measured amount.
+  const savingsSummary = useMemo(
+    () => months.map((m) => ({ ...m, amount: monthlyTotals[m.key]?.savings ?? 0 })),
+    [months, monthlyTotals],
+  );
 
   const hasSavingsData = savingsSummary.some((m) => m.amount > 0);
   const savingsMax = Math.max(1, ...savingsSummary.map((m) => m.amount));
@@ -349,40 +344,26 @@ export default function MobileAnalytics({ transactions, deposits = [], loading, 
         )}
       </SectionCard>
 
-      <SectionCard title="Savings Rate">
+      <SectionCard title="Savings">
         {loading ? (
           <TrendChartSkel bars={1} />
         ) : !hasSavingsData ? (
           <Empty />
         ) : (
-          <>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 6, height: 110 }}>
-              {savingsSummary.map((m) => {
-                const h = Math.max(2, (m.amount / savingsMax) * 100);
-                return (
-                  <div key={m.key} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center" }}>
-                    <div style={{ flex: 1, display: "flex", alignItems: "flex-end", width: "100%", justifyContent: "center" }}>
-                      <div title={fmt(m.amount)} style={{ width: 14, height: `${h}%`, borderRadius: "3px 3px 0 0", backgroundColor: TILE_COLOR.SAVINGS }} />
-                    </div>
-                    <span style={{ fontSize: 11, fontWeight: 600, color: HOME_MUTED, marginTop: 4 }}>{m.label}</span>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 6, height: 110 }}>
+            {savingsSummary.map((m) => {
+              const h = Math.max(2, (m.amount / savingsMax) * 100);
+              return (
+                <div key={m.key} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center" }}>
+                  <div style={{ flex: 1, display: "flex", alignItems: "flex-end", width: "100%", justifyContent: "center" }}>
+                    <div title={fmt(m.amount)} style={{ width: 14, height: `${h}%`, borderRadius: "3px 3px 0 0", backgroundColor: TILE_COLOR.SAVINGS }} />
                   </div>
-                );
-              })}
-            </div>
-            <div style={{ display: "flex", marginTop: 10 }}>
-              {savingsSummary.map((m) => (
-                <div key={m.key} style={{ flex: 1, textAlign: "center" }}>
-                  <p style={{ margin: 0, fontSize: 11.5, fontWeight: 700, color: HOME_TEXT }}>{fmtShort(m.amount)}</p>
-                  <p style={{
-                    margin: "2px 0 0", fontSize: 10.5, fontWeight: 700,
-                    color: m.isNew ? TILE_COLOR.SAVINGS : m.change == null ? HOME_MUTED : m.change >= 0 ? HOME_INCOME : HOME_EXPENSE,
-                  }}>
-                    {m.isNew ? "New" : m.change == null ? "—" : `${m.change >= 0 ? "+" : "-"}${Math.abs(m.change).toFixed(0)}%`}
-                  </p>
+                  <p style={{ margin: "6px 0 0", fontSize: 11.5, fontWeight: 700, color: HOME_TEXT }}>{fmtShort(m.amount)}</p>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: HOME_MUTED, marginTop: 1 }}>{m.label}</span>
                 </div>
-              ))}
-            </div>
-          </>
+              );
+            })}
+          </div>
         )}
       </SectionCard>
 

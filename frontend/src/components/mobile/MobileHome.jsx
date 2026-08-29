@@ -320,6 +320,7 @@ export default function MobileHome({
   onOpenRecurring,
   onOpenPaychecks,
   onOpenInstallments,
+  onOpenCreditCards,
   onOpenBreakdown,
   onViewCategory,
   onSeeAllTransactions,
@@ -761,6 +762,17 @@ export default function MobileHome({
             iconBg="#2a2a2e"
             label="Installments"
             onClick={onOpenInstallments}
+          />
+          <Row
+            icon={
+              <IconGray>
+                <rect x="2" y="5" width="20" height="14" rx="2.2" />
+                <line x1="2" y1="10" x2="22" y2="10" />
+              </IconGray>
+            }
+            iconBg="#2a2a2e"
+            label="Credit Cards"
+            onClick={onOpenCreditCards}
           />
         </div>
       </div>

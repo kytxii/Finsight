@@ -3,7 +3,7 @@ import { updateTransaction } from "../../api/transactions";
 import { updateRecurringPayment } from "../../api/recurringPayments";
 import { createPaymentFromTransaction } from "../../api/creditCard";
 import { errorMessage } from "../../utils/errors";
-import { lockedNameFor } from "../../utils/finance";
+import { lockedNameFor, MONEY_OUT_TYPES } from "../../utils/finance";
 import CurrencyInput from "../shared/CurrencyInput";
 import CategoryPicker from "./CategoryPicker";
 import CompactDateField from "./CompactDateField";
@@ -44,6 +44,7 @@ export default function MobileTransactionModal({ transaction, onClose, onSaved, 
     category: transaction.category,
     transaction_date: transaction.transaction_date,
     note: transaction.note ?? "",
+    paid_with_cash: transaction.paid_with_cash ?? false,
   });
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -56,7 +57,12 @@ export default function MobileTransactionModal({ transaction, onClose, onSaved, 
   const busy = saving || deleting;
 
   function setCategory(category) {
-    setForm((f) => ({ ...f, category, name: lockedNameFor(category) ?? f.name }));
+    // Cash on hand only applies to spend categories - drop the flag along
+    // with the checkbox once it's switched away from one (#151).
+    setForm((f) => ({
+      ...f, category, name: lockedNameFor(category) ?? f.name,
+      paid_with_cash: MONEY_OUT_TYPES.has(category) ? f.paid_with_cash : false,
+    }));
   }
 
   async function handleSave() {
@@ -206,6 +212,18 @@ export default function MobileTransactionModal({ transaction, onClose, onSaved, 
             />
           </div>
         </div>
+
+        {MONEY_OUT_TYPES.has(form.category) && (
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, color: HOME_MUTED, cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={form.paid_with_cash}
+              onChange={(e) => setForm((f) => ({ ...f, paid_with_cash: e.target.checked }))}
+              style={{ width: 17, height: 17, accentColor: tileColor, cursor: "pointer" }}
+            />
+            Paid with cash on hand
+          </label>
+        )}
 
         <div>
           <p style={labelStyle}>Note (optional)</p>

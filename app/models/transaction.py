@@ -1,4 +1,4 @@
-from sqlalchemy import String, Numeric, Date, DateTime, Enum as CategoryEnum, UUID, ForeignKey
+from sqlalchemy import String, Numeric, Date, DateTime, Boolean, Enum as CategoryEnum, UUID, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 from datetime import datetime, date, timezone
 from decimal import Decimal
@@ -16,6 +16,13 @@ class Transaction(Base):
     transaction_date: Mapped[date] = mapped_column(Date, nullable=False)
     category: Mapped[Category] = mapped_column(CategoryEnum(Category), nullable=False)
     note: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+    # True when this expense was paid for with cash on hand rather than from a
+    # tracked account - cash tips are never counted as income until deposited
+    # (#131), so an expense funded straight from that same untracked cash
+    # shouldn't reduce tracked balances either. See _balance_delta and
+    # get_estimated_savings in paycheck_service.py (#151).
+    paid_with_cash: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))

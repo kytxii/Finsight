@@ -383,8 +383,14 @@ def _balance_delta(t: Transaction) -> Decimal:
     re-categorized breakdown of money that already left checking once, via its
     CreditCardPayment's own anchor transaction. Counting it again here would
     double the cash impact of a single real payment (#54).
+
+    An expense paid_with_cash is also 0, for the same reason from the other
+    direction: it's money that left cash-on-hand, not checking - and cash
+    tips that funded it were never counted as income here either (#131).
+    Counting the expense side without the income side is exactly the
+    asymmetry #151 fixes.
     """
-    if t.category == Category.TIPS or t.credit_card_charge_id is not None:
+    if t.category == Category.TIPS or t.credit_card_charge_id is not None or t.paid_with_cash:
         return Decimal("0")
     return t.amount if t.category in INCOME_CATEGORIES else -t.amount
 
@@ -664,9 +670,11 @@ async def get_estimated_savings(current_user: UUID, db: AsyncSession) -> Estimat
     # Discretionary spend average over the completed months before this one.
     # SAVINGS excluded (it's saving, surfaced separately), recurring-linked
     # transactions excluded (fixed bills are added back separately, so
-    # counting them here too would double-count), and settled credit card
+    # counting them here too would double-count), settled credit card
     # charges excluded for the same reason - that spend is already counted via
-    # its payment's anchor transaction (#54).
+    # its payment's anchor transaction (#54) - and cash-funded expenses
+    # excluded because the cash that paid for them was never counted as
+    # income here either (#151).
     history_start = _add_months(month_start, -SAVINGS_HISTORY_MONTHS)
     spend_rows = (await db.execute(
         select(Transaction.transaction_date, Transaction.amount).where(
@@ -674,6 +682,7 @@ async def get_estimated_savings(current_user: UUID, db: AsyncSession) -> Estimat
             Transaction.category.in_(NON_SAVINGS_EXPENSE_CATEGORIES),
             Transaction.recurring_payment_id.is_(None),
             Transaction.credit_card_charge_id.is_(None),
+            Transaction.paid_with_cash.is_(False),
             Transaction.transaction_date >= history_start,
             Transaction.transaction_date < month_start,
         )
@@ -758,6 +767,7 @@ async def get_estimated_savings(current_user: UUID, db: AsyncSession) -> Estimat
             Transaction.category.in_(NON_SAVINGS_EXPENSE_CATEGORIES),
             Transaction.recurring_payment_id.is_(None),
             Transaction.credit_card_charge_id.is_(None),
+            Transaction.paid_with_cash.is_(False),
             Transaction.transaction_date >= month_start,
             Transaction.transaction_date <= today,
         ))

@@ -2025,6 +2025,33 @@ const SEED_TRANSACTIONS = [
     category: "TIPS",
     transaction_date: "2026-04-26",
   },
+  // Settled charges for the demo credit card balance below (SEED_CREDIT_CARD_CHARGES)
+  // - mirrors the real "settled" transaction allocateCreditCardPayment creates,
+  // tagged so balance/spend math skips them (already counted via the payment).
+  {
+    id: "demo-t-cc-1",
+    name: "Amazon",
+    amount: "245.00",
+    category: "EXPENSE",
+    transaction_date: "2026-04-04",
+    credit_card_charge_id: "demo-ccc-1",
+  },
+  {
+    id: "demo-t-cc-2",
+    name: "Whole Foods Market",
+    amount: "165.00",
+    category: "EXPENSE",
+    transaction_date: "2026-04-12",
+    credit_card_charge_id: "demo-ccc-2",
+  },
+  {
+    id: "demo-t-cc-3",
+    name: "Spotify Family (Annual)",
+    amount: "90.00",
+    category: "SUBSCRIPTION",
+    transaction_date: "2026-04-20",
+    credit_card_charge_id: "demo-ccc-3",
+  },
 ];
 
 const SEED_RECURRING = [
@@ -2162,6 +2189,53 @@ const SEED_INSTALLMENTS = [
   },
 ];
 
+// One demo card, partially paid off (#54) - total_amount bigger than what's
+// been allocated to charges so far, so "left" > 0 and the progress bar reads
+// as in-progress instead of empty or fully paid.
+const SEED_CREDIT_CARD_PAYMENTS = [
+  {
+    id: "demo-ccp-1",
+    name: "Credit Card Payment",
+    total_amount: "780.00",
+    payment_date: "2026-04-01",
+    due_date: "2026-04-30",
+    created_at: "2026-04-01T12:00:00.000Z",
+  },
+];
+
+const SEED_CREDIT_CARD_CHARGES = [
+  {
+    id: "demo-ccc-1",
+    name: "Amazon",
+    total_amount: "245.00",
+    category: "EXPENSE",
+    charge_date: "2026-04-04",
+    created_at: "2026-04-04T12:00:00.000Z",
+  },
+  {
+    id: "demo-ccc-2",
+    name: "Whole Foods Market",
+    total_amount: "165.00",
+    category: "EXPENSE",
+    charge_date: "2026-04-12",
+    created_at: "2026-04-12T12:00:00.000Z",
+  },
+  {
+    id: "demo-ccc-3",
+    name: "Spotify Family (Annual)",
+    total_amount: "90.00",
+    category: "SUBSCRIPTION",
+    charge_date: "2026-04-20",
+    created_at: "2026-04-20T12:00:00.000Z",
+  },
+];
+
+const SEED_CREDIT_CARD_ALLOCATIONS = [
+  { id: "demo-cca-1", charge_id: "demo-ccc-1", payment_id: "demo-ccp-1", amount_applied: "245.00", created_at: "2026-04-04T12:00:00.000Z" },
+  { id: "demo-cca-2", charge_id: "demo-ccc-2", payment_id: "demo-ccp-1", amount_applied: "165.00", created_at: "2026-04-12T12:00:00.000Z" },
+  { id: "demo-cca-3", charge_id: "demo-ccc-3", payment_id: "demo-ccp-1", amount_applied: "90.00", created_at: "2026-04-20T12:00:00.000Z" },
+];
+
 // Init
 export function initDemo() {
   if (!localStorage.getItem(TX_KEY)) {
@@ -2185,6 +2259,15 @@ export function initDemo() {
   if (!localStorage.getItem(IN_KEY)) {
     localStorage.setItem(IN_KEY, JSON.stringify(SEED_INSTALLMENTS));
   }
+  if (!localStorage.getItem(CCP_KEY)) {
+    localStorage.setItem(CCP_KEY, JSON.stringify(SEED_CREDIT_CARD_PAYMENTS));
+  }
+  if (!localStorage.getItem(CCC_KEY)) {
+    localStorage.setItem(CCC_KEY, JSON.stringify(SEED_CREDIT_CARD_CHARGES));
+  }
+  if (!localStorage.getItem(CCA_KEY)) {
+    localStorage.setItem(CCA_KEY, JSON.stringify(SEED_CREDIT_CARD_ALLOCATIONS));
+  }
 }
 
 export function clearDemo() {
@@ -2197,6 +2280,9 @@ export function clearDemo() {
   localStorage.removeItem(TD_KEY);
   localStorage.removeItem(IN_KEY);
   localStorage.removeItem(ID_KEY);
+  localStorage.removeItem(CCP_KEY);
+  localStorage.removeItem(CCC_KEY);
+  localStorage.removeItem(CCA_KEY);
   localStorage.removeItem("demo");
 }
 
@@ -2935,7 +3021,11 @@ function balanceDelta(t) {
   const amt = parseFloat(t.amount);
   // A settled credit card charge (#54) already had its cash counted once via
   // its payment's own transaction - counting it again here would double it.
-  if (t.category === "TIPS" || t.credit_card_charge_id) return 0;
+  // An expense paid_with_cash never touched checking either, same reasoning
+  // from the other direction - the cash tips that funded it were never
+  // counted as income here (#131), so counting the expense side without the
+  // income side would be the asymmetry #151 fixes.
+  if (t.category === "TIPS" || t.credit_card_charge_id || t.paid_with_cash) return 0;
   return PAYCHECK_INCOME_CATEGORIES.has(t.category) ? amt : -amt;
 }
 
@@ -3199,6 +3289,7 @@ export const getEstimatedSavings = () => {
       !t._recurring_id &&
       !t.recurring_payment_id &&
       !t.credit_card_charge_id &&
+      !t.paid_with_cash &&
       !recurringNames.has(t.name) &&
       t.transaction_date >= historyStartStr &&
       t.transaction_date < monthStartStr,
@@ -3274,6 +3365,7 @@ export const getEstimatedSavings = () => {
         !t._recurring_id &&
         !t.recurring_payment_id &&
         !t.credit_card_charge_id &&
+        !t.paid_with_cash &&
         t.transaction_date >= monthStartStr &&
         t.transaction_date <= todayStr,
     )

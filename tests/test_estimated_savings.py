@@ -429,3 +429,57 @@ async def test_savings_excludes_skipped_bill_from_committed_recurring(test_user:
     assert float(res.json()["committed_recurring"]) == 0.0
 
     await client.delete(f"/recurring-payments/{rp_id}", headers=auth_headers(token))
+
+
+async def test_savings_excludes_cash_funded_expenses(test_user: dict, client: AsyncClient, clean_finance):
+    """#151: an expense paid_with_cash never touched a tracked balance, so it
+    shouldn't reduce the estimated-savings ceiling any more than the
+    undeposited cash tip that funded it increased it (#131 symmetry) -
+    excluded from both the historical discretionary average and this
+    month's spend-so-far."""
+    token = test_user["token"]
+    today = date.today()
+    month_start = today.replace(day=1)
+
+    await _create_monthly_schedule(client, token, _add_months(month_start, -6))
+    await _set_current_month_amount(client, token, month_start, "5000.00")
+
+    # History: $300 tracked + $150 cash-funded (excluded) each month - the
+    # average should land on $300, not $450.
+    for n in (1, 2, 3):
+        d = _add_months(month_start, -n).replace(day=15)
+        res = await client.post("/transactions/", json={
+            "name": "Groceries", "amount": "300.00",
+            "transaction_date": d.isoformat(), "category": "EXPENSE",
+        }, headers=auth_headers(token))
+        assert res.status_code == 201
+        res = await client.post("/transactions/", json={
+            "name": "Cash Lunch", "amount": "150.00",
+            "transaction_date": d.isoformat(), "category": "EXPENSE",
+            "paid_with_cash": True,
+        }, headers=auth_headers(token))
+        assert res.status_code == 201
+
+    # This month: $100 tracked + $200 cash-funded.
+    res = await client.post("/transactions/", json={
+        "name": "Gas", "amount": "100.00",
+        "transaction_date": month_start.isoformat(), "category": "EXPENSE",
+    }, headers=auth_headers(token))
+    assert res.status_code == 201
+    res = await client.post("/transactions/", json={
+        "name": "Cash Dinner", "amount": "200.00",
+        "transaction_date": month_start.isoformat(), "category": "EXPENSE",
+        "paid_with_cash": True,
+    }, headers=auth_headers(token))
+    assert res.status_code == 201
+
+    res = await client.get("/paychecks/savings", headers=auth_headers(token))
+    assert res.status_code == 200
+    data = res.json()
+
+    # Only the $100 tracked expense counts as spent so far.
+    assert float(data["discretionary_spent_so_far"]) == 100.0
+    # Average is $300 (tracked-only history); $100 already spent -> $200 left projected.
+    assert float(data["discretionary_projected_remaining"]) == 200.0
+    # 5000 income - 0 committed - 100 spent - 200 projected = 4700.
+    assert float(data["estimated_savings"]) == 4700.0

@@ -313,16 +313,24 @@ export default function Navbar({ transactions = [], onSelectTransaction, onOpenT
         />
       )}
 
-      {/* Drawer */}
+      {/* Drawer - floating, detached from the viewport edges (same content/
+          behavior as before, just not flush top-to-bottom/right anymore). */}
       <div
-        className="fixed top-0 right-0 h-full z-50 flex flex-col border-l"
+        className="fixed z-50 flex flex-col border rounded-2xl shadow-2xl"
         style={{
+          top: 88,
+          right: 24,
+          bottom: 24,
           width: accountOpen ? "380px" : "320px",
+          maxWidth: "calc(100vw - 48px)",
           backgroundColor: bg,
           borderColor: border,
           color: text,
-          transform: drawerOpen ? "translateX(0)" : "translateX(100%)",
-          transition: "transform 250ms ease, width 220ms ease",
+          transform: drawerOpen ? "translateX(0)" : "translateX(calc(100% + 24px))",
+          opacity: drawerOpen ? 1 : 0,
+          transition: "transform 250ms cubic-bezier(0.32, 0.72, 0, 1), opacity 250ms ease, width 220ms ease",
+          overflowY: "auto",
+          overscrollBehavior: "contain",
         }}
       >
         {/* Header */}
@@ -355,8 +363,29 @@ export default function Navbar({ transactions = [], onSelectTransaction, onOpenT
               <button
                 onClick={() => acctSave.onSave?.()}
                 disabled={!acctSave.isDirty || acctSave.isSaving}
-                style={{ fontSize: "12px", fontWeight: 600, padding: "4px 12px", borderRadius: "8px", border: `1px solid ${HOME_INCOME}`, color: HOME_INCOME, backgroundColor: acctSave.isDirty ? `color-mix(in srgb, ${HOME_INCOME} 18%, transparent)` : "transparent", boxShadow: acctSave.isDirty ? `0 0 0 2px color-mix(in srgb, ${HOME_INCOME} 20%, transparent)` : "none", cursor: acctSave.isDirty && !acctSave.isSaving ? "pointer" : "default", opacity: acctSave.isDirty ? (acctSave.isSaving ? 0.6 : 1) : 0.25, transition: "all 0.2s ease" }}
+                className={acctSave.isDirty && !acctSave.isSaving ? "transition-transform active:scale-[0.98]" : undefined}
+                onMouseEnter={(e) => {
+                  if (!acctSave.isDirty || acctSave.isSaving) return;
+                  e.currentTarget.style.backgroundColor = `color-mix(in srgb, ${HOME_INCOME} 85%, black)`;
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = acctSave.isDirty ? HOME_INCOME : `color-mix(in srgb, ${text} 8%, transparent)`;
+                }}
+                style={{
+                  display: "flex", alignItems: "center", gap: 5,
+                  fontSize: "12px", fontWeight: 700, padding: "5px 13px", borderRadius: "8px", border: "none",
+                  color: acctSave.isDirty ? "#04120a" : muted,
+                  backgroundColor: acctSave.isDirty ? HOME_INCOME : `color-mix(in srgb, ${text} 8%, transparent)`,
+                  cursor: acctSave.isDirty && !acctSave.isSaving ? "pointer" : "default",
+                  opacity: acctSave.isSaving ? 0.7 : 1,
+                  transition: "background-color 150ms ease",
+                }}
               >
+                {acctSave.isDirty && !acctSave.isSaving && (
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M20 6 9 17l-5-5" />
+                  </svg>
+                )}
                 {acctSave.isSaving ? "Saving…" : "Save"}
               </button>
             )}

@@ -18,22 +18,6 @@ function tempId() {
   return `temp-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-function IconTrash({ size = 14 }) {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 6h18M19 6l-1 14H6L5 6M10 11v6M14 11v6M9 6V4h6v2" />
-    </svg>
-  );
-}
-
-function IconEdit({ size = 14 }) {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
-    </svg>
-  );
-}
-
 function shortDate(iso) {
   if (!iso) return "";
   return new Date(iso + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
@@ -96,7 +80,7 @@ function NewBalanceSheet({ onClose, onSubmit }) {
   );
 }
 
-export default function MobileCreditCards({ onSaved, openAddSignal }) {
+export default function MobileCreditCards({ onSaved, openAddSignal, onEditStateChange }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -114,10 +98,11 @@ export default function MobileCreditCards({ onSaved, openAddSignal }) {
 
   // Edit mode: Edit toggles on a checkbox on every row instead of opening
   // its detail page, so one or more balances can be picked and removed
-  // together via the Delete bar below the list.
+  // together. The toggle itself lives in the header (MobileDashboard.jsx),
+  // matching desktop - reported up via onEditStateChange below instead of
+  // rendered here.
   const [editMode, setEditMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState(() => new Set());
-  const [bulkConfirming, setBulkConfirming] = useState(false);
 
   function load() {
     setLoading(true);
@@ -140,7 +125,6 @@ export default function MobileCreditCards({ onSaved, openAddSignal }) {
   function toggleEdit() {
     setEditMode((e) => !e);
     setSelectedIds(new Set());
-    setBulkConfirming(false);
     setActionError("");
   }
 
@@ -151,8 +135,21 @@ export default function MobileCreditCards({ onSaved, openAddSignal }) {
       else next.add(id);
       return next;
     });
-    setBulkConfirming(false);
   }
+
+  // The header's hold-to-delete button (MobileDashboard.jsx) is itself the
+  // confirmation, so this just executes - no arm-then-confirm step here.
+  useEffect(() => {
+    if (activePaymentId !== undefined) return;
+    onEditStateChange?.({
+      editMode,
+      hasRows: rows.length > 0,
+      toggleEdit,
+      hasSelection: selectedIds.size > 0,
+      selectionCount: selectedIds.size,
+      deleteSelected: handleBulkDelete,
+    });
+  }, [editMode, rows.length, activePaymentId, selectedIds]);
 
   // Balance appears in the list the instant Create is tapped; the actual
   // creation happens after, in the background. On failure the placeholder is
@@ -184,20 +181,15 @@ export default function MobileCreditCards({ onSaved, openAddSignal }) {
     })();
   }
 
-  // Selected balances disappear from the list the instant delete is
-  // confirmed; the actual DELETE calls happen after, in the background. Any
-  // that fail are put back and the error surfaces in the list banner.
+  // Selected balances disappear from the list the instant the header's
+  // hold-to-delete completes; the actual DELETE calls happen after, in the
+  // background. Any that fail are put back and the error surfaces in the
+  // list banner.
   function handleBulkDelete() {
-    if (!bulkConfirming) {
-      setBulkConfirming(true);
-      setTimeout(() => setBulkConfirming(false), 3000);
-      return;
-    }
     const idsToDelete = [...selectedIds];
     const removedRows = rows.filter((r) => selectedIds.has(r.id));
     setRows((prev) => prev.filter((r) => !selectedIds.has(r.id)));
     setSelectedIds(new Set());
-    setBulkConfirming(false);
     setEditMode(false);
     setActionError("");
 
@@ -230,6 +222,7 @@ export default function MobileCreditCards({ onSaved, openAddSignal }) {
           mobile
           onBack={() => { setActivePaymentId(undefined); load(); }}
           onChanged={() => { load(); onSaved?.(); }}
+          onEditStateChange={onEditStateChange}
         />
       </div>
     );
@@ -240,21 +233,6 @@ export default function MobileCreditCards({ onSaved, openAddSignal }) {
   return (
     <div style={{ flex: 1, overflowY: "auto", overscrollBehavior: "contain", padding: "16px 16px 32px", display: "flex", flexDirection: "column", gap: 12 }}>
       <style>{`@keyframes cc-progress-stripes { from { background-position: 0 0; } to { background-position: 20px 0; } }`}</style>
-      {rows.length > 0 && (
-        <div style={{ display: "flex", justifyContent: "flex-end" }}>
-          <button
-            onClick={toggleEdit}
-            style={{
-              display: "flex", alignItems: "center", gap: 6, flexShrink: 0, padding: "6px 12px", borderRadius: 8,
-              border: `1px solid ${editMode ? HOME_INCOME : HOME_DIVIDER}`, background: editMode ? `color-mix(in srgb, ${HOME_INCOME} 14%, transparent)` : "none",
-              color: editMode ? HOME_INCOME : HOME_MUTED, fontSize: 12.5, fontWeight: 600, cursor: "pointer",
-            }}
-          >
-            {editMode ? "Done" : (<><IconEdit /> Edit</>)}
-          </button>
-        </div>
-      )}
-
       {actionError && <p style={{ fontSize: 12, color: HOME_EXPENSE, margin: 0 }}>{actionError}</p>}
 
       {loading ? (
@@ -281,7 +259,17 @@ export default function MobileCreditCards({ onSaved, openAddSignal }) {
           <p style={{ fontSize: 13, color: HOME_MUTED, margin: "4px 0 0" }}>Tap to add your first one</p>
         </button>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
+            padding: editMode ? 12 : 0,
+            border: `1px solid ${editMode ? HOME_INCOME : "transparent"}`,
+            borderRadius: 18,
+            transition: "padding 200ms ease, border-color 200ms ease",
+          }}
+        >
           {rows.map((row) => {
             const left = parseFloat(row.left);
             const paidOff = left <= 0;
@@ -335,20 +323,6 @@ export default function MobileCreditCards({ onSaved, openAddSignal }) {
             );
           })}
         </div>
-      )}
-
-      {editMode && selectedIds.size > 0 && (
-        <button
-          onClick={handleBulkDelete}
-          style={{
-            display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "12px 0", borderRadius: 12, border: "none",
-            backgroundColor: `color-mix(in srgb, ${HOME_EXPENSE} ${bulkConfirming ? 30 : 14}%, transparent)`,
-            color: HOME_EXPENSE, fontSize: 14, fontWeight: 700, cursor: "pointer",
-          }}
-        >
-          <IconTrash />
-          {bulkConfirming ? `Confirm delete (${selectedIds.size})?` : `Delete (${selectedIds.size})`}
-        </button>
       )}
 
       {pickerOpen && (

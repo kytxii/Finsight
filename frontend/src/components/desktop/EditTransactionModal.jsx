@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { CATEGORY_CONFIG, lockedNameFor } from "../../utils/finance";
+import { CATEGORY_CONFIG, lockedNameFor, MONEY_OUT_TYPES } from "../../utils/finance";
 import { updateTransaction } from "../../api/transactions";
 import { updateRecurringPayment } from "../../api/recurringPayments";
 import { createPaymentFromTransaction } from "../../api/creditCard";
@@ -23,6 +23,7 @@ export default function EditTransactionModal({ transaction, onClose, onSaved, on
     category: transaction.category,
     transaction_date: transaction.transaction_date,
     note: transaction.note ?? "",
+    paid_with_cash: transaction.paid_with_cash ?? false,
   });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -55,7 +56,12 @@ export default function EditTransactionModal({ transaction, onClose, onSaved, on
   const handleChange = (e) => {
     const { name, value } = e.target;
     if (name === "category") {
-      setForm((f) => ({ ...f, category: value, name: lockedNameFor(value) ?? f.name }));
+      // Cash on hand only applies to spend categories - drop the flag along
+      // with the checkbox once it's switched away from one (#151).
+      setForm((f) => ({
+        ...f, category: value, name: lockedNameFor(value) ?? f.name,
+        paid_with_cash: MONEY_OUT_TYPES.has(value) ? f.paid_with_cash : false,
+      }));
     } else {
       setForm((f) => ({ ...f, [name]: value }));
     }
@@ -226,6 +232,18 @@ export default function EditTransactionModal({ transaction, onClose, onSaved, on
               style={{ ...inputStyle, WebkitAppearance: "none", appearance: "none", minWidth: 0 }}
             />
           </div>
+
+          {MONEY_OUT_TYPES.has(form.category) && (
+            <label className="flex items-center gap-2 cursor-pointer" style={{ fontSize: 13, color: muted }}>
+              <input
+                type="checkbox"
+                checked={form.paid_with_cash}
+                onChange={(e) => setForm((f) => ({ ...f, paid_with_cash: e.target.checked }))}
+                style={{ width: 16, height: 16, accentColor: catColor, cursor: "pointer" }}
+              />
+              Paid with cash on hand
+            </label>
+          )}
 
           <div>
             <label className="block text-sm font-medium mb-1.5">Note <span className="font-normal opacity-60">(optional)</span></label>
