@@ -5,7 +5,7 @@ from decimal import Decimal
 from datetime import date
 from typing import NamedTuple
 from app.models import CreditCardPayment, CreditCardCharge, CreditCardChargeAllocation, Transaction
-from app.schemas.credit_card import AllocateToCharge, AllocateToNewCharge, AllocateExistingTransaction, CreateCreditCardPayment
+from app.schemas.credit_card import AllocateToNewCharge, AllocateExistingTransaction, CreateCreditCardPayment
 
 
 class InvalidAllocationError(Exception):
@@ -161,9 +161,10 @@ async def delete_payment(payment_id: UUID, current_user: UUID, db: AsyncSession)
     categorized, so removing the split shouldn't erase that it happened.
     Charges this payment funded (even partially) are re-evaluated: one that's
     no longer fully paid once this payment's allocations are gone has its
-    promoted transaction removed (un-settled); one left with zero allocations
-    from any other payment is deleted outright, since without this record it
-    never became anything (#54)."""
+    promoted transaction unlinked, not deleted (same reasoning as the anchor -
+    real money already left the account); one left with zero allocations from
+    any other payment is deleted outright, since without this record it never
+    became anything (#54)."""
     payment = await _get_owned_payment(payment_id, current_user, db)
 
     anchor = await db.scalar(select(Transaction).where(Transaction.credit_card_payment_id == payment_id))
@@ -189,7 +190,8 @@ async def delete_payment(payment_id: UUID, current_user: UUID, db: AsyncSession)
         if paid_now >= charge.total_amount > paid_after:
             settled = await db.scalar(select(Transaction).where(Transaction.credit_card_charge_id == charge_id))
             if settled is not None:
-                await db.delete(settled)
+                settled.credit_card_charge_id = None
+                settled.updated_by = current_user
 
         if paid_after <= 0:
             await db.delete(charge)
@@ -198,18 +200,42 @@ async def delete_payment(payment_id: UUID, current_user: UUID, db: AsyncSession)
     await db.commit()
 
 
-async def get_pending_charges(current_user: UUID, db: AsyncSession) -> list[ChargeInfo]:
-    """Charges not yet fully paid off, across every payment - surfaced so a
-    new payment's allocation tool can offer to finish one instead of only
-    ever starting fresh ones (#54). No "settled" column to filter on at the
-    query level (see CreditCardCharge's docstring) - settled is amount_paid
-    >= total_amount, checked once each charge's paid total is known."""
-    charges = (await db.scalars(
-        select(CreditCardCharge).where(CreditCardCharge.created_by == current_user)
-    )).all()
+async def remove_charge_from_payment(payment_id: UUID, charge_id: UUID, current_user: UUID, db: AsyncSession) -> PaymentDetail:
+    """Undo just this payment's allocation(s) toward one charge, leaving the
+    rest of the payment alone - the balance detail page's own edit mode
+    (#146), distinct from delete_payment above which removes the whole
+    payment. Same re-evaluation rule as delete_payment: a charge that drops
+    below fully-paid has its promoted transaction unlinked, not deleted, and
+    one left with nothing funding it at all is deleted outright."""
+    payment = await _get_owned_payment(payment_id, current_user, db)
+    charge = await _get_owned_charge(charge_id, current_user, db)
 
-    infos = [await _charge_info(charge, db) for charge in charges]
-    return [info for info in infos if info.paid < info.charge.total_amount]
+    allocations = (await db.scalars(
+        select(CreditCardChargeAllocation).where(
+            CreditCardChargeAllocation.payment_id == payment_id,
+            CreditCardChargeAllocation.charge_id == charge_id,
+        )
+    )).all()
+    if not allocations:
+        raise ValueError("Charge is not allocated to this payment")
+
+    paid_now = await _paid_on_charge(charge_id, db)
+    for a in allocations:
+        await db.delete(a)
+    await db.flush()
+    paid_after = await _paid_on_charge(charge_id, db)
+
+    if paid_now >= charge.total_amount > paid_after:
+        settled = await db.scalar(select(Transaction).where(Transaction.credit_card_charge_id == charge_id))
+        if settled is not None:
+            settled.credit_card_charge_id = None
+            settled.updated_by = current_user
+
+    if paid_after <= 0:
+        await db.delete(charge)
+
+    await db.commit()
+    return await get_payment_detail(payment_id, current_user, db)
 
 
 async def _settled_transaction_id(charge_id: UUID, db: AsyncSession) -> UUID | None:
@@ -283,38 +309,36 @@ async def allocate_existing_transaction(
 
 async def allocate(
     payment_id: UUID,
-    data: AllocateToCharge | AllocateToNewCharge,
+    data: AllocateToNewCharge,
     current_user: UUID,
     db: AsyncSession,
 ) -> PaymentDetail:
+    """Create a new charge and pay it off in full against this payment
+    (#147) - a charge is always fully allocated the moment it exists, never
+    partially funded and rolled over to a later payment. A statement's total
+    is just the sum of whole purchases; nothing about that needs a charge to
+    be split across payments, so if this payment can't cover it in full, the
+    allocation is rejected outright rather than accepted partially."""
     payment = await _get_owned_payment(payment_id, current_user, db)
     left_on_payment = payment.total_amount - await _paid_on_payment(payment_id, db)
-    if data.amount_applied > left_on_payment:
+    if data.total_amount > left_on_payment:
         raise InvalidAllocationError("Amount exceeds what's left on this payment")
 
-    if isinstance(data, AllocateToCharge):
-        charge = await _get_owned_charge(data.charge_id, current_user, db)
-        paid_on_charge = await _paid_on_charge(charge.id, db)
-        if paid_on_charge >= charge.total_amount:
-            raise InvalidAllocationError("Charge is already fully paid")
-        if data.amount_applied > charge.total_amount - paid_on_charge:
-            raise InvalidAllocationError("Amount exceeds what's left on this charge")
-    else:
-        charge = CreditCardCharge(
-            name=data.name,
-            total_amount=data.total_amount,
-            category=data.category,
-            charge_date=data.charge_date,
-            created_by=current_user,
-            updated_by=current_user,
-        )
-        db.add(charge)
-        await db.flush()
+    charge = CreditCardCharge(
+        name=data.name,
+        total_amount=data.total_amount,
+        category=data.category,
+        charge_date=data.charge_date,
+        created_by=current_user,
+        updated_by=current_user,
+    )
+    db.add(charge)
+    await db.flush()
 
     db.add(CreditCardChargeAllocation(
         charge_id=charge.id,
         payment_id=payment.id,
-        amount_applied=data.amount_applied,
+        amount_applied=data.total_amount,
         created_by=current_user,
     ))
     await db.flush()

@@ -45,7 +45,5 @@ from .import_profile import (
 from .credit_card import (
     ChargeSummary,
     CreditCardPaymentResponse,
-    PendingChargeResponse,
-    AllocateToCharge,
     AllocateToNewCharge,
 )

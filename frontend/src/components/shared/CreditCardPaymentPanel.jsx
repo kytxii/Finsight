@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { getCreditCardPayment, getPendingCharges, allocateCreditCardPayment } from "../../api/creditCard";
+import { getCreditCardPayment, allocateCreditCardPayment, deleteCreditCardPayment } from "../../api/creditCard";
 import { getTransactions } from "../../api/transactions";
 import { CATEGORY_CONFIG, fmt } from "../../utils/finance";
 import { getToday, getNow } from "../../utils/time";
@@ -36,7 +36,7 @@ function IconChevron({ dir = "left", size = 15 }) {
 
 // Shared allocation form + charge list, rendered inside whichever chrome
 // (desktop side panel / mobile bottom sheet) the caller wraps it in.
-function CreditCardPaymentBody({ paymentId, mobile, onChanged }) {
+function CreditCardPaymentBody({ paymentId, mobile, onChanged, onClosed }) {
   const border = HOME_DIVIDER, text = HOME_TEXT, muted = HOME_MUTED, input = FIELD;
   const inputStyle = { backgroundColor: input, borderColor: border, color: text };
   const fieldClass = "w-full rounded-xl px-3.5 py-2.5 text-sm focus:outline-none border";
@@ -44,94 +44,77 @@ function CreditCardPaymentBody({ paymentId, mobile, onChanged }) {
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
-  const [pending, setPending] = useState([]);
 
   const [mode, setMode] = useState("new"); // "new" | "transaction"
   const [draft, setDraft] = useState({ ...EMPTY_NEW_CHARGE, charge_date: getToday() });
-  const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
-
-  // Continue-a-pending-charge is a small secondary affordance, not a tab.
-  const [selectedChargeId, setSelectedChargeId] = useState("");
+  const [closingPayment, setClosingPayment] = useState(false);
 
   // "Existing transactions" mode: browse by month instead of a flat search.
   const [monthOffset, setMonthOffset] = useState(0);
   const [txnOptions, setTxnOptions] = useState(null); // null = not loaded yet
   const [txnLoadFailed, setTxnLoadFailed] = useState(false);
   const [coolingDown, setCoolingDown] = useState(false);
-  const lastPickRef = useRef(0);
+  const lastPickRef = useRef(false);
 
   function load() {
     setLoading(true);
     setLoadError(false);
-    Promise.all([getCreditCardPayment(paymentId), getPendingCharges()])
-      .then(([p, pc]) => {
-        setDetail(p.data);
-        setPending(pc.data);
-      })
+    getCreditCardPayment(paymentId)
+      .then((p) => setDetail(p.data))
       .catch(() => setLoadError(true))
       .finally(() => setLoading(false));
   }
   useEffect(load, [paymentId]);
 
   const left = detail ? parseFloat(detail.left) : 0;
-  const otherPending = pending.filter((c) => !detail?.charges.some((existing) => existing.id === c.id));
 
   function resetForm() {
     setDraft({ ...EMPTY_NEW_CHARGE, charge_date: getToday() });
-    setSelectedChargeId("");
     setFormError("");
   }
 
-  function refreshAfterAllocate(res) {
-    setDetail(res.data);
-    resetForm();
-    onChanged?.();
-    getPendingCharges().then((pc) => setPending(pc.data));
-  }
-
+  // Moves onto the balance instantly (optimistic), then confirms with the
+  // server in the background - same pattern as pickTransaction below. A
+  // charge is always allocated in full against this payment (#147) - if the
+  // server finds it's bigger than what's left, the optimistic add is rolled
+  // back and the typed values are restored instead of accepting it partway.
   async function handleAllocate(e) {
     e.preventDefault();
-    if (saving) return;
     const totalAmount = parseFloat(draft.total_amount);
     if (draft.name.trim() === "" || !(totalAmount > 0) || !draft.charge_date) return;
     setFormError("");
-    setSaving(true);
-    try {
-      // Applies as much as this payment can cover - if the charge is bigger
-      // than what's left, the rest rolls over (see the note under the form)
-      // instead of being rejected outright.
-      refreshAfterAllocate(await allocateCreditCardPayment(paymentId, {
-        name: draft.name.trim(),
-        total_amount: totalAmount,
-        category: draft.category,
-        charge_date: draft.charge_date,
-        amount_applied: Math.min(totalAmount, left),
-      }));
-    } catch (err) {
-      setFormError(err.response?.data?.detail ?? "Something went wrong");
-    } finally {
-      setSaving(false);
-    }
-  }
 
-// One click: apply as much as this payment can cover toward a charge that's
-// already partly paid from elsewhere - "how much" is never asked, it's just
-// whatever fits.
-  async function handleContinuePending(charge) {
-    if (saving) return;
-    const amount = Math.min(parseFloat(charge.remaining), left);
-    if (!(amount > 0)) return;
-    setFormError("");
-    setSaving(true);
-    setSelectedChargeId(charge.id);
+    const submitted = draft;
+    const newCharge = {
+      id: `pending-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`,
+      name: draft.name.trim(),
+      total_amount: totalAmount.toFixed(2),
+      amount_paid: totalAmount.toFixed(2),
+      category: draft.category,
+      charge_date: draft.charge_date,
+      settled: true,
+      settled_transaction_id: null,
+    };
+    const prevDetail = detail;
+    setDetail((d) => ({
+      ...d,
+      paid: (parseFloat(d.paid) + totalAmount).toFixed(2),
+      left: (parseFloat(d.left) - totalAmount).toFixed(2),
+      charges: [...d.charges, newCharge],
+    }));
+    resetForm();
+
     try {
-      refreshAfterAllocate(await allocateCreditCardPayment(paymentId, { charge_id: charge.id, amount_applied: amount }));
+      const res = await allocateCreditCardPayment(paymentId, {
+        name: newCharge.name, total_amount: totalAmount, category: newCharge.category, charge_date: newCharge.charge_date,
+      });
+      setDetail(res.data);
+      onChanged?.();
     } catch (err) {
+      setDetail(prevDetail);
+      setDraft(submitted);
       setFormError(err.response?.data?.detail ?? "Something went wrong");
-    } finally {
-      setSaving(false);
-      setSelectedChargeId("");
     }
   }
 
@@ -155,11 +138,10 @@ function CreditCardPaymentBody({ paymentId, mobile, onChanged }) {
   // A 1s cooldown between picks keeps rapid clicks from spamming the API
   // without making any single pick feel slow (#54).
   async function pickTransaction(t) {
-    const now = Date.now();
-    if (now - lastPickRef.current < 1000) return;
-    lastPickRef.current = now;
+    if (lastPickRef.current) return;
+    lastPickRef.current = true;
     setCoolingDown(true);
-    setTimeout(() => setCoolingDown(false), 1000);
+    setTimeout(() => { lastPickRef.current = false; setCoolingDown(false); }, 1000);
     setFormError("");
 
     const amount = parseFloat(t.amount);
@@ -182,12 +164,47 @@ function CreditCardPaymentBody({ paymentId, mobile, onChanged }) {
       const res = await allocateCreditCardPayment(paymentId, { transaction_id: t.id });
       setDetail(res.data);
       onChanged?.();
-      getPendingCharges().then((pc) => setPending(pc.data));
     } catch (err) {
       setDetail(prevDetail);
       setTxnOptions((prev) => (prev ? [t, ...prev] : prev));
       setFormError(err.response?.data?.detail ?? "Something went wrong");
     }
+  }
+
+  // Fully paid off - the same delete used elsewhere, just offered here as a
+  // deliberate "I'm done tracking this" action once there's nothing left to
+  // pay. Real transactions this payment covered stay put either way; only
+  // leaving it open (not closing) keeps the balance itself around to look at.
+  async function handleClose() {
+    if (closingPayment) return;
+    setClosingPayment(true);
+    setFormError("");
+    try {
+      await deleteCreditCardPayment(paymentId);
+      onChanged?.();
+      onClosed?.();
+    } catch (err) {
+      setFormError(err.response?.data?.detail ?? "Couldn't close this balance");
+      setClosingPayment(false);
+    }
+  }
+
+  // Press-and-hold, filling horizontally, same idea as the hold-to-delete
+  // ring elsewhere - releasing early cancels, holding the full duration
+  // commits the close.
+  const HOLD_CLOSE_MS = 1200;
+  const [holdingClose, setHoldingClose] = useState(false);
+  function startCloseHold() {
+    if (closingPayment) return;
+    setHoldingClose(true);
+  }
+  function cancelCloseHold() {
+    setHoldingClose(false);
+  }
+  function onCloseFillTransitionEnd(e) {
+    if (e.propertyName !== "width" || !holdingClose) return;
+    setHoldingClose(false);
+    handleClose();
   }
 
   const labelStyle = { fontSize: mobile ? 11 : 12, fontWeight: 600, color: muted, marginBottom: 5, display: "block" };
@@ -256,8 +273,8 @@ function CreditCardPaymentBody({ paymentId, mobile, onChanged }) {
                     <p style={{ margin: "2px 0 0", fontSize: 11, color: catColor }}>{CATEGORY_CONFIG[c.category]?.label ?? c.category} · {formatDate(c.charge_date)}</p>
                   </div>
                   <div style={{ textAlign: "right", flexShrink: 0 }}>
-                    <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: text, fontVariantNumeric: "tabular-nums" }}>{fmt(c.amount_paid)} / {fmt(c.total_amount)}</p>
-                    <p style={{ margin: "2px 0 0", fontSize: 10.5, color: c.settled ? HOME_INCOME : muted, fontWeight: 600 }}>{c.settled ? "Paid" : "Partial"}</p>
+                    <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: text, fontVariantNumeric: "tabular-nums" }}>{fmt(c.total_amount)}</p>
+                    <p style={{ margin: "2px 0 0", fontSize: 10.5, color: HOME_INCOME, fontWeight: 600 }}>Paid</p>
                   </div>
                 </div>
               );
@@ -267,7 +284,36 @@ function CreditCardPaymentBody({ paymentId, mobile, onChanged }) {
       </div>
 
       {left <= 0 ? (
-        <p style={{ fontSize: 12.5, color: HOME_INCOME, fontWeight: 600, margin: 0 }}>Fully allocated.</p>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <p style={{ fontSize: 12.5, color: HOME_INCOME, fontWeight: 600, margin: 0 }}>Fully allocated.</p>
+          <button
+            type="button"
+            onMouseDown={startCloseHold} onMouseUp={cancelCloseHold} onMouseLeave={cancelCloseHold}
+            onTouchStart={startCloseHold} onTouchEnd={cancelCloseHold}
+            disabled={closingPayment}
+            title="Hold to stop tracking this balance - the transactions it covers aren't affected"
+            style={{
+              position: "relative", width: "100%", padding: "10px 0", borderRadius: 10,
+              border: `1px solid ${HOME_EXPENSE}`, backgroundColor: `color-mix(in srgb, ${HOME_EXPENSE} 10%, transparent)`,
+              overflow: "hidden", cursor: closingPayment ? "default" : "pointer", userSelect: "none",
+            }}
+          >
+            <div
+              onTransitionEnd={onCloseFillTransitionEnd}
+              style={{
+                position: "absolute", inset: 0,
+                backgroundColor: `color-mix(in srgb, ${HOME_EXPENSE} 30%, transparent)`,
+                width: holdingClose || closingPayment ? "100%" : "0%",
+                transition: holdingClose
+                  ? `width ${HOLD_CLOSE_MS}ms linear`
+                  : "width 150ms ease",
+              }}
+            />
+            <span style={{ position: "relative", fontSize: 12, fontWeight: 700, color: HOME_EXPENSE }}>
+              {closingPayment ? "Closing…" : "Hold to close"}
+            </span>
+          </button>
+        </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: 12, borderRadius: 12, border: `1px solid ${border}` }}>
           <div style={{ display: "flex", gap: 6 }}>
@@ -306,19 +352,20 @@ function CreditCardPaymentBody({ paymentId, mobile, onChanged }) {
                 <input type="date" value={draft.charge_date} onChange={(e) => setDraft((d) => ({ ...d, charge_date: e.target.value }))} className={fieldClass} style={{ ...inputStyle, colorScheme: "dark" }} />
               </div>
               {parseFloat(draft.total_amount) > left && (
-                <p style={{ fontSize: 11, color: muted, margin: 0 }}>
-                  Only {fmt(left)} left on this payment - the remaining {fmt(parseFloat(draft.total_amount) - left)} will roll over until another payment covers it.
+                <p style={{ fontSize: 11, color: HOME_EXPENSE, margin: 0 }}>
+                  Only {fmt(left)} left on this payment - lower the amount or use a bigger payment.
                 </p>
               )}
               {formError && <p style={{ fontSize: 11.5, color: HOME_EXPENSE, margin: 0 }}>{formError}</p>}
               <button
-                type="submit" disabled={saving}
+                type="submit" disabled={parseFloat(draft.total_amount) > left}
                 style={{
                   padding: "8px 0", borderRadius: 10, border: `1px solid ${HOME_INCOME}`,
                   backgroundColor: `color-mix(in srgb, ${HOME_INCOME} 14%, transparent)`,
-                  color: HOME_INCOME, fontSize: 12.5, fontWeight: 700, cursor: "pointer", opacity: saving ? 0.6 : 1,
+                  color: HOME_INCOME, fontSize: 12.5, fontWeight: 700, cursor: "pointer",
+                  opacity: parseFloat(draft.total_amount) > left ? 0.5 : 1,
                 }}
-              >{saving ? "Adding…" : "Add"}</button>
+              >Add</button>
             </form>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -365,33 +412,6 @@ function CreditCardPaymentBody({ paymentId, mobile, onChanged }) {
                 </div>
               )}
               {formError && <p style={{ fontSize: 11.5, color: HOME_EXPENSE, margin: 0 }}>{formError}</p>}
-            </div>
-          )}
-
-          {otherPending.length > 0 && (
-            <div style={{ borderTop: `1px solid ${border}`, paddingTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
-              <p style={{ fontSize: 11, color: muted, margin: 0 }}>Rolled over from another payment - tap to apply here:</p>
-              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                {otherPending.map((c) => {
-                  const applying = saving && selectedChargeId === c.id;
-                  const applyAmount = Math.min(parseFloat(c.remaining), left);
-                  return (
-                    <button
-                      key={c.id} type="button" onClick={() => handleContinuePending(c)} disabled={saving}
-                      style={{
-                        display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
-                        padding: "7px 9px", borderRadius: 8, border: "none", textAlign: "left", cursor: "pointer",
-                        backgroundColor: "rgba(255,255,255,0.05)", color: text, opacity: saving && !applying ? 0.4 : 1,
-                      }}
-                    >
-                      <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12.5, fontWeight: 600 }}>{c.name}</span>
-                      <span style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 700, color: HOME_INCOME }}>
-                        {applying ? "Applying…" : `+${fmt(applyAmount)} rollover`}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
             </div>
           )}
         </div>
@@ -446,7 +466,7 @@ export default function CreditCardPaymentPanel({ paymentId, desktop = false, onC
             </button>
           </div>
           <div className="px-4 sm:px-5 py-4">
-            <CreditCardPaymentBody paymentId={paymentId} onChanged={onChanged} />
+            <CreditCardPaymentBody paymentId={paymentId} onChanged={onChanged} onClosed={requestClose} />
           </div>
         </div>
       </>
@@ -468,7 +488,7 @@ export default function CreditCardPaymentPanel({ paymentId, desktop = false, onC
         }}
       >
         <div style={{ width: 40, height: 5, borderRadius: 3, backgroundColor: border, alignSelf: "center", margin: "2px 0 4px" }} />
-        <CreditCardPaymentBody paymentId={paymentId} mobile onChanged={onChanged} />
+        <CreditCardPaymentBody paymentId={paymentId} mobile onChanged={onChanged} onClosed={requestClose} />
       </div>
     </>
   );

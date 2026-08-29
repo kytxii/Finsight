@@ -243,7 +243,6 @@ export default function ImportPanel({ active, onSaveStateChange, onSaved, onCanc
               total_amount: parseFloat(item.amount),
               category: item.category,
               charge_date: item.transaction_date,
-              amount_applied: parseFloat(item.amount),
             });
             const charge = allocateRes.data.charges.find(
               (c) => c.name === item.name.trim() && c.total_amount === parseFloat(item.amount).toFixed(2) && c.settled,

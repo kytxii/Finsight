@@ -74,114 +74,51 @@ async def test_create_payment_from_transaction(test_user: dict, client: AsyncCli
     assert res.status_code == 404
 
 
-async def test_allocate_partial_then_settles_and_promotes(test_user: dict, client: AsyncClient, clean_credit_card):
+async def test_allocate_always_settles_and_promotes_immediately(test_user: dict, client: AsyncClient, clean_credit_card):
+    """A charge is always allocated in full the moment it's created (#147) -
+    there's no partial/rollover state, so it settles and promotes into a
+    real, categorized transaction right away."""
     token = test_user["token"]
     payment = await _create_payment(client, token, amount="250.00")
 
-    # Partial allocation: charge stays open, no promoted transaction yet.
     res = await client.post(f"/credit-card-payments/{payment['id']}/allocate", json={
-        "name": "Gas", "total_amount": "55.00", "category": "EXPENSE",
-        "charge_date": "2026-08-10", "amount_applied": "5.00",
+        "name": "Gas", "total_amount": "55.00", "category": "EXPENSE", "charge_date": "2026-08-10",
     }, headers=auth_headers(token))
     assert res.status_code == 200
     data = res.json()
-    assert data["paid"] == "5.00"
-    assert data["left"] == "245.00"
+    assert data["paid"] == "55.00"
+    assert data["left"] == "195.00"
     gas_charge = data["charges"][0]
-    assert gas_charge["amount_paid"] == "5.00"
-    assert gas_charge["settled"] is False
-    assert gas_charge["settled_transaction_id"] is None
+    assert gas_charge["amount_paid"] == "55.00"
+    assert gas_charge["settled"] is True
+    assert gas_charge["settled_transaction_id"] is not None
 
-    # A second, separate charge fully paid in one shot settles immediately and
-    # promotes into a real, categorized transaction.
-    res = await client.post(f"/credit-card-payments/{payment['id']}/allocate", json={
-        "name": "Amazon", "total_amount": "40.00", "category": "EXPENSE",
-        "charge_date": "2026-08-12", "amount_applied": "40.00",
-    }, headers=auth_headers(token))
-    assert res.status_code == 200
-    data = res.json()
-    assert data["paid"] == "45.00"
-    amazon_charge = next(c for c in data["charges"] if c["name"] == "Amazon")
-    assert amazon_charge["settled"] is True
-    assert amazon_charge["settled_transaction_id"] is not None
-
-    res = await client.get(f"/transactions/{amazon_charge['settled_transaction_id']}", headers=auth_headers(token))
+    res = await client.get(f"/transactions/{gas_charge['settled_transaction_id']}", headers=auth_headers(token))
     assert res.status_code == 200
     settled = res.json()
-    assert settled["name"] == "Amazon"
-    assert settled["amount"] == "40.00"
+    assert settled["name"] == "Gas"
+    assert settled["amount"] == "55.00"
     assert settled["category"] == "EXPENSE"
 
 
-async def test_allocate_finishing_a_charge_across_two_payments(test_user: dict, client: AsyncClient, clean_credit_card):
-    """A charge not fully covered by one payment stays open and can be
-    finished off by a later, separate payment (#54)."""
+async def test_allocate_rejects_charge_exceeding_what_is_left_on_payment(test_user: dict, client: AsyncClient, clean_credit_card):
+    """No partial/rollover (#147) - a charge bigger than what's left on the
+    payment is rejected outright instead of being partly applied and left
+    for a later payment to finish off."""
     token = test_user["token"]
-    payment_a = await _create_payment(client, token, amount="250.00")
-
-    res = await client.post(f"/credit-card-payments/{payment_a['id']}/allocate", json={
-        "name": "Gas", "total_amount": "55.00", "category": "EXPENSE",
-        "charge_date": "2026-08-10", "amount_applied": "5.00",
-    }, headers=auth_headers(token))
-    charge_id = res.json()["charges"][0]["id"]
-
-    res = await client.get("/credit-card-payments/pending-charges", headers=auth_headers(token))
-    assert res.status_code == 200
-    pending = res.json()
-    assert len(pending) == 1
-    assert pending[0]["id"] == charge_id
-    assert pending[0]["amount_paid"] == "5.00"
-    assert pending[0]["remaining"] == "50.00"
-
-    payment_b = await _create_payment(client, token, amount="100.00")
-    res = await client.post(f"/credit-card-payments/{payment_b['id']}/allocate", json={
-        "charge_id": charge_id, "amount_applied": "50.00",
-    }, headers=auth_headers(token))
-    assert res.status_code == 200
-    charge = res.json()["charges"][0]
-    assert charge["amount_paid"] == "55.00"
-    assert charge["settled"] is True
-
-    res = await client.get("/credit-card-payments/pending-charges", headers=auth_headers(token))
-    assert res.json() == []
-
-
-async def test_allocate_validation_errors(test_user: dict, client: AsyncClient, clean_credit_card):
-    token = test_user["token"]
-
-    # Amount exceeds what's left on the payment.
     payment = await _create_payment(client, token, amount="50.00")
+
     res = await client.post(f"/credit-card-payments/{payment['id']}/allocate", json={
-        "name": "Gas", "total_amount": "100.00", "category": "EXPENSE",
-        "charge_date": "2026-08-10", "amount_applied": "60.00",
+        "name": "Gas", "total_amount": "100.00", "category": "EXPENSE", "charge_date": "2026-08-10",
     }, headers=auth_headers(token))
     assert res.status_code == 400
     assert "left on this payment" in res.json()["detail"]
 
-    # Amount exceeds what's left on the charge itself.
-    payment = await _create_payment(client, token, amount="250.00")
-    res = await client.post(f"/credit-card-payments/{payment['id']}/allocate", json={
-        "name": "Gas", "total_amount": "55.00", "category": "EXPENSE",
-        "charge_date": "2026-08-10", "amount_applied": "40.00",
-    }, headers=auth_headers(token))
-    charge_id = res.json()["charges"][0]["id"]
-    res = await client.post(f"/credit-card-payments/{payment['id']}/allocate", json={
-        "charge_id": charge_id, "amount_applied": "20.00",
-    }, headers=auth_headers(token))
-    assert res.status_code == 400
-    assert "left on this charge" in res.json()["detail"]
-
-    # Charge already fully paid.
-    res = await client.post(f"/credit-card-payments/{payment['id']}/allocate", json={
-        "name": "Coffee", "total_amount": "10.00", "category": "EXPENSE",
-        "charge_date": "2026-08-10", "amount_applied": "10.00",
-    }, headers=auth_headers(token))
-    coffee_id = next(c for c in res.json()["charges"] if c["name"] == "Coffee")["id"]
-    res = await client.post(f"/credit-card-payments/{payment['id']}/allocate", json={
-        "charge_id": coffee_id, "amount_applied": "1.00",
-    }, headers=auth_headers(token))
-    assert res.status_code == 400
-    assert res.json()["detail"] == "Charge is already fully paid"
+    # The rejected attempt created nothing.
+    res = await client.get(f"/credit-card-payments/{payment['id']}", headers=auth_headers(token))
+    data = res.json()
+    assert data["charges"] == []
+    assert data["left"] == "50.00"
 
 
 def test_balance_delta_excludes_settled_credit_card_charges():
@@ -216,33 +153,31 @@ async def test_delete_payment_with_no_charges_unlinks_anchor(test_user: dict, cl
 
 
 async def test_delete_payment_orphans_sole_funded_charge(test_user: dict, client: AsyncClient, db: AsyncSession, clean_credit_card):
-    """A charge funded entirely by the payment being deleted - whether fully
-    settled or only partially paid - is removed outright, since without this
-    payment's allocations it has nothing left."""
+    """A charge is always funded entirely by whichever payment it was
+    allocated to (#147) - deleting that payment leaves nothing funding the
+    charge, so the charge record itself is removed outright. Any transaction
+    it promoted survives, unlinked - real money already left the account,
+    same reasoning as the anchor transaction (#54 follow-up)."""
     token = test_user["token"]
 
-    # Fully settled by this one payment: the promoted transaction should
-    # disappear too once the payment funding it is gone.
     payment_a = await _create_payment(client, token, amount="100.00")
     res = await client.post(f"/credit-card-payments/{payment_a['id']}/allocate", json={
-        "name": "Coffee", "total_amount": "10.00", "category": "EXPENSE",
-        "charge_date": "2026-08-10", "amount_applied": "10.00",
+        "name": "Coffee", "total_amount": "10.00", "category": "EXPENSE", "charge_date": "2026-08-10",
     }, headers=auth_headers(token))
     settled_txn_id = res.json()["charges"][0]["settled_transaction_id"]
     assert settled_txn_id is not None
 
-    # Only partially paid, same story: nothing survives it.
     payment_b = await _create_payment(client, token, amount="100.00")
     res = await client.post(f"/credit-card-payments/{payment_b['id']}/allocate", json={
-        "name": "Gas", "total_amount": "55.00", "category": "EXPENSE",
-        "charge_date": "2026-08-10", "amount_applied": "5.00",
+        "name": "Gas", "total_amount": "55.00", "category": "EXPENSE", "charge_date": "2026-08-10",
     }, headers=auth_headers(token))
     gas_charge_id = res.json()["charges"][0]["id"]
 
     res = await client.delete(f"/credit-card-payments/{payment_a['id']}", headers=auth_headers(token))
     assert res.status_code == 204
     res = await client.get(f"/transactions/{settled_txn_id}", headers=auth_headers(token))
-    assert res.status_code == 404
+    assert res.status_code == 200
+    assert res.json()["credit_card_charge_id"] is None
 
     res = await client.delete(f"/credit-card-payments/{payment_b['id']}", headers=auth_headers(token))
     assert res.status_code == 204
@@ -250,39 +185,47 @@ async def test_delete_payment_orphans_sole_funded_charge(test_user: dict, client
     assert result.scalar_one_or_none() is None
 
 
-async def test_delete_payment_unsettles_charge_funded_by_two_payments(test_user: dict, client: AsyncClient, clean_credit_card):
-    """A charge finished off across two payments survives deleting either
-    one, but if that deletion drops it below fully-paid, its promoted
-    transaction is removed - it's no longer actually settled."""
+async def test_remove_charge_unlinks_transaction_and_deletes_charge(test_user: dict, client: AsyncClient, clean_credit_card):
+    """Removing a charge from its payment (#146) unlinks any promoted
+    transaction rather than deleting it - same reasoning as delete_payment -
+    and deletes the now-empty charge record, without touching the rest of
+    the payment."""
     token = test_user["token"]
+    payment = await _create_payment(client, token, amount="100.00")
 
+    res = await client.post(f"/credit-card-payments/{payment['id']}/allocate", json={
+        "name": "Coffee", "total_amount": "10.00", "category": "EXPENSE", "charge_date": "2026-08-10",
+    }, headers=auth_headers(token))
+    charge_id = res.json()["charges"][0]["id"]
+    settled_txn_id = res.json()["charges"][0]["settled_transaction_id"]
+    assert settled_txn_id is not None
+
+    res = await client.delete(f"/credit-card-payments/{payment['id']}/charges/{charge_id}", headers=auth_headers(token))
+    assert res.status_code == 200
+    data = res.json()
+    assert data["charges"] == []
+    assert data["paid"] == "0.00"
+    assert data["left"] == "100.00"
+    # The payment itself is untouched - only this one allocation is gone.
+    res = await client.get(f"/credit-card-payments/{payment['id']}", headers=auth_headers(token))
+    assert res.status_code == 200
+
+    res = await client.get(f"/transactions/{settled_txn_id}", headers=auth_headers(token))
+    assert res.status_code == 200
+    assert res.json()["credit_card_charge_id"] is None
+
+
+async def test_remove_charge_not_allocated_to_payment_returns_404(test_user: dict, client: AsyncClient, clean_credit_card):
+    token = test_user["token"]
     payment_a = await _create_payment(client, token, amount="100.00")
     res = await client.post(f"/credit-card-payments/{payment_a['id']}/allocate", json={
-        "name": "Gas", "total_amount": "55.00", "category": "EXPENSE",
-        "charge_date": "2026-08-10", "amount_applied": "5.00",
+        "name": "Coffee", "total_amount": "10.00", "category": "EXPENSE", "charge_date": "2026-08-10",
     }, headers=auth_headers(token))
     charge_id = res.json()["charges"][0]["id"]
 
     payment_b = await _create_payment(client, token, amount="100.00")
-    res = await client.post(f"/credit-card-payments/{payment_b['id']}/allocate", json={
-        "charge_id": charge_id, "amount_applied": "50.00",
-    }, headers=auth_headers(token))
-    assert res.json()["charges"][0]["settled"] is True
-    settled_txn_id = res.json()["charges"][0]["settled_transaction_id"]
-
-    # Deleting payment_b (which finished it off) should un-settle the charge -
-    # it's only $5 of $55 paid now, via payment_a.
-    res = await client.delete(f"/credit-card-payments/{payment_b['id']}", headers=auth_headers(token))
-    assert res.status_code == 204
-
-    res = await client.get(f"/transactions/{settled_txn_id}", headers=auth_headers(token))
+    res = await client.delete(f"/credit-card-payments/{payment_b['id']}/charges/{charge_id}", headers=auth_headers(token))
     assert res.status_code == 404
-
-    res = await client.get("/credit-card-payments/pending-charges", headers=auth_headers(token))
-    pending = res.json()
-    assert len(pending) == 1
-    assert pending[0]["id"] == charge_id
-    assert pending[0]["amount_paid"] == "5.00"
 
 
 async def test_allocate_existing_transaction_reuses_it_as_settled_charge(test_user: dict, client: AsyncClient, clean_credit_card):

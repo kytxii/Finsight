@@ -199,12 +199,14 @@ export default function CreditCardsPanel({
   }
 
   // The Edit toggle lives in the Dashboard header next to "+", not in this
-  // panel - report state up so that button can render/act on it. It only
-  // makes sense on the list view, not while looking at one card's balance.
+  // panel - report state up so that button can render/act on it. While a
+  // balance's detail page is open, that page reports its own edit state for
+  // its charge list instead (#146) - skip here so the two don't race.
   useEffect(() => {
+    if (activePaymentId !== undefined) return;
     onEditStateChange?.({
       editMode,
-      hasRows: activePaymentId === undefined && rows.length > 0,
+      hasRows: rows.length > 0,
       toggleEdit,
       hasSelection: selectedIds.size > 0,
       selectionCount: selectedIds.size,
@@ -311,6 +313,7 @@ export default function CreditCardsPanel({
             load();
             onChanged?.();
           }}
+          onEditStateChange={onEditStateChange}
         />
       </div>
     );
@@ -376,31 +379,74 @@ export default function CreditCardsPanel({
           </button>
         </div>
       ) : rows.length === 0 ? (
-        <button
-          type="button"
-          onClick={() => setPickerOpen(true)}
-          onMouseEnter={() => setEmptyHovered(true)}
-          onMouseLeave={() => setEmptyHovered(false)}
-          className="transition-colors"
+        // Card-shaped, not a full-width bar - same shell a real card (or its
+        // loading CreditCardSkeleton) uses, so this reads as "here's where
+        // your first one goes" instead of a generic empty-state banner.
+        <div
           style={{
-            width: "100%",
-            textAlign: "center",
-            padding: "28px 16px",
-            borderRadius: 16,
-            cursor: "pointer",
-            border: `1px solid ${border}`,
-            backgroundColor: emptyHovered
-              ? `color-mix(in srgb, ${text} 5%, ${bg})`
-              : "transparent",
+            display: "grid",
+            gridTemplateColumns: "repeat(3, 1fr)",
+            gap: 12,
           }}
         >
-          <p style={{ fontSize: 14, fontWeight: 700, color: text, margin: 0 }}>
-            No Credit Card Balances
-          </p>
-          <p style={{ fontSize: 13, color: muted, margin: "4px 0 0" }}>
-            Click to add your first one
-          </p>
-        </button>
+          <button
+            type="button"
+            onClick={() => setPickerOpen(true)}
+            onMouseEnter={() => setEmptyHovered(true)}
+            onMouseLeave={() => setEmptyHovered(false)}
+            className="transition-colors text-left"
+            style={{
+              padding: 18,
+              borderRadius: 14,
+              border: `1px dashed ${border}`,
+              cursor: "pointer",
+              display: "flex",
+              flexDirection: "column",
+              gap: 14,
+              minHeight: 228,
+              backgroundColor: emptyHovered
+                ? `color-mix(in srgb, ${text} 5%, ${bg})`
+                : "transparent",
+            }}
+          >
+            <div
+              className="transition-colors"
+              style={{
+                width: "100%",
+                aspectRatio: "1.586",
+                borderRadius: 18,
+                border: `1.5px dashed ${emptyHovered ? HOME_INCOME : border}`,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="26"
+                height="26"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="transition-colors"
+                style={{ color: emptyHovered ? HOME_INCOME : muted }}
+              >
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+            </div>
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", gap: 4 }}>
+              <p style={{ fontSize: 14, fontWeight: 700, color: text, margin: 0 }}>
+                No Credit Card Balances
+              </p>
+              <p style={{ fontSize: 12.5, color: muted, margin: 0 }}>
+                Click to add your first one
+              </p>
+            </div>
+          </button>
+        </div>
       ) : (
         <div
           style={{

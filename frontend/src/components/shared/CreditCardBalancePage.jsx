@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { getCreditCardPayment, getPendingCharges, allocateCreditCardPayment } from "../../api/creditCard";
+import { getCreditCardPayment, allocateCreditCardPayment, removeChargeFromPayment, deleteCreditCardPayment } from "../../api/creditCard";
 import { getTransactions } from "../../api/transactions";
 import { CATEGORY_CONFIG, fmt } from "../../utils/finance";
 import { getToday, getNow } from "../../utils/time";
@@ -39,22 +39,19 @@ function IconChevron({ dir = "left", size = 15 }) {
 }
 
 // A whole-page view of an existing credit card balance (#54): stats, what
-// it covers, and charge management (new transaction / existing transactions
-// / rollover) laid out as columns. Creating a new balance still happens
-// through the "+" floating panel - this page is for balances that already
-// exist.
-export default function CreditCardBalancePage({ paymentId, mobile, onBack, onChanged }) {
+// it covers, and charge management (new transaction / existing transactions)
+// laid out as columns. Creating a new balance still happens through the "+"
+// floating panel - this page is for balances that already exist.
+export default function CreditCardBalancePage({ paymentId, mobile, onBack, onChanged, onEditStateChange }) {
   const border = HOME_DIVIDER, text = HOME_TEXT, muted = HOME_MUTED;
 
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
-  const [pending, setPending] = useState([]);
 
   const [draft, setDraft] = useState({ ...EMPTY_NEW_CHARGE, charge_date: getToday() });
-  const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
-  const [selectedChargeId, setSelectedChargeId] = useState("");
+  const [closingPayment, setClosingPayment] = useState(false);
 
   const [monthOffset, setMonthOffset] = useState(0);
   const [txnOptions, setTxnOptions] = useState(null);
@@ -62,15 +59,122 @@ export default function CreditCardBalancePage({ paymentId, mobile, onBack, onCha
   const [coolingDown, setCoolingDown] = useState(false);
   const lastPickRef = useRef(0);
 
+  // Edit mode for the "CC Payments" list below (#146) - lets charges be
+  // unallocated from this payment directly, instead of only ever deleting
+  // the whole balance. Driven by the same floating edit button and
+  // hold-to-delete ring the Credit Cards list view uses (Dashboard.jsx) -
+  // reported up through onEditStateChange rather than rendered here.
+  const [editMode, setEditMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+
   function loadDetail() {
     setLoading(true);
     setLoadError(false);
-    Promise.all([getCreditCardPayment(paymentId), getPendingCharges()])
-      .then(([p, pc]) => { setDetail(p.data); setPending(pc.data); })
+    getCreditCardPayment(paymentId)
+      .then((p) => setDetail(p.data))
       .catch(() => setLoadError(true))
       .finally(() => setLoading(false));
   }
   useEffect(loadDetail, [paymentId]);
+
+  // Nothing left to edit once the list empties out - and don't carry edit
+  // mode across to a different balance.
+  useEffect(() => {
+    if (!detail || detail.charges.length === 0) {
+      setEditMode(false);
+      setSelectedIds(new Set());
+    }
+    // Only the charge count should retrigger this, not every detail refetch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paymentId, detail?.charges.length]);
+
+  function toggleEdit() {
+    setEditMode((e) => !e);
+    setSelectedIds(new Set());
+    setFormError("");
+  }
+
+  function toggleSelect(id) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  // No arm-then-confirm step here - the header's hold-to-delete button
+  // (Dashboard.jsx) is itself the confirmation, so this just executes.
+  function handleBulkDelete() {
+    const idsToRemove = [...selectedIds];
+    const prevDetail = detail;
+    setDetail((d) => ({ ...d, charges: d.charges.filter((c) => !selectedIds.has(c.id)) }));
+    setSelectedIds(new Set());
+    setEditMode(false);
+    setFormError("");
+
+    (async () => {
+      const results = await Promise.allSettled(
+        idsToRemove.map((id) => removeChargeFromPayment(paymentId, id)),
+      );
+      const lastOk = [...results].reverse().find((r) => r.status === "fulfilled");
+      const failedCount = results.filter((r) => r.status === "rejected").length;
+      if (lastOk) setDetail(lastOk.value.data);
+      else if (failedCount === results.length) setDetail(prevDetail);
+      if (failedCount > 0) {
+        setFormError(`Couldn't remove ${failedCount} charge${failedCount !== 1 ? "s" : ""} — try again`);
+      }
+      onChanged?.();
+    })();
+  }
+
+  // Fully paid off - the same delete used elsewhere, just offered here as a
+  // deliberate "I'm done tracking this" action once there's nothing left to
+  // pay. Real transactions this payment covered stay put either way; only
+  // leaving it open (not closing) keeps the balance itself around to look at.
+  async function handleClose() {
+    if (closingPayment) return;
+    setClosingPayment(true);
+    setFormError("");
+    try {
+      await deleteCreditCardPayment(paymentId);
+      onChanged?.();
+      onBack();
+    } catch (err) {
+      setFormError(err.response?.data?.detail ?? "Couldn't close this balance");
+      setClosingPayment(false);
+    }
+  }
+
+  // Press-and-hold, filling horizontally, same idea as the hold-to-delete
+  // ring elsewhere - releasing early cancels, holding the full duration
+  // commits the close.
+  const HOLD_CLOSE_MS = 1200;
+  const [holdingClose, setHoldingClose] = useState(false);
+  function startCloseHold() {
+    if (closingPayment) return;
+    setHoldingClose(true);
+  }
+  function cancelCloseHold() {
+    setHoldingClose(false);
+  }
+  function onCloseFillTransitionEnd(e) {
+    if (e.propertyName !== "width" || !holdingClose) return;
+    setHoldingClose(false);
+    handleClose();
+  }
+
+  useEffect(() => {
+    onEditStateChange?.({
+      editMode,
+      hasRows: (detail?.charges.length ?? 0) > 0,
+      toggleEdit,
+      hasSelection: selectedIds.size > 0,
+      selectionCount: selectedIds.size,
+      deleteSelected: handleBulkDelete,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editMode, detail, selectedIds]);
 
   useEffect(() => {
     getTransactions()
@@ -86,63 +190,50 @@ export default function CreditCardBalancePage({ paymentId, mobile, onBack, onCha
   }, []);
 
   const left = detail ? parseFloat(detail.left) : 0;
-  const otherPending = pending.filter((c) => !detail?.charges.some((existing) => existing.id === c.id));
 
   function resetChargeForm() {
     setDraft({ ...EMPTY_NEW_CHARGE, charge_date: getToday() });
-    setSelectedChargeId("");
     setFormError("");
   }
 
-  function refreshAfterAllocate(res) {
-    setDetail(res.data);
-    resetChargeForm();
-    onChanged?.();
-    getPendingCharges().then((pc) => setPending(pc.data));
-  }
-
+  // Moves onto the balance instantly (optimistic), then confirms with the
+  // server in the background - same pattern as pickTransaction below. A
+  // charge is always allocated in full against this payment (#147) - if the
+  // server finds it's bigger than what's left, the optimistic add is rolled
+  // back and the typed values are restored instead of accepting it partway.
   async function handleAllocate(e) {
     e.preventDefault();
-    if (saving) return;
     const totalAmount = parseFloat(draft.total_amount);
     if (draft.name.trim() === "" || !(totalAmount > 0) || !draft.charge_date) return;
     setFormError("");
-    setSaving(true);
-    try {
-      // Applies as much as this payment can cover - if the charge is bigger
-      // than what's left, the rest rolls over (see the note under the form)
-      // instead of being rejected outright.
-      refreshAfterAllocate(await allocateCreditCardPayment(paymentId, {
-        name: draft.name.trim(),
-        total_amount: totalAmount,
-        category: draft.category,
-        charge_date: draft.charge_date,
-        amount_applied: Math.min(totalAmount, left),
-      }));
-    } catch (err) {
-      setFormError(err.response?.data?.detail ?? "Something went wrong");
-    } finally {
-      setSaving(false);
-    }
-  }
 
-  // One click: apply as much as this payment can cover toward a charge
-  // that's already partly paid from elsewhere - "how much" is never asked,
-  // it's just whatever fits.
-  async function handleContinuePending(charge) {
-    if (saving) return;
-    const amt = Math.min(parseFloat(charge.remaining), left);
-    if (!(amt > 0)) return;
-    setFormError("");
-    setSaving(true);
-    setSelectedChargeId(charge.id);
+    const submitted = draft;
+    const name = draft.name.trim();
+    const { category, charge_date } = draft;
+    const tempId = `pending-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const prevDetail = detail;
+    setDetail((d) => ({
+      ...d,
+      paid: (parseFloat(d.paid) + totalAmount).toFixed(2),
+      left: (parseFloat(d.left) - totalAmount).toFixed(2),
+      charges: [
+        ...d.charges,
+        {
+          id: tempId, name, total_amount: totalAmount.toFixed(2), amount_paid: totalAmount.toFixed(2),
+          category, charge_date, settled: true, settled_transaction_id: null,
+        },
+      ],
+    }));
+    resetChargeForm();
+
     try {
-      refreshAfterAllocate(await allocateCreditCardPayment(paymentId, { charge_id: charge.id, amount_applied: amt }));
+      const res = await allocateCreditCardPayment(paymentId, { name, total_amount: totalAmount, category, charge_date });
+      setDetail(res.data);
+      onChanged?.();
     } catch (err) {
+      setDetail(prevDetail);
+      setDraft(submitted);
       setFormError(err.response?.data?.detail ?? "Something went wrong");
-    } finally {
-      setSaving(false);
-      setSelectedChargeId("");
     }
   }
 
@@ -178,7 +269,6 @@ export default function CreditCardBalancePage({ paymentId, mobile, onBack, onCha
       const res = await allocateCreditCardPayment(paymentId, { transaction_id: t.id });
       setDetail(res.data);
       onChanged?.();
-      getPendingCharges().then((pc) => setPending(pc.data));
     } catch (err) {
       // Roll back the optimistic move and put the transaction back in the picker.
       setDetail(prevDetail);
@@ -258,7 +348,6 @@ export default function CreditCardBalancePage({ paymentId, mobile, onBack, onCha
     );
   }
 
-  const showRollover = otherPending.length > 0 && left > 0;
   const fullyAllocated = left <= 0;
 
   return (
@@ -269,7 +358,7 @@ export default function CreditCardBalancePage({ paymentId, mobile, onBack, onCha
       </div>
 
       <div
-        className={`grid ${mobile ? "grid-cols-2" : showRollover ? "grid-cols-4" : "grid-cols-3"} rounded-2xl overflow-hidden`}
+        className={`grid ${mobile ? "grid-cols-2" : "grid-cols-3"} rounded-2xl overflow-hidden`}
         style={{ backgroundColor: HOME_SURFACE, border: `1px solid ${border}` }}
       >
         {[
@@ -304,34 +393,6 @@ export default function CreditCardBalancePage({ paymentId, mobile, onBack, onCha
             </div>
           );
         })}
-        {showRollover && (
-          <div style={{ padding: mobile ? "13px 15px" : "15px 18px", borderLeft: `1px solid ${border}`, borderTop: mobile ? `1px solid ${border}` : "none" }}>
-            <p style={{ fontSize: 11, fontWeight: 600, color: muted, textTransform: "uppercase", letterSpacing: "0.05em", margin: 0 }}>Rollover</p>
-            <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 5 }}>
-              {otherPending.map((c) => {
-                const applying = saving && selectedChargeId === c.id;
-                const remaining = parseFloat(c.remaining);
-                const partial = remaining > left;
-                return (
-                  <button
-                    key={c.id} type="button" onClick={() => handleContinuePending(c)} disabled={saving}
-                    title={partial ? `${c.name} - only ${fmt(left)} of this can be applied right now` : c.name}
-                    style={{
-                      display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 6, padding: 0,
-                      border: "none", background: "none", cursor: "pointer", textAlign: "left",
-                      opacity: saving && !applying ? 0.4 : 1,
-                    }}
-                  >
-                    <span style={{ fontSize: 11, fontWeight: 600, color: muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</span>
-                    <span style={{ fontSize: mobile ? 14 : 16, fontWeight: 700, color: HOME_EXPENSE, flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>
-                      {applying ? "…" : fmt(remaining)}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
       </div>
 
       <style>{`@keyframes cc-progress-stripes { from { background-position: 0 0; } to { background-position: 20px 0; } }`}</style>
@@ -350,7 +411,36 @@ export default function CreditCardBalancePage({ paymentId, mobile, onBack, onCha
       </div>
 
       {fullyAllocated && (
-        <p style={{ fontSize: 12.5, color: HOME_INCOME, fontWeight: 600, margin: 0 }}>Fully allocated.</p>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <p style={{ fontSize: 12.5, color: HOME_INCOME, fontWeight: 600, margin: 0 }}>Fully allocated.</p>
+          <button
+            type="button"
+            onMouseDown={startCloseHold} onMouseUp={cancelCloseHold} onMouseLeave={cancelCloseHold}
+            onTouchStart={startCloseHold} onTouchEnd={cancelCloseHold}
+            disabled={closingPayment}
+            title="Hold to stop tracking this balance - the transactions it covers aren't affected"
+            style={{
+              position: "relative", width: "100%", padding: "12px 0", borderRadius: 11,
+              border: `1px solid ${HOME_EXPENSE}`, backgroundColor: `color-mix(in srgb, ${HOME_EXPENSE} 10%, transparent)`,
+              overflow: "hidden", cursor: closingPayment ? "default" : "pointer", userSelect: "none",
+            }}
+          >
+            <div
+              onTransitionEnd={onCloseFillTransitionEnd}
+              style={{
+                position: "absolute", inset: 0,
+                backgroundColor: `color-mix(in srgb, ${HOME_EXPENSE} 30%, transparent)`,
+                width: holdingClose || closingPayment ? "100%" : "0%",
+                transition: holdingClose
+                  ? `width ${HOLD_CLOSE_MS}ms linear`
+                  : "width 150ms ease",
+              }}
+            />
+            <span style={{ position: "relative", fontSize: 13, fontWeight: 700, color: HOME_EXPENSE }}>
+              {closingPayment ? "Closing…" : "Hold to close"}
+            </span>
+          </button>
+        </div>
       )}
 
       <div
@@ -430,26 +520,24 @@ export default function CreditCardBalancePage({ paymentId, mobile, onBack, onCha
                 />
               </div>
               {parseFloat(draft.total_amount) > left && (
-                <p style={{ fontSize: 11, color: muted, margin: 0 }}>
-                  Only {fmt(left)} left on this payment - the remaining {fmt(parseFloat(draft.total_amount) - left)} will roll over until another payment covers it.
+                <p style={{ fontSize: 11, color: HOME_EXPENSE, margin: 0 }}>
+                  Only {fmt(left)} left on this payment - lower the amount or use a bigger payment.
                 </p>
               )}
               <button
-                type="submit" disabled={saving}
+                type="submit" disabled={parseFloat(draft.total_amount) > left}
                 className="transition-transform active:scale-[0.98]"
                 style={{
                   display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
                   padding: "12px 0", borderRadius: 11, border: "none",
                   backgroundColor: HOME_INCOME, color: "#04120a", fontSize: 13.5, fontWeight: 700,
-                  cursor: saving ? "default" : "pointer", opacity: saving ? 0.7 : 1,
+                  cursor: "pointer", opacity: parseFloat(draft.total_amount) > left ? 0.5 : 1,
                 }}
               >
-                {!saving && (
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14.5" height="14.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M12 5v14M5 12h14" />
-                  </svg>
-                )}
-                {saving ? "Adding…" : "Add transaction"}
+                <svg xmlns="http://www.w3.org/2000/svg" width="14.5" height="14.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 5v14M5 12h14" />
+                </svg>
+                Add transaction
               </button>
             </form>
           </div>
@@ -530,21 +618,30 @@ export default function CreditCardBalancePage({ paymentId, mobile, onBack, onCha
           ) : (
             <div
               className="no-scrollbar"
-              style={
-                mobile
-                  ? { display: "flex", flexDirection: "column", gap: 6, maxHeight: 260, overflowY: "auto", paddingRight: 2 }
-                  : { display: "flex", flexDirection: "column", gap: 6, flex: 1, minHeight: 0, overflowY: "auto", paddingRight: 2 }
-              }
+              style={{
+                display: "flex", flexDirection: "column", gap: 6, overflowY: "auto", paddingRight: 2,
+                padding: editMode ? 8 : 0,
+                borderRadius: 12,
+                border: `1px solid ${editMode ? HOME_INCOME : "transparent"}`,
+                transition: "padding 200ms ease, border-color 200ms ease",
+                ...(mobile ? { maxHeight: 260 } : { flex: 1, minHeight: 0 }),
+              }}
             >
               {detail.charges.map((c) => {
                 const catColor = CATEGORY_ACCENT[c.category] ?? muted;
+                const checked = selectedIds.has(c.id);
                 return (
                   <div
                     key={c.id}
+                    onClick={editMode ? () => toggleSelect(c.id) : undefined}
+                    className={editMode ? "transition-colors" : undefined}
                     style={{
                       display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
-                      padding: "10px 12px", borderRadius: 10, border: "none",
+                      padding: checked ? "9px 11px" : "10px 12px",
+                      borderRadius: 10,
+                      border: `${checked ? 2 : 1}px solid ${checked ? HOME_INCOME : "transparent"}`,
                       backgroundColor: "rgba(255,255,255,0.05)", flexShrink: 0,
+                      cursor: editMode ? "pointer" : "default",
                     }}
                   >
                     <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
@@ -555,8 +652,8 @@ export default function CreditCardBalancePage({ paymentId, mobile, onBack, onCha
                       </div>
                     </div>
                     <div style={{ textAlign: "right", flexShrink: 0 }}>
-                      <p style={{ margin: 0, fontSize: 13.5, fontWeight: 700, color: text, fontVariantNumeric: "tabular-nums" }}>{fmt(c.amount_paid)} / {fmt(c.total_amount)}</p>
-                      <p style={{ margin: "1px 0 0", fontSize: 11, color: c.settled ? HOME_INCOME : muted, fontWeight: 600 }}>{c.settled ? "Paid" : "Partial"}</p>
+                      <p style={{ margin: 0, fontSize: 13.5, fontWeight: 700, color: text, fontVariantNumeric: "tabular-nums" }}>{fmt(c.total_amount)}</p>
+                      <p style={{ margin: "1px 0 0", fontSize: 11, color: HOME_INCOME, fontWeight: 600 }}>Paid</p>
                     </div>
                   </div>
                 );

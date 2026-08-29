@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field
 from datetime import date
 from decimal import Decimal
 from uuid import UUID
@@ -40,38 +40,14 @@ class CreateCreditCardPayment(BaseModel):
     due_date: date | None = None
 
 
-class PendingChargeResponse(BaseModel):
-    id: UUID
-    name: str
-    total_amount: Decimal
-    amount_paid: Decimal
-    remaining: Decimal
-    category: Category
-    charge_date: date
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-# Allocate toward either an existing pending charge (charge_id set) or a new
-# one (name/total_amount/category/charge_date set) - exactly one shape, not
-# a mix, so the service doesn't have to guess intent from a partial payload.
-class AllocateToCharge(BaseModel):
-    charge_id: UUID
-    amount_applied: Decimal = Field(gt=0)
-
-
+# A new charge is always allocated in full against the payment it's added to
+# (#147) - there's no partial/rollover concept, so there's nothing here to
+# say how much of it this payment covers.
 class AllocateToNewCharge(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     total_amount: Decimal = Field(gt=0)
     category: Category
     charge_date: date
-    amount_applied: Decimal = Field(gt=0)
-
-    @model_validator(mode="after")
-    def amount_applied_within_charge_total(self) -> "AllocateToNewCharge":
-        if self.amount_applied > self.total_amount:
-            raise ValueError("amount_applied cannot exceed the charge's total_amount")
-        return self
 
 
 # A third allocate shape: reuse an existing, unlinked transaction as the

@@ -22,11 +22,16 @@ export const createPaymentFromTransaction = (transactionId, dueDate) =>
 export const getCreditCardPayment = (paymentId) =>
   isDemo() ? demo.getCreditCardPayment(paymentId) : client.get(`/credit-card-payments/${paymentId}`);
 
-export const getPendingCharges = () =>
-  isDemo() ? demo.getPendingCreditCardCharges() : client.get('/credit-card-payments/pending-charges');
-
 export const allocateCreditCardPayment = (paymentId, data) =>
   isDemo() ? demo.allocateCreditCardPayment(paymentId, data) : client.post(`/credit-card-payments/${paymentId}/allocate`, data);
 
 export const deleteCreditCardPayment = (paymentId) =>
   isDemo() ? demo.deleteCreditCardPayment(paymentId) : client.delete(`/credit-card-payments/${paymentId}`);
+
+// Removes just this payment's allocation toward one charge - the balance
+// detail page's own edit mode (#146), distinct from deleting the whole
+// payment above.
+export const removeChargeFromPayment = (paymentId, chargeId) =>
+  isDemo()
+    ? demo.removeChargeFromPayment(paymentId, chargeId)
+    : client.delete(`/credit-card-payments/${paymentId}/charges/${chargeId}`);

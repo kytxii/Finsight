@@ -3642,22 +3642,6 @@ export const getCreditCardPayment = (paymentId) => {
   return respond(creditCardPaymentDetail(payment));
 };
 
-export const getPendingCreditCardCharges = () => {
-  const pending = getAll(CCC_KEY)
-    .map((charge) => ({ charge, paid: paidOnCharge(charge.id) }))
-    .filter(({ charge, paid }) => paid < parseFloat(charge.total_amount))
-    .map(({ charge, paid }) => ({
-      id: charge.id,
-      name: charge.name,
-      total_amount: charge.total_amount,
-      amount_paid: paid.toFixed(2),
-      remaining: ccCents(parseFloat(charge.total_amount) - paid).toFixed(2),
-      category: charge.category,
-      charge_date: charge.charge_date,
-    }));
-  return respond(pending);
-};
-
 export const allocateCreditCardPayment = (paymentId, data) => {
   const payment = getAll(CCP_KEY).find((p) => p.id === paymentId);
   if (!payment) {
@@ -3705,60 +3689,46 @@ export const allocateCreditCardPayment = (paymentId, data) => {
     return respond(creditCardPaymentDetail(payment));
   }
 
-  const amountApplied = parseFloat(data.amount_applied);
+  // A new charge is always allocated in full against this payment (#147) -
+  // no partial/rollover concept, so this is rejected outright rather than
+  // accepted partially if there isn't enough left to cover it.
+  const totalAmount = parseFloat(data.total_amount);
   const leftOnPayment = ccCents(parseFloat(payment.total_amount) - paidOnPayment(paymentId));
-  if (amountApplied > leftOnPayment) {
+  if (totalAmount > leftOnPayment) {
     return Promise.reject({ response: { status: 400, data: { detail: "Amount exceeds what's left on this payment" } } });
   }
 
-  let charge;
-  if (data.charge_id) {
-    charge = getAll(CCC_KEY).find((c) => c.id === data.charge_id);
-    if (!charge) {
-      return Promise.reject({ response: { status: 404, data: { detail: "Charge not found" } } });
-    }
-    const paid = paidOnCharge(charge.id);
-    if (paid >= parseFloat(charge.total_amount)) {
-      return Promise.reject({ response: { status: 400, data: { detail: "Charge is already fully paid" } } });
-    }
-    if (amountApplied > ccCents(parseFloat(charge.total_amount) - paid)) {
-      return Promise.reject({ response: { status: 400, data: { detail: "Amount exceeds what's left on this charge" } } });
-    }
-  } else {
-    charge = {
-      id: nextId(),
-      name: data.name,
-      total_amount: String(parseFloat(data.total_amount).toFixed(2)),
-      category: data.category,
-      charge_date: data.charge_date,
-      created_at: new Date().toISOString(),
-    };
-    saveAll(CCC_KEY, [...getAll(CCC_KEY), charge]);
-  }
+  const charge = {
+    id: nextId(),
+    name: data.name,
+    total_amount: totalAmount.toFixed(2),
+    category: data.category,
+    charge_date: data.charge_date,
+    created_at: new Date().toISOString(),
+  };
+  saveAll(CCC_KEY, [...getAll(CCC_KEY), charge]);
 
   saveAll(CCA_KEY, [...getAll(CCA_KEY), {
     id: nextId(),
     charge_id: charge.id,
     payment_id: paymentId,
-    amount_applied: amountApplied.toFixed(2),
+    amount_applied: charge.total_amount,
     created_at: new Date().toISOString(),
   }]);
 
-  // Promote once fully paid - a real, categorized transaction, tagged so
-  // balance/spend-ceiling math (getEstimatedSavings, _get_running_balance
-  // equivalents below) skips it: that cash already left via the payment's
-  // own transaction.
-  if (paidOnCharge(charge.id) >= parseFloat(charge.total_amount)) {
-    const settled = {
-      id: nextId(),
-      name: charge.name,
-      amount: charge.total_amount,
-      category: charge.category,
-      transaction_date: charge.charge_date,
-      credit_card_charge_id: charge.id,
-    };
-    saveAll(TX_KEY, [...getAll(TX_KEY), settled]);
-  }
+  // Always fully paid the moment it's created - a real, categorized
+  // transaction, tagged so balance/spend-ceiling math (getEstimatedSavings,
+  // _get_running_balance equivalents below) skips it: that cash already
+  // left via the payment's own transaction.
+  const settled = {
+    id: nextId(),
+    name: charge.name,
+    amount: charge.total_amount,
+    category: charge.category,
+    transaction_date: charge.charge_date,
+    credit_card_charge_id: charge.id,
+  };
+  saveAll(TX_KEY, [...getAll(TX_KEY), settled]);
 
   return respond(creditCardPaymentDetail(payment));
 };
@@ -3793,7 +3763,11 @@ export const deleteCreditCardPayment = (paymentId) => {
     const total = parseFloat(charge.total_amount);
 
     if (paidNow >= total && paidAfter < total) {
-      transactions = transactions.filter((t) => t.credit_card_charge_id !== chargeId);
+      // Unlink rather than delete - real money already left the account,
+      // same reasoning as the anchor transaction above.
+      transactions = transactions.map((t) =>
+        t.credit_card_charge_id === chargeId ? { ...t, credit_card_charge_id: null } : t,
+      );
     }
     if (paidAfter <= 0) {
       charges = charges.filter((c) => c.id !== chargeId);
@@ -3805,4 +3779,40 @@ export const deleteCreditCardPayment = (paymentId) => {
   saveAll(CCP_KEY, getAll(CCP_KEY).filter((p) => p.id !== paymentId));
 
   return respond(null);
+};
+
+// Removes just this payment's allocation(s) toward one charge, without
+// touching the rest of the payment (#146) - the balance detail page's own
+// edit mode, distinct from deleting the whole payment above.
+export const removeChargeFromPayment = (paymentId, chargeId) => {
+  const payment = getAll(CCP_KEY).find((p) => p.id === paymentId);
+  if (!payment) {
+    return Promise.reject({ response: { status: 404, data: { detail: "Credit card payment not found" } } });
+  }
+  const charge = getAll(CCC_KEY).find((c) => c.id === chargeId);
+  if (!charge) {
+    return Promise.reject({ response: { status: 404, data: { detail: "Charge not found" } } });
+  }
+
+  const matching = getAll(CCA_KEY).filter((a) => a.payment_id === paymentId && a.charge_id === chargeId);
+  if (matching.length === 0) {
+    return Promise.reject({ response: { status: 404, data: { detail: "Charge is not allocated to this payment" } } });
+  }
+
+  const paidNow = paidOnCharge(chargeId);
+  const total = parseFloat(charge.total_amount);
+  saveAll(CCA_KEY, getAll(CCA_KEY).filter((a) => !(a.payment_id === paymentId && a.charge_id === chargeId)));
+  const paidAfter = paidOnCharge(chargeId);
+
+  if (paidNow >= total && paidAfter < total) {
+    saveAll(
+      TX_KEY,
+      getAll(TX_KEY).map((t) => (t.credit_card_charge_id === chargeId ? { ...t, credit_card_charge_id: null } : t)),
+    );
+  }
+  if (paidAfter <= 0) {
+    saveAll(CCC_KEY, getAll(CCC_KEY).filter((c) => c.id !== chargeId));
+  }
+
+  return respond(creditCardPaymentDetail(payment));
 };
