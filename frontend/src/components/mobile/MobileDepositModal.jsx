@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { updateTipDeposit } from "../../api/tipDeposits";
+import { updateTipDeposit, convertTipDepositToTransaction } from "../../api/tipDeposits";
 import { errorMessage } from "../../utils/errors";
 import CurrencyInput from "../shared/CurrencyInput";
+import Toggle from "../shared/Toggle";
 import CompactDateField from "./CompactDateField";
 import { HOME_TEXT, HOME_MUTED, HOME_SURFACE, HOME_DIVIDER, HOME_EXPENSE, TIPS_DEPOSITED } from "../shared/categoryVisuals";
 
@@ -22,6 +23,7 @@ export default function MobileDepositModal({ deposit, onClose, onSaved, onDelete
   const [deleting, setDeleting] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [error, setError] = useState("");
+  const [converting, setConverting] = useState(false);
 
   const busy = saving || deleting;
 
@@ -41,6 +43,21 @@ export default function MobileDepositModal({ deposit, onClose, onSaved, onDelete
       setError(errorMessage(err));
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleConvertTap() {
+    // #156: a quality-of-life correction for a misentered deposit, not a
+    // persistent link - the deposit is gone once this returns.
+    if (converting) return;
+    setConverting(true);
+    setError("");
+    try {
+      await convertTipDepositToTransaction(deposit.id);
+      onSaved();
+    } catch (err) {
+      setError(errorMessage(err));
+      setConverting(false);
     }
   }
 
@@ -114,6 +131,17 @@ export default function MobileDepositModal({ deposit, onClose, onSaved, onDelete
               fontSize: 14, fontWeight: 700, cursor: busy ? "default" : "pointer", opacity: busy ? 0.5 : 1,
             }}
           >{saving ? "Saving…" : "Save Changes"}</button>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <p style={labelStyle}>Type</p>
+          <Toggle
+            checked={true}
+            onChange={(v) => { if (!v) handleConvertTap(); }}
+            disabled={busy || converting}
+            activeColor={TIPS_DEPOSITED}
+          />
+          {converting && <p style={{ fontSize: 11.5, color: HOME_MUTED, margin: 0 }}>Converting…</p>}
         </div>
 
         <button type="button" onClick={handleDeleteTap} disabled={busy}

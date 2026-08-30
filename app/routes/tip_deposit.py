@@ -4,6 +4,7 @@ from uuid import UUID
 from app.dependencies import get_db, get_current_user
 from app.models import User
 from app.schemas import CreateTipDeposit, UpdateTipDeposit, TipDepositResponse, CashOnHandResponse
+from app.schemas.transaction import TransactionResponse
 from app.services import tip_deposit_service
 
 router = APIRouter(prefix="/tip-deposits", tags=["tip-deposits"])
@@ -20,8 +21,13 @@ async def get_tip_deposits(current_user: User = Depends(get_current_user), db: A
 
 
 @router.get("/cash-on-hand", response_model=CashOnHandResponse)
-async def get_cash_on_hand(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    result = await tip_deposit_service.get_cash_on_hand(current_user.id, db)
+async def get_cash_on_hand(
+    year: int | None = None,
+    month: int | None = None,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await tip_deposit_service.get_cash_on_hand(current_user.id, db, year, month)
     return CashOnHandResponse(
         cash_on_hand=result.cash_on_hand,
         tips_earned=result.tips_earned,
@@ -41,5 +47,13 @@ async def update_tip_deposit(deposit_id: UUID, data: UpdateTipDeposit, current_u
 async def delete_tip_deposit(deposit_id: UUID, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     try:
         await tip_deposit_service.delete_tip_deposit(deposit_id, current_user.id, db)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post("/{deposit_id}/convert-to-transaction", response_model=TransactionResponse)
+async def convert_tip_deposit_to_transaction(deposit_id: UUID, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    try:
+        return await tip_deposit_service.convert_tip_deposit_to_transaction(deposit_id, current_user.id, db)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))

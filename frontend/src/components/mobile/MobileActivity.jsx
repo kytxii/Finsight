@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import SwipeableRow from "./SwipeableRow";
 import AmountSortButton from "./AmountSortButton";
-import Skel from "../shared/Skel";
+import ListRowSkeleton from "../skeletons/shared/ListRowSkeleton";
 import NotePill from "../shared/NotePill";
 import { CATEGORIES, CATEGORY_CONFIG, INCOME_TYPES, fmt, matchesTransaction } from "../../utils/finance";
 import { relativeDate } from "../../utils/mobileFormat";
@@ -363,16 +363,7 @@ export default function MobileActivity({ transactions, deposits = [], loading, o
       <div style={{ minHeight: 260 }}>
         {loading ? (
           <div style={cardStyle}>
-            {[...Array(5)].map((_, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "center", gap: 14, padding: "11px 14px", borderTop: i > 0 ? `1px solid ${HOME_DIVIDER}` : "none" }}>
-                <Skel h={40} w={40} style={{ borderRadius: "50%" }} />
-                <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
-                  <Skel h={16} w="55%" />
-                  <Skel h={13} w="30%" />
-                </div>
-                <Skel h={16} w={60} />
-              </div>
-            ))}
+            <ListRowSkeleton count={5} trailing />
           </div>
         ) : sorted.length === 0 ? (
           <p style={{ fontSize: 13, color: HOME_MUTED, textAlign: "center", padding: "30px 0" }}>No transactions found</p>

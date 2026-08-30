@@ -3445,14 +3445,46 @@ export const deleteTipDeposit = (id) => {
   return Promise.resolve({ data: null, status: 204 });
 };
 
-export const getCashOnHand = () => {
+// #156: a quality-of-life correction, not a persistent link - the source row
+// is gone once converted, nothing ties the result back to what it came from.
+export const convertTransactionToTipDeposit = (id) => {
+  const items = getAll(TX_KEY);
+  const target = items.find((t) => t.id === id);
+  if (!target) {
+    return Promise.reject({ response: { status: 404, data: { detail: "Transaction not found" } } });
+  }
+  if (target.category !== "TIPS") {
+    return Promise.reject({ response: { status: 400, data: { detail: "Only a Tips transaction can be converted to a deposit" } } });
+  }
+  saveAll(TX_KEY, items.filter((t) => t.id !== id));
+  const deposit = { id: nextId(), amount: target.amount, deposit_date: target.transaction_date };
+  saveAll(TD_KEY, [...getAll(TD_KEY), deposit]);
+  return respond(deposit);
+};
+
+export const convertTipDepositToTransaction = (id) => {
+  const deposits = getAll(TD_KEY);
+  const target = deposits.find((d) => d.id === id);
+  if (!target) {
+    return Promise.reject({ response: { status: 404, data: { detail: "Tip deposit not found" } } });
+  }
+  saveAll(TD_KEY, deposits.filter((d) => d.id !== id));
+  const transaction = { id: nextId(), name: "Cash", amount: target.amount, transaction_date: target.deposit_date, category: "TIPS" };
+  saveAll(TX_KEY, [...getAll(TX_KEY), transaction]);
+  return respond(transaction);
+};
+
+// Scoped to a calendar month (default: the current demo month) to match the
+// backend fix in #157 - this used to sum all-time, which read as wrong sitting
+// next to the this-month figures beside it.
+export const getCashOnHand = (year, month) => {
+  const period = year && month ? `${year}-${String(month).padStart(2, "0")}` : demoCurrentMonth();
   const tipsEarned = getAll(TX_KEY)
-    .filter((t) => t.category === "TIPS")
+    .filter((t) => t.category === "TIPS" && t.transaction_date.slice(0, 7) === period)
     .reduce((s, t) => s + parseFloat(t.amount), 0);
-  const tipsDeposited = getAll(TD_KEY).reduce(
-    (s, d) => s + parseFloat(d.amount),
-    0,
-  );
+  const tipsDeposited = getAll(TD_KEY)
+    .filter((d) => d.deposit_date.slice(0, 7) === period)
+    .reduce((s, d) => s + parseFloat(d.amount), 0);
   return respond({
     cash_on_hand: (tipsEarned - tipsDeposited).toFixed(2),
     tips_earned: tipsEarned.toFixed(2),

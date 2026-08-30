@@ -13,8 +13,18 @@ from app.services.recurring_payment_service import InvalidRecurringPaymentError
 
 
 
-async def get_transactions(current_user: UUID, db: AsyncSession):
-    result = await db.execute(select(Transaction).where(Transaction.created_by == current_user))
+async def get_transactions(current_user: UUID, db: AsyncSession, limit: int = 500, offset: int = 0):
+    # ORDER BY is a prerequisite for LIMIT/OFFSET, not a nice-to-have - an
+    # unordered query paged this way can return arbitrary, overlapping, or
+    # gapped pages. Matches how both dashboards already present the list,
+    # with id as a stable tiebreak for same-day transactions (#110).
+    result = await db.execute(
+        select(Transaction)
+        .where(Transaction.created_by == current_user)
+        .order_by(Transaction.transaction_date.desc(), Transaction.id.desc())
+        .limit(limit)
+        .offset(offset)
+    )
     return result.scalars().all()
 
 async def get_transaction_by_id(transaction_id: UUID, current_user: UUID,db: AsyncSession):

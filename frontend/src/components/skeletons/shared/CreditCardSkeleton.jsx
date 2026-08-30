@@ -1,5 +1,5 @@
-import Skel from "./Skel";
-import { HOME_DIVIDER } from "./categoryVisuals";
+import Skel from "../../shared/Skel";
+import { HOME_DIVIDER } from "../../shared/categoryVisuals";
 
 // Mirrors the shape of a real balance card (CreditCardFace + pills + charge
 // preview + progress bar) instead of a single generic block, so the list

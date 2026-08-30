@@ -16,11 +16,14 @@ function monthKey(dateStr) {
   return dateStr.slice(0, 7);
 }
 
-function lastMonths(n) {
-  const now = getNow();
+// Trailing `n` months ending at (and including) anchorYear/anchorMonth - the
+// selected period, not necessarily today (#152). JS Date normalizes a
+// negative month index by rolling the year back, so this handles the
+// anchor sitting in January (or earlier) correctly with no special-casing.
+function lastMonths(n, anchorYear, anchorMonth) {
   const out = [];
   for (let i = n - 1; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const d = new Date(anchorYear, anchorMonth - i, 1);
     out.push({
       key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
       label: d.toLocaleDateString("en-US", { month: "short" }),
@@ -180,7 +183,13 @@ export default function MobileAnalytics({ transactions, deposits = [], loading, 
     return { rows, max };
   }, [transactions, deposits, periodKey]);
 
-  const months = useMemo(() => lastMonths(TREND_MONTHS), []);
+  // Ends at the selected month, not today (#152) - was previously anchored
+  // to getNow() with an empty dependency array, so navigating the month
+  // picker never actually moved this window at all.
+  const months = useMemo(
+    () => lastMonths(TREND_MONTHS, period.year, period.month),
+    [period.year, period.month],
+  );
 
   const monthlyTotals = useMemo(() => {
     const byMonth = {};
@@ -309,6 +318,7 @@ export default function MobileAnalytics({ transactions, deposits = [], loading, 
       </SectionCard>
       </div>
 
+      <div key={periodKey} style={{ animation: slideDir ? "mob-month-slide 260ms ease" : undefined, "--mob-slide-from": slideDir > 0 ? "24px" : "-24px" }}>
       <SectionCard title="Income vs. Expense">
         {loading ? (
           <TrendChartSkel bars={2} />
@@ -343,7 +353,9 @@ export default function MobileAnalytics({ transactions, deposits = [], loading, 
           </>
         )}
       </SectionCard>
+      </div>
 
+      <div key={periodKey} style={{ animation: slideDir ? "mob-month-slide 260ms ease" : undefined, "--mob-slide-from": slideDir > 0 ? "24px" : "-24px" }}>
       <SectionCard title="Savings">
         {loading ? (
           <TrendChartSkel bars={1} />
@@ -366,6 +378,7 @@ export default function MobileAnalytics({ transactions, deposits = [], loading, 
           </div>
         )}
       </SectionCard>
+      </div>
 
       <MobileActivity
         transactions={transactions}

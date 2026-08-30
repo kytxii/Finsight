@@ -5,7 +5,8 @@ import {
 } from "../shared/categoryVisuals";
 import { fmt } from "../../utils/finance";
 import CurrencyInput from "../shared/CurrencyInput";
-import Skel from "../shared/Skel";
+import StatCardSkeleton from "../skeletons/shared/StatCardSkeleton";
+import FadingBlockSkeleton from "../skeletons/shared/FadingBlockSkeleton";
 import InstallmentGauge from "../shared/InstallmentGauge";
 import { computeTermOptions, computeMonthlyPayment, computeGaugeStatus } from "../../utils/installmentMath";
 import { getInstallments, createInstallment, updateInstallment, deleteInstallment } from "../../api/installments";
@@ -305,8 +306,7 @@ export default function InstallmentsPanel({ desktop = false, addSignal, onSaved 
           <div className="grid grid-cols-3 gap-4">
             {[...Array(3)].map((_, i) => (
               <div key={i} className="rounded-2xl px-5 py-4" style={{ backgroundColor: bg }}>
-                <Skel w="60%" h={11} />
-                <Skel w="50%" h={22} style={{ marginTop: 8 }} />
+                <StatCardSkeleton />
               </div>
             ))}
           </div>
@@ -332,7 +332,7 @@ export default function InstallmentsPanel({ desktop = false, addSignal, onSaved 
 
         {loading ? (
           <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 16 }}>
-            {[...Array(3)].map((_, i) => <Skel key={i} h={148} style={{ borderRadius: 16, opacity: 1 - i * 0.15 }} />)}
+            <FadingBlockSkeleton count={3} height={148} />
           </div>
         ) : loadFailed ? (
           <div style={{ textAlign: "center", padding: "28px 16px", border: `1px dashed ${border}`, borderRadius: 16 }}>
@@ -430,7 +430,7 @@ export default function InstallmentsPanel({ desktop = false, addSignal, onSaved 
 
       {loading ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {[...Array(3)].map((_, i) => <Skel key={i} h={64} style={{ borderRadius: 10, opacity: 1 - i * 0.15 }} />)}
+          <FadingBlockSkeleton count={3} height={64} borderRadius={10} />
         </div>
       ) : loadFailed ? (
         <div style={{ textAlign: "center", padding: "20px 12px", border: `1px dashed ${border}`, borderRadius: 12 }}>

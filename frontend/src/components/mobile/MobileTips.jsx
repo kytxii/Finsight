@@ -1,11 +1,13 @@
 import { useState, useEffect } from "react";
 import SwipeableRow from "./SwipeableRow";
 import CurrencyInput from "../shared/CurrencyInput";
+import Toggle from "../shared/Toggle";
 import Skel from "../shared/Skel";
+import ListRowSkeleton from "../skeletons/shared/ListRowSkeleton";
 import { fmt } from "../../utils/finance";
 import { getToday } from "../../utils/time";
 import { periodLabel } from "../../utils/mobileFormat";
-import { getTipDeposits, createTipDeposit, updateTipDeposit, deleteTipDeposit, getCashOnHand } from "../../api/tipDeposits";
+import { updateTipDeposit, deleteTipDeposit, getCashOnHand, convertTipDepositToTransaction } from "../../api/tipDeposits";
 import { HOME_TEXT, HOME_MUTED, HOME_SURFACE, HOME_DIVIDER, HOME_EXPENSE, HOME_ACCENT, TILE_COLOR } from "../shared/categoryVisuals";
 import { IconTipsTile } from "../shared/categoryIcons";
 
@@ -27,14 +29,6 @@ function IconBack() {
   return (
     <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke={HOME_TEXT} strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
       <path d="M15 18l-6-6 6-6" />
-    </svg>
-  );
-}
-
-function IconPlus() {
-  return (
-    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-      <path d="M12 5v14M5 12h14" />
     </svg>
   );
 }
@@ -62,10 +56,14 @@ function IconBank({ color, size = 18 }) {
   );
 }
 
-export default function MobileTips({ transactions, loading, onBack, onEditTransaction, onDeleteTransaction, onRefresh }) {
-  const [deposits, setDeposits] = useState([]);
-  const [depositsLoading, setDepositsLoading] = useState(true);
+export default function MobileTips({ transactions, deposits, loading, onBack, onEditTransaction, onDeleteTransaction, onRefresh }) {
+  // Deposits themselves come in as a prop now - MobileDashboard fetches and
+  // owns that list, same as `transactions` (#75). Cash on hand is a separate
+  // server-computed aggregate (#157: scoped to the current month), so it
+  // still gets its own small local fetch here, re-run whenever the inputs
+  // it's derived from change.
   const [cashOnHand, setCashOnHand] = useState(0);
+  const [cashLoading, setCashLoading] = useState(true);
   const [showAllTips, setShowAllTips] = useState(false);
   const [showAllDeposits, setShowAllDeposits] = useState(false);
   const [openId, setOpenId] = useState(null);
@@ -75,14 +73,13 @@ export default function MobileTips({ transactions, loading, onBack, onEditTransa
   const [draft, setDraft] = useState({ amount: "", deposit_date: getToday() });
   const [saving, setSaving] = useState(false);
 
-  function loadDeposits() {
-    setDepositsLoading(true);
-    Promise.all([
-      getTipDeposits().then((r) => setDeposits(r.data)).catch(() => {}),
-      getCashOnHand().then((r) => setCashOnHand(parseFloat(r.data.cash_on_hand))).catch(() => setCashOnHand(0)),
-    ]).finally(() => setDepositsLoading(false));
-  }
-  useEffect(() => { loadDeposits(); }, []);
+  useEffect(() => {
+    setCashLoading(true);
+    getCashOnHand()
+      .then((r) => setCashOnHand(parseFloat(r.data.cash_on_hand)))
+      .catch(() => setCashOnHand(0))
+      .finally(() => setCashLoading(false));
+  }, [transactions, deposits]);
 
   const thisMonth = getToday().slice(0, 7);
 
@@ -97,12 +94,9 @@ export default function MobileTips({ transactions, loading, onBack, onEditTransa
   const shownTips = showAllTips ? tips : tips.slice(0, TIPS_PAGE);
   const shownDeposits = showAllDeposits ? monthDeposits : monthDeposits.slice(0, DEPOSITS_PAGE);
 
-  function startNewDeposit() {
-    setEditingId(null);
-    setDraft({ amount: "", deposit_date: getToday() });
-    setShowForm(true);
-  }
-
+  // Adding a deposit now happens through the main Add Transaction flow (#155)
+  // - a Deposited toggle there creates one directly. This form only edits an
+  // existing deposit, reached via the row's swipe-to-edit action below.
   function startEditDeposit(d) {
     setEditingId(d.id);
     setDraft({ amount: String(d.amount), deposit_date: d.deposit_date });
@@ -121,10 +115,8 @@ export default function MobileTips({ transactions, loading, onBack, onEditTransa
     if (isNaN(n) || n <= 0) return;
     setSaving(true);
     try {
-      if (editingId) await updateTipDeposit(editingId, { amount: n, deposit_date: draft.deposit_date });
-      else await createTipDeposit({ amount: n, deposit_date: draft.deposit_date });
+      await updateTipDeposit(editingId, { amount: n, deposit_date: draft.deposit_date });
       closeForm();
-      loadDeposits();
       onRefresh?.();
     } finally {
       setSaving(false);
@@ -132,9 +124,24 @@ export default function MobileTips({ transactions, loading, onBack, onEditTransa
   }
 
   async function removeDeposit(id) {
-    setDeposits((prev) => prev.filter((d) => d.id !== id));
-    try { await deleteTipDeposit(id); onRefresh?.(); }
-    catch { loadDeposits(); }
+    await deleteTipDeposit(id);
+    onRefresh?.();
+  }
+
+  const [converting, setConverting] = useState(false);
+
+  async function convertDepositToTip() {
+    // #156: a quality-of-life correction for a misentered deposit, not a
+    // persistent link - the deposit is gone once this returns.
+    if (converting) return;
+    setConverting(true);
+    try {
+      await convertTipDepositToTransaction(editingId);
+      closeForm();
+      onRefresh?.();
+    } finally {
+      setConverting(false);
+    }
   }
 
   const cardStyle = { backgroundColor: HOME_SURFACE, borderRadius: 18, overflow: "hidden" };
@@ -164,7 +171,7 @@ export default function MobileTips({ transactions, loading, onBack, onEditTransa
         <p style={{ margin: 0, fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: HOME_MUTED }}>
           {periodLabel()}
         </p>
-        {loading || depositsLoading ? (
+        {loading ? (
           <Skel h={30} w="55%" style={{ marginTop: 8 }} />
         ) : (
           <p style={{ margin: "6px 0 0", fontSize: 30, fontWeight: 800, letterSpacing: "-0.6px", fontVariantNumeric: "tabular-nums", color: TIPS }}>{fmt(monthlyEarned)}</p>
@@ -173,7 +180,7 @@ export default function MobileTips({ transactions, loading, onBack, onEditTransa
           <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
             <div style={tile(TIPS, null, 30)}><IconHandCash size={17} /></div>
             <div style={{ display: "flex", flexDirection: "column" }}>
-              {loading || depositsLoading ? (
+              {loading || cashLoading ? (
                 <Skel h={17} w={54} />
               ) : (
                 <span style={{ fontSize: 15, fontWeight: 700, color: HOME_TEXT, fontVariantNumeric: "tabular-nums", lineHeight: 1.15 }}>{fmt(cashOnHand)}</span>
@@ -184,7 +191,7 @@ export default function MobileTips({ transactions, loading, onBack, onEditTransa
           <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
             <div style={tile("transparent", TIPS_DEPOSITED, 30)}><IconBank color={TIPS_DEPOSITED} size={15} /></div>
             <div style={{ display: "flex", flexDirection: "column" }}>
-              {loading || depositsLoading ? (
+              {loading ? (
                 <Skel h={17} w={54} />
               ) : (
                 <span style={{ fontSize: 15, fontWeight: 700, color: TIPS_DEPOSITED, fontVariantNumeric: "tabular-nums", lineHeight: 1.15 }}>{fmt(monthDepositedTotal)}</span>
@@ -212,15 +219,7 @@ export default function MobileTips({ transactions, loading, onBack, onEditTransa
         </div>
         <div style={cardStyle}>
           {loading ? (
-            [...Array(3)].map((_, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "center", gap: 14, padding: "11px 14px", borderTop: i > 0 ? `1px solid ${HOME_DIVIDER}` : "none" }}>
-                <Skel h={40} w={40} style={{ borderRadius: "50%" }} />
-                <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
-                  <Skel h={16.5} w="35%" />
-                  <Skel h={13} w="30%" />
-                </div>
-              </div>
-            ))
+            <ListRowSkeleton count={3} />
           ) : tips.length === 0 ? (
             <p style={{ fontSize: 13, color: HOME_MUTED, textAlign: "center", padding: "22px 0" }}>No tips recorded yet</p>
           ) : (
@@ -257,24 +256,11 @@ export default function MobileTips({ transactions, loading, onBack, onEditTransa
       <div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "0 4px 12px" }}>
           <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, letterSpacing: "-0.4px", color: HOME_TEXT }}>Deposits</h2>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            {monthDeposits.length > DEPOSITS_PAGE && (
-              <span onClick={() => setShowAllDeposits((v) => !v)} style={{ color: HOME_ACCENT, fontSize: 15, fontWeight: 600, cursor: "pointer" }}>
-                {showAllDeposits ? "See less" : "See all"}
-              </span>
-            )}
-            <button
-              onClick={startNewDeposit}
-              aria-label="Add deposit"
-              style={{
-                width: 32, height: 32, borderRadius: "50%", flexShrink: 0, cursor: "pointer",
-                background: `color-mix(in srgb, ${TIPS_DEPOSITED} 16%, transparent)`, border: `1px solid ${TIPS_DEPOSITED}`,
-                color: TIPS_DEPOSITED, display: "flex", alignItems: "center", justifyContent: "center",
-              }}
-            >
-              <IconPlus />
-            </button>
-          </div>
+          {monthDeposits.length > DEPOSITS_PAGE && (
+            <span onClick={() => setShowAllDeposits((v) => !v)} style={{ color: HOME_ACCENT, fontSize: 15, fontWeight: 600, cursor: "pointer" }}>
+              {showAllDeposits ? "See less" : "See all"}
+            </span>
+          )}
         </div>
 
         {showForm && (
@@ -293,22 +279,24 @@ export default function MobileTips({ transactions, loading, onBack, onEditTransa
               >Cancel</button>
               <button type="submit" disabled={saving || draft.amount === ""}
                 style={{ flex: 1, padding: "8px 0", borderRadius: 10, border: `1px solid ${TIPS_DEPOSITED}`, backgroundColor: `color-mix(in srgb, ${TIPS_DEPOSITED} 15%, transparent)`, color: TIPS_DEPOSITED, fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: saving || draft.amount === "" ? 0.6 : 1 }}
-              >{saving ? "Saving…" : editingId ? "Save" : "Add deposit"}</button>
+              >{saving ? "Saving…" : "Save"}</button>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <p style={{ fontSize: 11, color: HOME_MUTED, paddingLeft: 2 }}>Type</p>
+              <Toggle
+                checked={true}
+                onChange={(v) => { if (!v) convertDepositToTip(); }}
+                disabled={saving || converting}
+                activeColor={TIPS_DEPOSITED}
+              />
+              {converting && <p style={{ fontSize: 11.5, color: HOME_MUTED, margin: 0 }}>Converting…</p>}
             </div>
           </form>
         )}
 
         <div style={cardStyle}>
-          {depositsLoading ? (
-            [...Array(2)].map((_, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "center", gap: 14, padding: "11px 14px", borderTop: i > 0 ? `1px solid ${HOME_DIVIDER}` : "none" }}>
-                <Skel h={40} w={40} style={{ borderRadius: "50%" }} />
-                <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
-                  <Skel h={16.5} w="35%" />
-                  <Skel h={13} w="40%" />
-                </div>
-              </div>
-            ))
+          {loading ? (
+            <ListRowSkeleton count={2} />
           ) : monthDeposits.length === 0 ? (
             <p style={{ fontSize: 13, color: HOME_MUTED, textAlign: "center", padding: "22px 0" }}>No deposits yet</p>
           ) : (

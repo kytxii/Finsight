@@ -3,6 +3,7 @@ import { CATEGORY_CONFIG, fmt } from "../../utils/finance";
 import { HOME_SURFACE, HOME_DIVIDER, HOME_TEXT, HOME_MUTED, HOME_INCOME, HOME_EXPENSE, CATEGORY_ACCENT } from "../shared/categoryVisuals";
 import CurrencyInput from "../shared/CurrencyInput";
 import Skel from "../shared/Skel";
+import FadingBlockSkeleton from "../skeletons/shared/FadingBlockSkeleton";
 import {
   getRecurringPayments,
   createRecurringPayment,
@@ -979,7 +980,7 @@ export default function RecurringPaymentsModal({ onClose, inline = false, deskto
       <div style={{ padding: "24px 28px 5px", display: "flex", flexDirection: "column", gap: 24, color: text }}>
         {loading ? (
           <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 16 }}>
-            {[...Array(4)].map((_, i) => <Skel key={i} h={128} style={{ borderRadius: 16, opacity: 1 - i * 0.12 }} />)}
+            <FadingBlockSkeleton count={4} height={128} opacityStep={0.12} />
           </div>
         ) : desktopCardsContent}
 

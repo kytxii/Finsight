@@ -1,7 +1,9 @@
 import { useState, useRef, useLayoutEffect } from "react";
-import { CATEGORY_CONFIG, lockedNameFor, MONEY_OUT_TYPES } from "../../utils/finance";
+import { CATEGORY_CONFIG, lockedNameFor } from "../../utils/finance";
 import { createTransaction } from "../../api/transactions";
+import { createTipDeposit } from "../../api/tipDeposits";
 import { getToday } from "../../utils/time";
+import Toggle from "../shared/Toggle";
 import { HOME_SURFACE, HOME_DIVIDER, HOME_TEXT, HOME_MUTED, HOME_INCOME, HOME_EXPENSE, HOME_ACCENT, ACCENT, CATEGORY_ACCENT } from "../shared/categoryVisuals";
 import CurrencyInput from "../shared/CurrencyInput";
 import BatchAddPanel from "./BatchAddPanel";
@@ -206,18 +208,18 @@ function SingleForm({ onSaved }) {
   const border = HOME_DIVIDER;
   const text   = HOME_TEXT;
 
-  const [form, setForm] = useState({ name: "", amount: "", category: "EXPENSE", transaction_date: getToday(), note: "", paid_with_cash: false });
+  const [form, setForm] = useState({ name: "", amount: "", category: "EXPENSE", transaction_date: getToday(), note: "", deposited: false });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
     if (name === "category") {
-      // Cash on hand only applies to spend categories - drop the flag along
-      // with the checkbox once it's switched away from one (#151).
+      // Deposited is Tips-only - drop it along with the toggle once it's
+      // switched away from that category.
       setForm((f) => ({
         ...f, category: value, name: lockedNameFor(value) ?? f.name,
-        paid_with_cash: MONEY_OUT_TYPES.has(value) ? f.paid_with_cash : false,
+        deposited: value === "TIPS" ? f.deposited : false,
       }));
     } else {
       setForm((f) => ({ ...f, [name]: value }));
@@ -229,8 +231,16 @@ function SingleForm({ onSaved }) {
     setError("");
     setLoading(true);
     try {
-      await createTransaction({ ...form, amount: parseFloat(form.amount) });
-      setForm((f) => ({ name: "", amount: "", category: f.category, transaction_date: getToday(), note: "", paid_with_cash: false }));
+      const { deposited, ...rest } = form;
+      // A deposited tip isn't a transaction at all - it's a TipDeposit, its
+      // own amount + date with no link back to any tip (#155). Its amount
+      // doesn't need to match any particular tip or the month's total.
+      if (form.category === "TIPS" && deposited) {
+        await createTipDeposit({ amount: parseFloat(form.amount), deposit_date: form.transaction_date });
+      } else {
+        await createTransaction({ ...rest, amount: parseFloat(form.amount) });
+      }
+      setForm((f) => ({ name: "", amount: "", category: f.category, transaction_date: getToday(), note: "", deposited: false }));
       onSaved();
     } catch (err) {
       setError(err.response?.data?.detail ?? "Something went wrong");
@@ -312,16 +322,15 @@ function SingleForm({ onSaved }) {
         </div>
       </div>
 
-      {MONEY_OUT_TYPES.has(form.category) && (
-        <label className="flex items-center gap-2 cursor-pointer" style={{ fontSize: 14, color: HOME_MUTED, marginTop: -8 }}>
-          <input
-            type="checkbox"
-            checked={form.paid_with_cash}
-            onChange={(e) => setForm((f) => ({ ...f, paid_with_cash: e.target.checked }))}
-            style={{ width: 16, height: 16, accentColor: catColor, cursor: "pointer" }}
+      {form.category === "TIPS" && (
+        <div className="flex items-center gap-2.5" style={{ marginTop: -8 }}>
+          <Toggle
+            checked={form.deposited}
+            onChange={(v) => setForm((f) => ({ ...f, deposited: v }))}
+            activeColor={catColor}
           />
-          Paid with cash on hand
-        </label>
+          <span style={{ fontSize: 14, color: HOME_MUTED }}>Deposited (not cash on hand)</span>
+        </div>
       )}
 
       <div>

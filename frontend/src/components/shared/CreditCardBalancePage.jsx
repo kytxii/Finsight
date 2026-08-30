@@ -6,6 +6,7 @@ import { getToday, getNow } from "../../utils/time";
 import { HOME_SURFACE, HOME_DIVIDER, HOME_TEXT, HOME_MUTED, HOME_INCOME, HOME_EXPENSE, CATEGORY_ACCENT } from "./categoryVisuals";
 import CurrencyInput from "./CurrencyInput";
 import Skel from "./Skel";
+import CreditCardBalancePageSkeleton from "../skeletons/shared/CreditCardBalancePageSkeleton";
 
 // A credit card charge is money going out to something chargeable - income,
 // reimbursements, tips, and savings moves aren't things you'd ever put on a
@@ -303,66 +304,7 @@ export default function CreditCardBalancePage({ paymentId, mobile, onBack, onCha
   }).sort((a, b) => b.transaction_date.localeCompare(a.transaction_date));
 
   if (loading) {
-    return (
-      <div style={{ display: "flex", flexDirection: "column", gap: mobile ? 16 : 18 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-          <button type="button" onClick={onBack} style={backBtnStyle}><IconChevron /> Back</button>
-          <Skel w={70} h={12} />
-        </div>
-
-        {mobile ? (
-          <div className="rounded-2xl overflow-hidden" style={{ backgroundColor: HOME_SURFACE, border: `1px solid ${border}` }}>
-            <div style={{ padding: "13px 15px" }}>
-              <Skel w={38} h={10} />
-              <Skel w={64} h={19} style={{ marginTop: 6 }} />
-            </div>
-            <div className="grid grid-cols-2" style={{ borderTop: `1px solid ${border}` }}>
-              {[0, 1].map((i) => (
-                <div key={i} style={{ padding: "13px 15px", borderLeft: i === 0 ? "none" : `1px solid ${border}` }}>
-                  <Skel w={38} h={10} />
-                  <Skel w={64} h={19} style={{ marginTop: 6 }} />
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <div
-            className="grid grid-cols-3 rounded-2xl overflow-hidden"
-            style={{ backgroundColor: HOME_SURFACE, border: `1px solid ${border}` }}
-          >
-            {[0, 1, 2].map((i) => (
-              <div
-                key={i}
-                style={{ padding: "15px 18px", borderLeft: i === 0 ? "none" : `1px solid ${border}` }}
-              >
-                <Skel w={38} h={10} />
-                <Skel w={64} h={23} style={{ marginTop: 6 }} />
-              </div>
-            ))}
-          </div>
-        )}
-
-        <Skel h={8} style={{ borderRadius: 999 }} />
-
-        <div style={{ display: "grid", gridTemplateColumns: mobile ? "1fr" : "repeat(3, 1fr)", gap: 18, height: mobile ? undefined : 460 }}>
-          {[0, 1, 2].map((i) => (
-            <div
-              key={i}
-              style={{
-                padding: mobile ? 20 : 22, borderRadius: 14, border: `1px solid ${border}`,
-                display: "flex", flexDirection: "column", gap: 10, minHeight: 0,
-              }}
-            >
-              <Skel w={130} h={15} />
-              <Skel h={44} style={{ borderRadius: 10, marginTop: 4 }} />
-              <Skel h={44} style={{ borderRadius: 10 }} />
-              <Skel h={44} style={{ borderRadius: 10 }} />
-              {!mobile && <Skel h={44} style={{ borderRadius: 10 }} />}
-            </div>
-          ))}
-        </div>
-      </div>
-    );
+    return <CreditCardBalancePageSkeleton mobile={mobile} onBack={onBack} />;
   }
   if (loadError || !detail) {
     return (

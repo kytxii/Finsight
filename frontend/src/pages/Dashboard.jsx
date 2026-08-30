@@ -21,6 +21,7 @@ import {
   CATEGORY_ICON,
 } from "../components/shared/categoryVisuals";
 import Skel from "../components/shared/Skel";
+import OverviewPanelSkeleton from "../components/skeletons/desktop/OverviewPanelSkeleton";
 import {
   Cell,
   Tooltip,
@@ -57,6 +58,7 @@ import InstallmentsPanel from "../components/desktop/InstallmentsPanel";
 import SummaryCard from "../components/desktop/SummaryCard";
 import ChartCard from "../components/shared/ChartCard";
 import TransactionTable from "../components/desktop/TransactionTable";
+import TipsTransactionsCard from "../components/desktop/TipsTransactionsCard";
 import CategoryTrendPanel from "../components/desktop/CategoryTrendPanel";
 import CategoryDetailPanel from "../components/desktop/CategoryDetailPanel";
 import CategoryUpcomingPanel from "../components/desktop/CategoryUpcomingPanel";
@@ -210,29 +212,6 @@ function StackedFraction({ num, den, color }) {
         {den}
       </span>
     </span>
-  );
-}
-
-function OverviewPanelSkeleton({ surface, border }) {
-  return (
-    <div
-      className="grid grid-cols-4 rounded-2xl overflow-hidden"
-      style={{ backgroundColor: surface }}
-    >
-      {[...Array(4)].map((_, i) => (
-        <div
-          key={i}
-          style={{
-            padding: "16px 20px",
-            borderLeft: i === 0 ? "none" : `1px solid ${border}`,
-          }}
-        >
-          <Skel h={14} w="55%" />
-          <Skel h={28} w="70%" style={{ marginTop: 8 }} />
-          <Skel h={12} w="62%" style={{ marginTop: 7 }} />
-        </div>
-      ))}
-    </div>
   );
 }
 
@@ -880,6 +859,18 @@ export default function Dashboard() {
     [depositsInRange, dateRange],
   );
 
+  // The actual deposit rows for the Tips category page's second table
+  // (#155/#156), not just their sum - same date-range filter as
+  // depositsInRange above.
+  const tipDepositsInRange = useMemo(() => {
+    return tipDeposits.filter((d) => {
+      const dt = new Date(d.deposit_date + "T00:00:00");
+      if (dateRange.from && dt < dateRange.from) return false;
+      if (dateRange.to && dt > dateRange.to) return false;
+      return true;
+    });
+  }, [tipDeposits, dateRange]);
+
   // Totals per category for the Income and Expenses drawers (#67). Deposits
   // aren't transactions, so they're added separately there.
   const categoryTotals = useMemo(() => {
@@ -1161,6 +1152,12 @@ export default function Dashboard() {
 
   const totalPages = Math.max(1, Math.ceil(sorted.length / perPage));
   const paginated = sorted.slice((page - 1) * perPage, page * perPage);
+  // Deposited Tips shares the Tips page's page/perPage rather than owning
+  // separate pagination (#155/#156) - paged the same way, off the same state.
+  const paginatedDeposits = tipDepositsInRange
+    .slice()
+    .sort((a, b) => b.deposit_date.localeCompare(a.deposit_date))
+    .slice((page - 1) * perPage, page * perPage);
 
   useEffect(() => {
     setPage(1);
@@ -3309,26 +3306,47 @@ export default function Dashboard() {
                     style={{ gridTemplateColumns: "2fr 1fr" }}
                   >
                     <div ref={tableRef}>
-                      <TransactionTable
-                        rows={paginated}
-                        page={page}
-                        perPage={perPage}
-                        total={sorted.length}
-                        onPageChange={setPage}
-                        onPerPageChange={setPerPage}
-                        onEdit={(t) => {
-                          setEditingTransaction(t);
-                          setEditingFromSearch(false);
-                        }}
-                        onDelete={handleDelete}
-                        activeColor={activeColor}
-                        highlightId={highlightId}
-                        sortColumn={sortColumn}
-                        sortDir={sortDir}
-                        onSort={handleSort}
-                        query={tableQuery}
-                        onQueryChange={setTableQuery}
-                      />
+                      {activeTab === "TIPS" ? (
+                        <TipsTransactionsCard
+                          tipsRows={paginated}
+                          tipsTotal={sorted.length}
+                          depositRows={paginatedDeposits}
+                          page={page}
+                          perPage={perPage}
+                          onPageChange={setPage}
+                          onPerPageChange={setPerPage}
+                          query={tableQuery}
+                          onQueryChange={setTableQuery}
+                          onEditTransaction={(t) => {
+                            setEditingTransaction(t);
+                            setEditingFromSearch(false);
+                          }}
+                          onDeleteTransaction={handleDelete}
+                          onSaved={refreshTransactions}
+                          activeColor={activeColor}
+                        />
+                      ) : (
+                        <TransactionTable
+                          rows={paginated}
+                          page={page}
+                          perPage={perPage}
+                          total={sorted.length}
+                          onPageChange={setPage}
+                          onPerPageChange={setPerPage}
+                          onEdit={(t) => {
+                            setEditingTransaction(t);
+                            setEditingFromSearch(false);
+                          }}
+                          onDelete={handleDelete}
+                          activeColor={activeColor}
+                          highlightId={highlightId}
+                          sortColumn={sortColumn}
+                          sortDir={sortDir}
+                          onSort={handleSort}
+                          query={tableQuery}
+                          onQueryChange={setTableQuery}
+                        />
+                      )}
                     </div>
                     {activeTab === "ALL" ? (
                       <CategoryTrendPanel
@@ -3645,10 +3663,6 @@ export default function Dashboard() {
             }}
             onDelete={handleDelete}
             onLocate={editingFromSearch ? handleLocateTransaction : undefined}
-            onSplitAsPayment={(payment) => {
-              setEditingTransaction((prev) => prev && { ...prev, credit_card_payment_id: payment.id });
-              refreshTransactions();
-            }}
           />
         )
       )}

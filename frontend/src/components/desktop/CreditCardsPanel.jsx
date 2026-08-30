@@ -6,7 +6,7 @@ import {
 } from "../../api/creditCard";
 import CreditCardBalancePage from "../shared/CreditCardBalancePage";
 import CreditCardFace from "../shared/CreditCardFace";
-import CreditCardSkeleton from "../shared/CreditCardSkeleton";
+import CreditCardSkeleton from "../skeletons/shared/CreditCardSkeleton";
 import { fmt } from "../../utils/finance";
 import { getToday } from "../../utils/time";
 import { assignCardColors } from "../../utils/cardColors";

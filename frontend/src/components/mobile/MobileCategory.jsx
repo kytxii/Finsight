@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import SwipeableRow from "./SwipeableRow";
 import AmountSortButton from "./AmountSortButton";
 import Skel from "../shared/Skel";
+import ListRowSkeleton from "../skeletons/shared/ListRowSkeleton";
 import CurrencyInput from "../shared/CurrencyInput";
 import NotePill from "../shared/NotePill";
 import { CATEGORY_CONFIG, INCOME_TYPES, fmt, nextAmountSort } from "../../utils/finance";
@@ -440,16 +441,7 @@ export default function MobileCategory({
             />
           )}
           {loading ? (
-            [...Array(3)].map((_, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "center", gap: 14, padding: "11px 14px", borderTop: i > 0 ? `1px solid ${HOME_DIVIDER}` : "none" }}>
-                <Skel h={40} w={40} style={{ borderRadius: "50%" }} />
-                <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
-                  <Skel h={16} w="55%" />
-                  <Skel h={13} w="30%" />
-                </div>
-                <Skel h={16} w={60} />
-              </div>
-            ))
+            <ListRowSkeleton count={3} trailing />
           ) : catTxns.length === 0 ? (
             <p style={{ fontSize: 13, color: HOME_MUTED, textAlign: "center", padding: "22px 0" }}>
               No transactions this month

@@ -4,6 +4,7 @@ import { fmt } from "../../utils/finance";
 import { getToday } from "../../utils/time";
 import CurrencyInput from "../shared/CurrencyInput";
 import Skel from "../shared/Skel";
+import StatCardSkeleton from "../skeletons/shared/StatCardSkeleton";
 import {
   getPaycheckSchedules,
   createPaycheckSchedule,
@@ -760,8 +761,7 @@ export default function PaychecksPanel({ mobile = false, desktop = false, onSave
           <div className="grid grid-cols-4 gap-4">
             {[...Array(4)].map((_, i) => (
               <div key={i} className="rounded-2xl px-5 py-4" style={{ backgroundColor: bg }}>
-                <Skel w="60%" h={11} />
-                <Skel w="50%" h={22} style={{ marginTop: 8 }} />
+                <StatCardSkeleton />
               </div>
             ))}
           </div>
