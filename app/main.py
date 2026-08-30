@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
@@ -6,6 +8,14 @@ from slowapi.errors import RateLimitExceeded
 from app.routes import transaction, users, auth, recurring_payment, paycheck, tip_deposit, import_, installment
 from app.core.config import settings
 from app.core.limiter import limiter
+
+# Without an explicit handler, app-level loggers fall back to logging.lastResort,
+# which emits a bare message with no timestamp or logger name - hard to correlate
+# against uvicorn's access log when debugging from the hosted logs.
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
 
 app = FastAPI(redirect_slashes=False)
 

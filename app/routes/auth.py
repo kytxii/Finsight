@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from urllib.parse import quote
+import logging
 from app.schemas.user import RegisterRequest, LoginRequest, UserResponse, TokenResponse
 from app.services.auth_service import register_user, login_user, refresh_session, logout_user, oauth_login
 from app.dependencies import get_db
@@ -10,6 +11,8 @@ from app.core.limiter import limiter
 from app.core.oauth import oauth, fetch_oauth_userinfo
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+logger = logging.getLogger(__name__)
 
 OAUTH_PROVIDERS = {"google", "github"}
 
@@ -79,6 +82,10 @@ async def oauth_login_redirect(provider: str, request: Request):
         # A misconfigured provider (missing client id/secret, bad redirect URI) would
         # otherwise surface as a raw unhandled error instead of ever reaching the
         # provider's consent screen (#126). Send the user back with a visible message.
+        # The user-facing copy is deliberately vague, so log the real cause - without
+        # this the handler is a black hole and a broken prod sign-in shows nothing at
+        # all in the server logs.
+        logger.exception("OAuth authorize redirect failed for provider=%s", provider)
         return RedirectResponse(url=f"{settings.FRONTEND_URL}/login?error={quote('Something went wrong signing in.')}")
 
 
@@ -93,8 +100,13 @@ async def oauth_callback(provider: str, request: Request, db: AsyncSession = Dep
         info = await fetch_oauth_userinfo(provider, client, token)
         _, refresh_token_raw = await oauth_login(db, provider, info)
     except HTTPException as exc:
+        logger.warning("OAuth callback rejected for provider=%s: %s", provider, exc.detail)
         return RedirectResponse(url=f"{settings.FRONTEND_URL}/login?error={quote(exc.detail)}")
     except Exception:
+        # Covers state/nonce mismatch, token exchange, the provider's userinfo call and
+        # oauth_login. All of them collapse into the same opaque message for the user,
+        # so the traceback is the only way to tell which one actually failed.
+        logger.exception("OAuth callback failed for provider=%s", provider)
         return RedirectResponse(url=f"{settings.FRONTEND_URL}/login?error={quote('Something went wrong signing in.')}")
 
     response = RedirectResponse(url=f"{settings.FRONTEND_URL}/")

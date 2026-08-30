@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { clearDemo } from "../api/demoStore";
 import client from "../api/client";
 import {
   HOME_SURFACE,
@@ -21,6 +22,16 @@ const ACCENT = "#14b8a6";
 const ACCENT_TEXT = "#04140f";
 const ACCENT_DEEP = "#0f766e";
 const FIELD = "#08131a";
+
+// Signing in with a provider is a full-page redirect, so it never runs through
+// AuthContext's login() - and login() is what normally clears demo mode. A
+// leftover `demo` flag makes AuthProvider's bootstrap bail out before it can
+// restore the session the callback just handed us, silently bouncing a
+// successful sign-in back to /login. Clear it on the way out instead.
+const startOAuth = (provider) => {
+  clearDemo();
+  window.location.href = `${API_BASE}/auth/${provider}/login`;
+};
 
 export default function Login() {
   const [email, setEmail] = useState("");
@@ -503,9 +514,7 @@ export default function Login() {
             <div style={{ display: "flex", gap: "8px" }}>
               <button
                 type="button"
-                onClick={() => {
-                  window.location.href = `${API_BASE}/auth/google/login`;
-                }}
+                onClick={() => startOAuth("google")}
                 style={oauthBtnStyle}
                 onMouseEnter={oauthHover}
                 onMouseLeave={oauthLeave}
@@ -532,9 +541,7 @@ export default function Login() {
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  window.location.href = `${API_BASE}/auth/github/login`;
-                }}
+                onClick={() => startOAuth("github")}
                 style={oauthBtnStyle}
                 onMouseEnter={oauthHover}
                 onMouseLeave={oauthLeave}
