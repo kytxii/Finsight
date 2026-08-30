@@ -74,8 +74,8 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Downgrade schema."""
-    op.drop_constraint(None, 'transactions', type_='foreignkey')
-    op.drop_constraint(None, 'transactions', type_='foreignkey')
+    op.drop_constraint('transactions_credit_card_payment_id_fkey', 'transactions', type_='foreignkey')
+    op.drop_constraint('transactions_credit_card_charge_id_fkey', 'transactions', type_='foreignkey')
     op.drop_column('transactions', 'credit_card_charge_id')
     op.drop_column('transactions', 'credit_card_payment_id')
     op.drop_table('credit_card_charge_allocations')

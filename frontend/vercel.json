@@ -1,6 +1,7 @@
 {
   "rewrites": [
-    { "source": "/api/:path*", "destination": "https://finsight-xi7x.onrender.com/:path*" },
+    { "source": "/api/:resource/", "destination": "https://finsight-y7d0.onrender.com/:resource/" },
+    { "source": "/api/:path*", "destination": "https://finsight-y7d0.onrender.com/:path*" },
     { "source": "/(.*)", "destination": "/index.html" }
   ],
   "headers": [
@@ -8,6 +9,12 @@
       "source": "/index.html",
       "headers": [
         { "key": "Cache-Control", "value": "no-cache, must-revalidate" }
+      ]
+    },
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store" }
       ]
     },
     {
