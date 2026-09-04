@@ -19,6 +19,7 @@ import {
   ACCENT_TEXT,
   CATEGORY_ACCENT,
   CATEGORY_ICON,
+  TIPS_DEPOSITED,
 } from "../components/shared/categoryVisuals";
 import Skel from "../components/shared/Skel";
 import OverviewPanelSkeleton from "../components/skeletons/desktop/OverviewPanelSkeleton";
@@ -38,7 +39,7 @@ import { useAuth } from "../context/AuthContext";
 import { getTransactions, deleteTransaction } from "../api/transactions";
 import { deleteRecurringPayment } from "../api/recurringPayments";
 import { getSpendableSurplus, getEstimatedSavings } from "../api/paychecks";
-import { getTipDeposits } from "../api/tipDeposits";
+import { getTipDeposits, getCashOnHand } from "../api/tipDeposits";
 import {
   CATEGORIES,
   CATEGORY_CONFIG,
@@ -49,7 +50,7 @@ import {
   fmt,
   fmtWhole,
 } from "../utils/finance";
-import { getNow } from "../utils/time";
+import { getNow, getToday } from "../utils/time";
 import Navbar from "../components/desktop/Navbar";
 import AddTransactionPage from "../components/desktop/AddTransactionPage";
 import PaychecksPanel from "../components/desktop/PaychecksPanel";
@@ -215,6 +216,40 @@ function StackedFraction({ num, den, color }) {
   );
 }
 
+// Small icon tile for the TIPS TOTAL sub-headings, matching MobileTips's
+// hero tiles at a size that fits inside a quarter-width overview column.
+function tipsStatTile(color, outline) {
+  return {
+    width: 20, height: 20, borderRadius: "50%", flexShrink: 0,
+    background: outline ? "transparent" : color,
+    border: outline ? `1.5px solid ${color}` : "none",
+    display: "flex", alignItems: "center", justifyContent: "center",
+  };
+}
+
+// Cash-in-hand icon, white strokes on a filled teal circle - same as MobileTips.
+function IconHandCash({ size = 12 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M11 15h2a2 2 0 1 0 0-4h-3c-.6 0-1.1.2-1.4.6L3 17" />
+      <path d="m7 21 1.6-1.4c.3-.4.8-.6 1.4-.6h4c1.1 0 2.1-.4 2.8-1.2l4.6-4.4a2 2 0 0 0-2.75-2.91l-4.2 3.9" />
+      <path d="m2 16 6 6" />
+      <circle cx="16" cy="9" r="2.9" />
+      <circle cx="6" cy="5" r="3" />
+    </svg>
+  );
+}
+
+function IconBank({ color, size = 11 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 21h18" />
+      <path d="M12 3 3 8h18z" />
+      <path d="M5 8v10M9.5 8v10M14.5 8v10M19 8v10" />
+    </svg>
+  );
+}
+
 // One column of the unified overview panel (#123).
 function OverviewColumn({
   label,
@@ -238,6 +273,7 @@ function OverviewColumn({
       onMouseLeave={interactive ? () => setHovered(false) : undefined}
       className={`text-left transition-all duration-150 ${interactive ? "cursor-pointer active:scale-[0.98]" : ""}`}
       style={{
+        position: "relative",
         flex: 1,
         minWidth: 0,
         padding: "16px 20px",
@@ -406,6 +442,7 @@ export default function Dashboard() {
   const { isDemo } = useAuth();
   const [transactions, setTransactions] = useState([]);
   const [tipDeposits, setTipDeposits] = useState([]);
+  const [tipsCashOnHand, setTipsCashOnHand] = useState(0);
 
   const [dateRange, setDateRange] = useState(() => {
     const now = getNow();
@@ -713,6 +750,14 @@ export default function Dashboard() {
       .catch(() => setTipDeposits([]));
   }
 
+  // Mirrors MobileTips (#157): a server-computed, calendar-month-scoped
+  // aggregate, independent of the dashboard's own date range picker.
+  function loadCashOnHand() {
+    getCashOnHand()
+      .then((res) => setTipsCashOnHand(parseFloat(res.data.cash_on_hand)))
+      .catch(() => setTipsCashOnHand(0));
+  }
+
   function loadSafeToSpend() {
     getSpendableSurplus()
       .then((res) => {
@@ -753,6 +798,7 @@ export default function Dashboard() {
     loadSafeToSpend();
     loadSavings();
     loadTipDeposits();
+    loadCashOnHand();
   }, []);
   useEffect(
     () => () => {
@@ -774,6 +820,7 @@ export default function Dashboard() {
     loadSafeToSpend();
     loadSavings();
     loadTipDeposits();
+    loadCashOnHand();
   }
 
   async function handleDelete(t) {
@@ -870,6 +917,16 @@ export default function Dashboard() {
       return true;
     });
   }, [tipDeposits, dateRange]);
+
+  // Calendar-month total, not date-range-scoped - pairs with tipsCashOnHand
+  // (also month-scoped) as the sub-headings on the TIPS TOTAL tile, mirroring
+  // MobileTips's hero regardless of whatever range is picked above.
+  const tipsMonthDepositedTotal = useMemo(() => {
+    const thisMonth = getToday().slice(0, 7);
+    return tipDeposits
+      .filter((d) => d.deposit_date.slice(0, 7) === thisMonth)
+      .reduce((s, d) => s + parseFloat(d.amount), 0);
+  }, [tipDeposits]);
 
   // Totals per category for the Income and Expenses drawers (#67). Deposits
   // aren't transactions, so they're added separately there.
@@ -997,7 +1054,16 @@ export default function Dashboard() {
 
   const trendData = useMemo(() => {
     const now = getNow();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const realToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    // Ends at the month selected via the chevrons/date-range picker up top,
+    // not always real "today" - otherwise switching months there never moves
+    // this chart at all (the same bug #152 fixed on mobile's Analytics tab,
+    // just here on desktop). Clamped so a range that reaches into the future
+    // can't push the window past today.
+    const selectedEnd = dateRange.to
+      ? new Date(dateRange.to.getFullYear(), dateRange.to.getMonth(), dateRange.to.getDate())
+      : realToday;
+    const today = selectedEnd > realToday ? realToday : selectedEnd;
     let start;
     if (trendMonths === "all") {
       start =
@@ -1053,7 +1119,7 @@ export default function Dashboard() {
       });
       return rounded;
     });
-  }, [transactions, trendMonths]);
+  }, [transactions, trendMonths, dateRange]);
 
   const trendTotals = useMemo(() => {
     const totals = {};
@@ -2535,6 +2601,37 @@ export default function Dashboard() {
                       label={`${CATEGORY_CONFIG[activeTab].label.toUpperCase()} TOTAL`}
                       value={fmt(summary.categoryTotal)}
                       color={activeColor}
+                      valueNode={
+                        activeTab === "TIPS" ? (
+                          <>
+                            <p
+                              style={{
+                                fontSize: 22,
+                                fontWeight: 700,
+                                color: activeColor,
+                                margin: "6px 0 0",
+                                fontVariantNumeric: "tabular-nums",
+                              }}
+                            >
+                              {fmt(summary.categoryTotal)}
+                            </p>
+                            <div className="flex items-center gap-2" style={{ marginTop: 8 }}>
+                              <div style={tipsStatTile(activeColor)}><IconHandCash /></div>
+                              <div>
+                                <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: text, fontVariantNumeric: "tabular-nums" }}>{fmt(tipsCashOnHand)}</p>
+                                <p style={{ margin: "1px 0 0", fontSize: 11, fontWeight: 500, color: muted }}>cash on hand</p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2" style={{ position: "absolute", right: 20, bottom: 14 }}>
+                              <div style={tipsStatTile(TIPS_DEPOSITED, true)}><IconBank color={TIPS_DEPOSITED} /></div>
+                              <div>
+                                <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: TIPS_DEPOSITED, fontVariantNumeric: "tabular-nums" }}>{fmt(tipsMonthDepositedTotal)}</p>
+                                <p style={{ margin: "1px 0 0", fontSize: 11, fontWeight: 500, color: muted }}>deposited</p>
+                              </div>
+                            </div>
+                          </>
+                        ) : undefined
+                      }
                     />
                     {INCOME_TYPES.has(activeTab) ? (
                       <OverviewColumn

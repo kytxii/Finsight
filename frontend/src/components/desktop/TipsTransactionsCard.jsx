@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { fmt } from "../../utils/finance";
-import { HOME_SURFACE, HOME_DIVIDER, HOME_TEXT, HOME_MUTED, HOME_EXPENSE, ACCENT, ACCENT_TEXT, TIPS_DEPOSITED } from "../shared/categoryVisuals";
+import { HOME_SURFACE, HOME_DIVIDER, HOME_TEXT, HOME_MUTED, HOME_EXPENSE, HOME_INCOME, ACCENT, ACCENT_TEXT, TIPS_DEPOSITED, CATEGORY_ACCENT } from "../shared/categoryVisuals";
 import { updateTipDeposit, deleteTipDeposit, convertTipDepositToTransaction } from "../../api/tipDeposits";
 import CurrencyInput from "../shared/CurrencyInput";
 import Toggle from "../shared/Toggle";
@@ -9,26 +9,58 @@ function shortDate(iso) {
   return new Date(iso + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
-function RowActions({ muted, onEdit, deleteArmed, onDeleteClick }) {
+// Three-dot menu that morphs into Edit/Delete icons - matches TransactionTable's pattern.
+function RowActions({ muted, text, open, onOpen, onEdit, deleteArmed, onDeleteClick }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }} onMouseDown={(e) => e.stopPropagation()}>
-      {onEdit && (
-        <button onClick={onEdit} aria-label="Edit" style={{ color: muted, background: "none", border: "none", cursor: "pointer", padding: 3, display: "inline-flex" }}>
-          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <div style={{ position: "relative", width: 56, height: 20, flexShrink: 0 }} onMouseDown={(e) => e.stopPropagation()}>
+      <div style={{
+        position: "absolute", inset: 0,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        opacity: open ? 0 : 1,
+        transform: open ? "rotate(90deg) scale(0.5)" : "rotate(0deg) scale(1)",
+        transition: "opacity 200ms ease, transform 200ms ease",
+        pointerEvents: open ? "none" : "auto",
+      }}>
+        <button onClick={onOpen} aria-label="Row actions" className="cursor-pointer rounded-lg p-1" style={{ color: muted }}>
+          <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="currentColor">
+            <circle cx="5" cy="12" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="19" cy="12" r="2" />
+          </svg>
+        </button>
+      </div>
+      <div style={{
+        position: "absolute", inset: 0,
+        display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
+        opacity: open ? 1 : 0,
+        transform: open ? "scale(1)" : "scale(0.6)",
+        transition: "opacity 200ms ease, transform 200ms ease",
+        pointerEvents: open ? "auto" : "none",
+      }}>
+        <button
+          onClick={onEdit} aria-label="Edit" className="cursor-pointer rounded-lg"
+          style={{ color: muted, padding: "0 4px" }}
+          onMouseEnter={(e) => e.currentTarget.style.color = text}
+          onMouseLeave={(e) => e.currentTarget.style.color = muted}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
             <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4Z" />
           </svg>
         </button>
-      )}
-      <button onClick={onDeleteClick} aria-label="Delete" style={{ color: deleteArmed ? HOME_EXPENSE : muted, background: "none", border: "none", cursor: "pointer", padding: 3, display: "inline-flex" }}>
-        {deleteArmed ? (
-          <span style={{ fontSize: 11, fontWeight: 600 }}>Confirm?</span>
-        ) : (
-          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M3 6h18M19 6l-1 14H6L5 6M10 11v6M14 11v6M9 6V4h6v2" />
-          </svg>
-        )}
-      </button>
+        <button
+          onClick={onDeleteClick} aria-label="Delete" className="cursor-pointer rounded-lg"
+          style={{ color: deleteArmed ? HOME_EXPENSE : muted, padding: "0 4px" }}
+          onMouseEnter={(e) => { if (!deleteArmed) e.currentTarget.style.color = HOME_EXPENSE; }}
+          onMouseLeave={(e) => { if (!deleteArmed) e.currentTarget.style.color = muted; }}
+        >
+          {deleteArmed ? (
+            <span style={{ fontSize: 11, fontWeight: 600, whiteSpace: "nowrap" }}>Confirm?</span>
+          ) : (
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 6h18M19 6l-1 14H6L5 6M10 11v6M14 11v6M9 6V4h6v2" />
+            </svg>
+          )}
+        </button>
+      </div>
     </div>
   );
 }
@@ -49,6 +81,13 @@ export default function TipsTransactionsCard({
 
   const [searchFocused, setSearchFocused] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState(null);
+  const [openMenuId, setOpenMenuId] = useState(null);
+
+  useEffect(() => {
+    function onMouseDown() { setOpenMenuId(null); }
+    document.addEventListener("mousedown", onMouseDown);
+    return () => document.removeEventListener("mousedown", onMouseDown);
+  }, []);
   const [editingDepositId, setEditingDepositId] = useState(null);
   const [draft, setDraft] = useState({ amount: "", deposit_date: "" });
   const [saving, setSaving] = useState(false);
@@ -216,15 +255,20 @@ export default function TipsTransactionsCard({
                 className="cursor-pointer"
                 style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 20px", borderTop: `1px solid ${border}` }}
               >
+                <span style={{ width: 9, height: 9, borderRadius: "50%", backgroundColor: CATEGORY_ACCENT[t.category], flexShrink: 0 }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <p style={{ margin: 0, fontSize: 14.5, fontWeight: 600, color: text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</p>
                   <p style={{ margin: "2px 0 0", fontSize: 12, color: muted }}>{shortDate(t.transaction_date)}</p>
                 </div>
-                <p style={{ margin: 0, fontSize: 14.5, fontWeight: 700, color: text, fontVariantNumeric: "tabular-nums" }}>{fmt(t.amount)}</p>
+                <p style={{ margin: 0, fontSize: 14.5, fontWeight: 700, color: HOME_INCOME, fontVariantNumeric: "tabular-nums" }}>+{fmt(t.amount)}</p>
                 <RowActions
                   muted={muted}
+                  text={text}
+                  open={openMenuId === `t-${t.id}`}
+                  onOpen={(e) => { e.stopPropagation(); setOpenMenuId(`t-${t.id}`); }}
+                  onEdit={(e) => { e.stopPropagation(); setOpenMenuId(null); onEditTransaction(t); }}
                   deleteArmed={deleteConfirmId === t.id}
-                  onDeleteClick={(e) => { e.stopPropagation(); requestDelete(t.id, () => onDeleteTransaction(t)); }}
+                  onDeleteClick={(e) => { e.stopPropagation(); requestDelete(t.id, () => { setOpenMenuId(null); onDeleteTransaction(t); }); }}
                 />
               </div>
             ))
@@ -244,15 +288,20 @@ export default function TipsTransactionsCard({
                   className="cursor-pointer"
                   style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 20px", borderTop: `1px solid ${border}` }}
                 >
+                  <span style={{ width: 9, height: 9, borderRadius: "50%", backgroundColor: TIPS_DEPOSITED, border: "1px solid black", flexShrink: 0 }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ margin: 0, fontSize: 14.5, fontWeight: 600, color: TIPS_DEPOSITED }}>Deposited {shortDate(d.deposit_date)}</p>
+                    <p style={{ margin: 0, fontSize: 14.5, fontWeight: 600, color: text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Deposit</p>
+                    <p style={{ margin: "2px 0 0", fontSize: 12, color: muted }}>{shortDate(d.deposit_date)}</p>
                   </div>
                   <p style={{ margin: 0, fontSize: 14.5, fontWeight: 700, color: text, fontVariantNumeric: "tabular-nums" }}>{fmt(d.amount)}</p>
                   <RowActions
                     muted={muted}
-                    onEdit={(e) => { e.stopPropagation(); startEditDeposit(d); }}
+                    text={text}
+                    open={openMenuId === `d-${d.id}`}
+                    onOpen={(e) => { e.stopPropagation(); setOpenMenuId(`d-${d.id}`); }}
+                    onEdit={(e) => { e.stopPropagation(); setOpenMenuId(null); startEditDeposit(d); }}
                     deleteArmed={deleteConfirmId === d.id}
-                    onDeleteClick={(e) => { e.stopPropagation(); requestDelete(d.id, () => removeDeposit(d.id)); }}
+                    onDeleteClick={(e) => { e.stopPropagation(); requestDelete(d.id, () => { setOpenMenuId(null); removeDeposit(d.id); }); }}
                   />
                 </div>
                 {editingDepositId === d.id && (

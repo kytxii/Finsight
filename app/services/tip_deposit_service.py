@@ -110,14 +110,17 @@ class CashOnHandResult(NamedTuple):
 async def get_cash_on_hand(
     current_user: UUID, db: AsyncSession, year: int | None = None, month: int | None = None
 ) -> CashOnHandResult:
-    """Undeposited cash = tips earned this month minus cash deposited this month.
+    """Cash on hand = cash tips earned this month. Not tips_earned minus
+    tips_deposited - a deposit isn't tied to the month the underlying tip was
+    earned, so depositing a prior month's undeposited cash this month would
+    subtract against *this* month's earned total and go negative. tips_earned
+    and tips_deposited are independent this-month totals, shown side by side,
+    not netted against each other.
 
-    Scoped to a calendar month (default: the current one) rather than all-time -
-    it's shown alongside other per-month Tips figures (this month's earned, this
-    month's deposited), and an all-time running balance there reads as wrong even
-    though the arithmetic isn't. Confirmed as the wanted behavior: undeposited cash
-    carried over from a prior month intentionally drops out of this figure once the
-    month turns over (#157).
+    Scoped to a calendar month (default: the current one) rather than all-time
+    - it's shown alongside other per-month Tips figures (this month's earned,
+    this month's deposited), and an all-time running balance there reads as
+    wrong even though the arithmetic isn't (#157).
     """
     today = date.today()
     year = year or today.year
@@ -143,7 +146,7 @@ async def get_cash_on_hand(
     )) or Decimal("0")
 
     return CashOnHandResult(
-        cash_on_hand=Decimal(tips_earned) - Decimal(tips_deposited),
+        cash_on_hand=Decimal(tips_earned),
         tips_earned=Decimal(tips_earned),
         tips_deposited=Decimal(tips_deposited),
     )

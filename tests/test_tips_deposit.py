@@ -112,7 +112,11 @@ async def test_same_day_as_anchor_not_double_counted(test_user: dict, client: As
     assert await _running_balance(client, token) == 1000.0
 
 
-async def test_cash_on_hand_is_tips_minus_deposits(test_user: dict, client: AsyncClient, clean_finance):
+async def test_cash_on_hand_is_tips_earned_not_net_of_deposits(test_user: dict, client: AsyncClient, clean_finance):
+    """cash_on_hand is this month's earned cash tips, full stop - not earned
+    minus deposited. A deposit isn't tied to the month its cash was earned, so
+    netting the two would make cash_on_hand go negative whenever a prior
+    month's undeposited cash gets deposited this month."""
     token = test_user["token"]
     await _add_tip(client, token, "150.00")
     await _add_tip(client, token, "100.00")
@@ -121,6 +125,22 @@ async def test_cash_on_hand_is_tips_minus_deposits(test_user: dict, client: Asyn
     coh = await _cash_on_hand(client, token)
     assert float(coh["tips_earned"]) == 250.0
     assert float(coh["tips_deposited"]) == 200.0
+    assert float(coh["cash_on_hand"]) == 250.0
+
+
+async def test_cash_on_hand_does_not_go_negative_on_prior_month_deposit(test_user: dict, client: AsyncClient, clean_finance):
+    """The bug this guards against: last month's undeposited cash gets
+    deposited this month, after this month's own (smaller) cash tips."""
+    token = test_user["token"]
+    last_month_day = date.today().replace(day=1) - timedelta(days=1)
+
+    await _add_tip(client, token, "300.00", transaction_date=last_month_day)
+    await _add_tip(client, token, "50.00")
+    await _add_deposit(client, token, "300.00")
+
+    coh = await _cash_on_hand(client, token)
+    assert float(coh["tips_earned"]) == 50.0
+    assert float(coh["tips_deposited"]) == 300.0
     assert float(coh["cash_on_hand"]) == 50.0
 
 
@@ -140,12 +160,12 @@ async def test_cash_on_hand_is_scoped_to_the_month_not_all_time(test_user: dict,
     coh = await _cash_on_hand(client, token)
     assert float(coh["tips_earned"]) == 250.0
     assert float(coh["tips_deposited"]) == 200.0
-    assert float(coh["cash_on_hand"]) == 50.0
+    assert float(coh["cash_on_hand"]) == 250.0
 
     coh_last_month = await _cash_on_hand(client, token, year=last_month_day.year, month=last_month_day.month)
     assert float(coh_last_month["tips_earned"]) == 80.0
     assert float(coh_last_month["tips_deposited"]) == 80.0
-    assert float(coh_last_month["cash_on_hand"]) == 0.0
+    assert float(coh_last_month["cash_on_hand"]) == 80.0
 
 
 async def test_editing_a_deposit_updates_checking(test_user: dict, client: AsyncClient, clean_finance):

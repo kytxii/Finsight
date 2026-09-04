@@ -17,6 +17,9 @@ import {
   HOME_TEXT, HOME_MUTED, HOME_SURFACE, HOME_DIVIDER, HOME_EXPENSE, HOME_INCOME, HOME_ACCENT,
   GAUGE_DARK_GREEN, GAUGE_GREEN, GAUGE_YELLOW, GAUGE_ORANGE, GAUGE_RED, TILE_COLOR, ACCENT,
 } from "../shared/categoryVisuals";
+import { getCached, hasCached, setCached } from "../../utils/pageCache";
+
+const CACHE_KEY = "mobile-installments";
 
 const EMPTY_DRAFT = { name: "", total_amount: "", period_months: "", day_of_month: "" };
 
@@ -391,8 +394,11 @@ function ComingSoonSheet({ onClose }) {
 }
 
 export default function MobileInstallments({ onSaved, openAddSignal }) {
-  const [rows, setRows] = useState([]);
-  const [loading, setLoading] = useState(true);
+  // Seeded from the last-known result (#119) so a reopen shows real data
+  // immediately instead of a skeleton, while loadInstallments below still
+  // revalidates in the background.
+  const [rows, setRows] = useState(() => getCached(CACHE_KEY) ?? []);
+  const [loading, setLoading] = useState(() => !hasCached(CACHE_KEY));
   const [loadFailed, setLoadFailed] = useState(false);
   const [deletingIds, setDeletingIds] = useState(new Set());
   const [openId, setOpenId] = useState(null);
@@ -407,10 +413,13 @@ export default function MobileInstallments({ onSaved, openAddSignal }) {
   const prevSignal = useRef(openAddSignal);
 
   function loadInstallments() {
-    setLoading(true);
+    // Only the skeleton-worthy cold load blanks the screen (#119) - a
+    // reopen with a warm cache already has something to show, so this runs
+    // as a silent background revalidation instead.
+    if (!hasCached(CACHE_KEY)) setLoading(true);
     setLoadFailed(false);
     getInstallments()
-      .then(r => setRows(r.data))
+      .then(r => { setRows(r.data); setCached(CACHE_KEY, r.data); })
       .catch(() => setLoadFailed(true))
       .finally(() => setLoading(false));
   }

@@ -12,6 +12,9 @@ import {
 } from "../../api/recurringPayments";
 import { useSheetDrag, SHEET_EASE } from "../../hooks/useSheetDrag";
 import { HOME_TEXT, HOME_MUTED, HOME_SURFACE, HOME_DIVIDER, HOME_EXPENSE, HOME_INCOME, HOME_ACCENT, TILE_COLOR, CATEGORY_ICON } from "../shared/categoryVisuals";
+import { getCached, hasCached, setCached } from "../../utils/pageCache";
+
+const CACHE_KEY = "mobile-recurring";
 
 const EMPTY_DRAFT = { name: "", amount: "", day_of_month: "", category: "SUBSCRIPTION", is_estimate: false };
 
@@ -192,8 +195,11 @@ function EditSheet({ draft, setDraft, mode, saving, error, onCancel, onSave, onD
 }
 
 export default function MobileRecurring({ onSaved, openAddSignal }) {
-  const [rows, setRows] = useState([]);
-  const [loading, setLoading] = useState(true);
+  // Seeded from the last-known result (#119) so a reopen shows real data
+  // immediately instead of a skeleton, while the effect below still
+  // revalidates in the background.
+  const [rows, setRows] = useState(() => getCached(CACHE_KEY) ?? []);
+  const [loading, setLoading] = useState(() => !hasCached(CACHE_KEY));
   const [deletingIds, setDeletingIds] = useState(new Set());
   const [openId, setOpenId] = useState(null);
   const [listError, setListError] = useState("");
@@ -206,8 +212,9 @@ export default function MobileRecurring({ onSaved, openAddSignal }) {
   const prevSignal = useRef(openAddSignal);
 
   useEffect(() => {
+    if (!hasCached(CACHE_KEY)) setLoading(true);
     getRecurringPayments()
-      .then(r => setRows(r.data))
+      .then(r => { setRows(r.data); setCached(CACHE_KEY, r.data); })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);

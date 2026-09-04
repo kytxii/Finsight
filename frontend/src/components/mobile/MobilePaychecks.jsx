@@ -18,6 +18,9 @@ import CurrencyInput from "../shared/CurrencyInput";
 import CompactDateField from "./CompactDateField";
 import Skel from "../shared/Skel";
 import { HOME_TEXT, HOME_MUTED, HOME_SURFACE, HOME_DIVIDER, HOME_INCOME, HOME_EXPENSE, TILE_COLOR } from "../shared/categoryVisuals";
+import { getCached, hasCached, setCached } from "../../utils/pageCache";
+
+const CACHE_KEY = "mobile-paychecks";
 
 const GOLD = TILE_COLOR.SAVINGS; // "needs amount" / balance accent
 
@@ -144,10 +147,14 @@ export default function MobilePaychecks({ onSaved }) {
 
   const [view, setView] = useState("list"); // "list" | "settings"
 
-  const [loading, setLoading] = useState(true);
-  const [schedules, setSchedules] = useState([]);
-  const [paychecks, setPaychecks] = useState([]);
-  const [pending, setPending] = useState([]);
+  // Seeded from the last-known result (#119) so a reopen shows real data
+  // immediately instead of a skeleton, while load() below still revalidates
+  // in the background.
+  const cached = getCached(CACHE_KEY);
+  const [loading, setLoading] = useState(!hasCached(CACHE_KEY));
+  const [schedules, setSchedules] = useState(cached?.schedules ?? []);
+  const [paychecks, setPaychecks] = useState(cached?.paychecks ?? []);
+  const [pending, setPending] = useState(cached?.pending ?? []);
 
   const [yearFilter, setYearFilter] = useState(null);
   const [needsAmountFilter, setNeedsAmountFilter] = useState(false);
@@ -171,18 +178,25 @@ export default function MobilePaychecks({ onSaved }) {
   const [editValue, setEditValue] = useState("");
   const [rowErrorId, setRowErrorId] = useState(null);
 
-  const [balanceAnchor, setBalanceAnchorState] = useState(null);
+  const [balanceAnchor, setBalanceAnchorState] = useState(cached?.balanceAnchor ?? null);
   const [editingBalance, setEditingBalance] = useState(false);
-  const [balanceDraft, setBalanceDraft] = useState({ current_balance: "", as_of_date: getToday() });
+  const [balanceDraft, setBalanceDraft] = useState(
+    cached?.balanceAnchor
+      ? { current_balance: String(cached.balanceAnchor.current_balance), as_of_date: getToday() }
+      : { current_balance: "", as_of_date: getToday() },
+  );
   const [balanceError, setBalanceError] = useState("");
 
-  const [spendingReserve, setSpendingReserveState] = useState("0.00");
+  const [spendingReserve, setSpendingReserveState] = useState(cached?.spendingReserve ?? "0.00");
   const [editingReserve, setEditingReserve] = useState(false);
-  const [reserveDraft, setReserveDraft] = useState("");
+  const [reserveDraft, setReserveDraft] = useState(cached?.spendingReserve != null ? String(cached.spendingReserve) : "");
   const [reserveError, setReserveError] = useState("");
 
   async function load() {
-    setLoading(true);
+    // Only the skeleton-worthy cold load blanks the screen (#119) - a
+    // reopen with a warm cache already has something to show, so this runs
+    // as a silent background revalidation instead.
+    if (!hasCached(CACHE_KEY)) setLoading(true);
     try {
       const [schedulesRes, paychecksRes, balanceRes, reserveRes] = await Promise.all([
         getPaycheckSchedules(),
@@ -199,6 +213,13 @@ export default function MobilePaychecks({ onSaved }) {
       }
       setSpendingReserveState(reserveRes.data.spending_reserve);
       setReserveDraft(String(reserveRes.data.spending_reserve));
+      setCached(CACHE_KEY, {
+        schedules: schedulesRes.data,
+        paychecks: paychecksRes.data.paychecks,
+        pending: paychecksRes.data.pending_paychecks,
+        balanceAnchor: balanceRes.data,
+        spendingReserve: reserveRes.data.spending_reserve,
+      });
     } catch {
     } finally { setLoading(false); }
   }

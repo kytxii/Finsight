@@ -3476,7 +3476,10 @@ export const convertTipDepositToTransaction = (id) => {
 
 // Scoped to a calendar month (default: the current demo month) to match the
 // backend fix in #157 - this used to sum all-time, which read as wrong sitting
-// next to the this-month figures beside it.
+// next to the this-month figures beside it. cash_on_hand is this month's
+// earned cash tips, not earned minus deposited - a deposit isn't tied to the
+// month its cash was earned, so netting the two would go negative whenever a
+// prior month's undeposited cash gets deposited this month.
 export const getCashOnHand = (year, month) => {
   const period = year && month ? `${year}-${String(month).padStart(2, "0")}` : demoCurrentMonth();
   const tipsEarned = getAll(TX_KEY)
@@ -3486,7 +3489,7 @@ export const getCashOnHand = (year, month) => {
     .filter((d) => d.deposit_date.slice(0, 7) === period)
     .reduce((s, d) => s + parseFloat(d.amount), 0);
   return respond({
-    cash_on_hand: (tipsEarned - tipsDeposited).toFixed(2),
+    cash_on_hand: tipsEarned.toFixed(2),
     tips_earned: tipsEarned.toFixed(2),
     tips_deposited: tipsDeposited.toFixed(2),
   });

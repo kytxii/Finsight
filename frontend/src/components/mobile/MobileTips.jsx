@@ -8,7 +8,7 @@ import { fmt } from "../../utils/finance";
 import { getToday } from "../../utils/time";
 import { periodLabel } from "../../utils/mobileFormat";
 import { updateTipDeposit, deleteTipDeposit, getCashOnHand, convertTipDepositToTransaction } from "../../api/tipDeposits";
-import { HOME_TEXT, HOME_MUTED, HOME_SURFACE, HOME_DIVIDER, HOME_EXPENSE, HOME_ACCENT, TILE_COLOR } from "../shared/categoryVisuals";
+import { HOME_TEXT, HOME_MUTED, HOME_SURFACE, HOME_DIVIDER, HOME_EXPENSE, HOME_INCOME, HOME_ACCENT, TILE_COLOR } from "../shared/categoryVisuals";
 import { IconTipsTile } from "../shared/categoryIcons";
 
 const TIPS = TILE_COLOR.TIPS;        // #26a69a
@@ -242,7 +242,7 @@ export default function MobileTips({ transactions, deposits, loading, onBack, on
                 <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "11px 14px", backgroundColor: HOME_SURFACE }}>
                   <div style={tile(TIPS)}><IconTipsTile /></div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ margin: 0, fontSize: 16.5, fontWeight: 600, letterSpacing: "-0.2px", color: HOME_TEXT, fontVariantNumeric: "tabular-nums" }}>{fmt(t.amount)}</p>
+                    <p style={{ margin: 0, fontSize: 16.5, fontWeight: 600, letterSpacing: "-0.2px", color: HOME_INCOME, fontVariantNumeric: "tabular-nums" }}>+{fmt(t.amount)}</p>
                     <p style={{ margin: "2px 0 0", fontSize: 13, fontWeight: 500, color: HOME_MUTED }}>{shortDate(t.transaction_date)}</p>
                   </div>
                 </div>

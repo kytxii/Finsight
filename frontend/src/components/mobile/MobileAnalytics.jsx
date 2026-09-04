@@ -271,7 +271,7 @@ export default function MobileAnalytics({ transactions, deposits = [], loading, 
       </div>
 
       <div
-        key={periodKey}
+        key={`category-${periodKey}`}
         style={{
           animation: slideDir ? "mob-month-slide 260ms ease" : undefined,
           "--mob-slide-from": slideDir > 0 ? "24px" : "-24px",
@@ -318,7 +318,7 @@ export default function MobileAnalytics({ transactions, deposits = [], loading, 
       </SectionCard>
       </div>
 
-      <div key={periodKey} style={{ animation: slideDir ? "mob-month-slide 260ms ease" : undefined, "--mob-slide-from": slideDir > 0 ? "24px" : "-24px" }}>
+      <div key={`income-expense-${periodKey}`} style={{ animation: slideDir ? "mob-month-slide 260ms ease" : undefined, "--mob-slide-from": slideDir > 0 ? "24px" : "-24px" }}>
       <SectionCard title="Income vs. Expense">
         {loading ? (
           <TrendChartSkel bars={2} />
@@ -355,7 +355,7 @@ export default function MobileAnalytics({ transactions, deposits = [], loading, 
       </SectionCard>
       </div>
 
-      <div key={periodKey} style={{ animation: slideDir ? "mob-month-slide 260ms ease" : undefined, "--mob-slide-from": slideDir > 0 ? "24px" : "-24px" }}>
+      <div key={`savings-${periodKey}`} style={{ animation: slideDir ? "mob-month-slide 260ms ease" : undefined, "--mob-slide-from": slideDir > 0 ? "24px" : "-24px" }}>
       <SectionCard title="Savings">
         {loading ? (
           <TrendChartSkel bars={1} />
