@@ -4,6 +4,7 @@ import {
   reportUnreachable,
   isUnreachableError,
 } from "../utils/connectivity";
+import { clearResponses } from "./offline/db";
 
 // Free-tier Render spins the service down after ~15 min idle, and waking it
 // takes roughly 50 seconds. Before this the instance had no timeout at all, so
@@ -37,6 +38,11 @@ const processQueue = (error, token = null) => {
 client.interceptors.response.use(
   (response) => {
     reportReachable();
+    // Any successful write invalidates the read cache (#204). Centralised
+    // here rather than per-endpoint so a new mutation can't forget to do it.
+    if ((response.config?.method ?? "get").toLowerCase() !== "get") {
+      clearResponses();
+    }
     return response;
   },
   async (error) => {

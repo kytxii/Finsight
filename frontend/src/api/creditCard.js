@@ -1,10 +1,18 @@
 import client from './client';
 import * as demo from './demoStore';
+import { cachedGet } from './offline/cache';
+
+
+// GET endpoints read through the offline cache (#204): last-known response is
+// returned immediately and refreshed underneath, so a cold-starting or
+// unreachable backend doesn't leave the UI on skeletons. Mutations are
+// untouched here - they still go straight to the network, and client.js drops
+// the cache on every successful write.
 
 const isDemo = () => localStorage.getItem('demo') === 'true';
 
 export const getCreditCardPayments = () =>
-  isDemo() ? demo.getCreditCardPayments() : client.get('/credit-card-payments/');
+  isDemo() ? demo.getCreditCardPayments() : cachedGet('creditCardPayments', () => client.get('/credit-card-payments/'));
 
 // Plain balance, no linked transaction - the Credit Cards "+" panel's own
 // create flow. Contrast with createPaymentFromTransaction below, which
@@ -20,7 +28,7 @@ export const createPaymentFromTransaction = (transactionId, dueDate) =>
     : client.post(`/credit-card-payments/from-transaction/${transactionId}`, null, { params: dueDate ? { due_date: dueDate } : undefined });
 
 export const getCreditCardPayment = (paymentId) =>
-  isDemo() ? demo.getCreditCardPayment(paymentId) : client.get(`/credit-card-payments/${paymentId}`);
+  isDemo() ? demo.getCreditCardPayment(paymentId) : cachedGet(`creditCardPayment:${paymentId}`, () => client.get(`/credit-card-payments/${paymentId}`));
 
 export const allocateCreditCardPayment = (paymentId, data) =>
   isDemo() ? demo.allocateCreditCardPayment(paymentId, data) : client.post(`/credit-card-payments/${paymentId}/allocate`, data);

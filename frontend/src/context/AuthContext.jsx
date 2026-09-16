@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect } from "react";
 import { initDemo, clearDemo } from "../api/demoStore";
 import { clearAllCached } from "../utils/pageCache";
+import { clearAllCached as clearOfflineCache } from "../api/offline/db";
 import client from "../api/client";
 
 const AuthContext = createContext(null);
@@ -43,6 +44,10 @@ export function AuthProvider({ children }) {
   const login = (newToken, userData) => {
     clearDemo();
     clearAllCached();
+    // IndexedDB survives the tab closing, so a stale entry here would seed the
+    // next account's session with the previous user's financial data on a
+    // shared device (#204) - the durable version of the pageCache bug.
+    clearOfflineCache();
     _setSession(newToken, userData);
   };
 
@@ -54,6 +59,7 @@ export function AuthProvider({ children }) {
     }
     clearDemo();
     clearAllCached();
+    clearOfflineCache();
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     setToken(null);
@@ -63,6 +69,7 @@ export function AuthProvider({ children }) {
   const enterDemoMode = () => {
     clearDemo();
     clearAllCached();
+    clearOfflineCache();
     localStorage.setItem("demo", "true");
     initDemo();
     setToken("demo");

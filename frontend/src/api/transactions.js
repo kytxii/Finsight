@@ -1,5 +1,13 @@
 import client from './client'
 import * as demo from './demoStore'
+import { cachedGet } from './offline/cache'
+
+
+// GET endpoints read through the offline cache (#204): last-known response is
+// returned immediately and refreshed underneath, so a cold-starting or
+// unreachable backend doesn't leave the UI on skeletons. Mutations are
+// untouched here - they still go straight to the network, and client.js drops
+// the cache on every successful write.
 
 const isDemo = () => localStorage.getItem('demo') === 'true'
 
@@ -9,7 +17,7 @@ const isDemo = () => localStorage.getItem('demo') === 'true'
 // change. Actually paginating what the dashboards request is a separate,
 // larger follow-up (auditing every derived total/chart for partial-data
 // correctness), not done here.
-export const getTransactions    = ()         => isDemo() ? demo.getTransactions()           : client.get('/transactions/', { params: { limit: 1000 } })
+export const getTransactions    = ()         => isDemo() ? demo.getTransactions()           : cachedGet('transactions', () => client.get('/transactions/', { params: { limit: 1000 } }))
 export const createTransaction  = (data)     => isDemo() ? demo.createTransaction(data)     : client.post('/transactions/', data)
 export const updateTransaction  = (id, data) => isDemo() ? demo.updateTransaction(id, data) : client.patch(`/transactions/${id}`, data)
 export const deleteTransaction  = (id)       => isDemo() ? demo.deleteTransaction(id)       : client.delete(`/transactions/${id}`)
