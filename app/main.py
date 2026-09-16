@@ -35,6 +35,17 @@ app.add_middleware(SessionMiddleware, secret_key=settings.SECRET_KEY, same_site=
 def root():
     return {"status": "ok"}
 
+
+# Reachability probe for the client's connectivity tracker (#204). Deliberately
+# touches nothing - no DB session, no auth - so a failure means the service is
+# genuinely unreachable rather than merely unhealthy. Note it does NOT dodge a
+# free-tier cold start: any request wakes the instance, so this still takes the
+# full ~50s when Render has spun down. Its value is an unambiguous signal, not
+# a fast one.
+@app.api_route("/health", methods=["GET", "HEAD"])
+def health():
+    return {"status": "ok"}
+
 app.include_router(transaction.router)
 app.include_router(users.router)
 app.include_router(auth.router)

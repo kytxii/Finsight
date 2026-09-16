@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   DevMenuSection,
   DevMenuInfo,
@@ -6,6 +6,7 @@ import {
   DevMenuRow,
 } from "./DevMenuControls";
 import { HOME_EXPENSE } from "../shared/categoryVisuals";
+import { isReachable, subscribe, probe } from "../../utils/connectivity";
 import {
   NETWORK_DELAYS,
   formatDelay,
@@ -46,6 +47,10 @@ export default function DevToolsPanel({
   theme,
 }) {
   const [tab, setTab] = useState("state");
+  // No user-facing sync UI by design (#204) - but a write that fails silently
+  // is money quietly vanishing, so backend state is at least observable here.
+  const [reachable, setReachable] = useState(isReachable());
+  useEffect(() => subscribe(setReachable), []);
   const { surface, border, text, muted } = theme;
   const {
     forceEmpty,
@@ -292,6 +297,17 @@ export default function DevToolsPanel({
             {info("API base", build.apiBase)}
             {info("Origin", build.origin)}
             {info("Viewport", build.viewport)}
+
+            <DevMenuSection label="BACKEND" border={border} muted={muted} />
+            {info("Reachable", reachable ? "yes" : "no")}
+            <DevMenuButton
+              label="Probe /health"
+              description="Re-check now"
+              onClick={() => probe()}
+              muted={muted}
+              text={text}
+              border={border}
+            />
           </>
         )}
       </div>

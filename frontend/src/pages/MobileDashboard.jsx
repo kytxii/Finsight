@@ -28,6 +28,7 @@ import {
 } from "../utils/finance";
 import { useTheme } from "../hooks/mobile/useTheme";
 import { useAuth } from "../context/AuthContext";
+import { isReachable as backendReachable, subscribe as subscribeReachable, probe as probeBackend } from "../utils/connectivity";
 import { NETWORK_DELAYS, DEV_TABS, formatDelay, tokenExpiry, tokenExpiresIn, buildInfo, localStorageSize } from "../utils/devTools";
 import { getMonthRange } from "../components/mobile/DateRangeFilter";
 import { getToday } from "../utils/time";
@@ -180,6 +181,9 @@ export default function MobileDashboard() {
   const dark = useTheme();
   const { logout, user, isDemo } = useAuth();
   const [devTab, setDevTab] = useState("state");
+  // See DevToolsPanel (#204): no user-facing sync UI, but observable here.
+  const [devReachable, setDevReachable] = useState(backendReachable());
+  useEffect(() => subscribeReachable(setDevReachable), []);
   const navigate = useNavigate();
 
   const bg = dark ? "var(--dark-bg)" : "var(--light-bg)";
@@ -2277,6 +2281,12 @@ export default function MobileDashboard() {
                   {Object.entries({ Mode: buildInfo().mode, "API base": buildInfo().apiBase, Origin: buildInfo().origin, Viewport: buildInfo().viewport }).map(([label, value]) => (
                     <MDevInfo key={label} label={label} value={value} muted={HOME_MUTED} text={HOME_TEXT} />
                   ))}
+
+                  <MDevSection label="BACKEND" border={HOME_DIVIDER} muted={HOME_MUTED} />
+                  <MDevInfo label="Reachable" value={devReachable ? "yes" : "no"} muted={HOME_MUTED} text={HOME_TEXT} />
+                  <DevRow label="Probe /health" description="Re-check now">
+                    <button onClick={() => probeBackend()} className="px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer border" style={{ color: HOME_TEXT, borderColor: HOME_DIVIDER, backgroundColor: "rgba(255,255,255,0.06)" }}>Run</button>
+                  </DevRow>
                 </>
               )}
 
