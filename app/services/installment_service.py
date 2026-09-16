@@ -9,6 +9,7 @@ from app.models import Installment, Transaction, User
 from app.models.category import Category
 from app.schemas import CreateInstallment, UpdateInstallment
 from app.services import paycheck_service
+from app.services.sync_utils import find_existing_for_replay
 
 # Gauge bands, keyed off monthly_payment / available_cash. This is a cash-flow
 # impact measure, not an affordability judgement - it says how much of the
@@ -84,9 +85,18 @@ async def get_installment_by_id(installment_id: UUID, current_user: UUID, db: As
 
 
 async def create_installment(data: CreateInstallment, current_user: UUID, db: AsyncSession):
+    existing = await find_existing_for_replay(Installment, data.id, current_user, db)
+    if existing is not None:
+        return existing
+
     monthly_payment = compute_monthly_payment(data.total_amount, data.period_months) if data.period_months else None
+    # exclude id: model_dump() includes it as None on the ordinary online
+    # path, and passing id=None to the constructor would override the
+    # column's default=uuid.uuid4 (see transaction_service.create_transaction).
+    fields = data.model_dump(exclude={"id"})
     new_installment = Installment(
-        **data.model_dump(),
+        **fields,
+        **({"id": data.id} if data.id is not None else {}),
         monthly_payment=monthly_payment,
         category=Category.DEBT,  # always debt - not client-settable, see model docstring
         created_by=current_user,

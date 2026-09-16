@@ -8,6 +8,7 @@ import calendar
 from app.models import Transaction, RecurringPayment, Paycheck, Installment, CreditCardCharge
 from app.models.category import Category
 from app.schemas import CreateTransaction, UpdateTransaction
+from app.services.sync_utils import find_existing_for_replay
 from app.services import recurring_payment_service, credit_card_service
 from app.services.recurring_payment_service import InvalidRecurringPaymentError
 
@@ -39,7 +40,19 @@ async def get_transaction_by_id(transaction_id: UUID, current_user: UUID,db: Asy
     return transaction
 
 async def create_transaction(transaction: CreateTransaction, current_user: UUID, db: AsyncSession):
-    data = transaction.model_dump()
+    existing = await find_existing_for_replay(Transaction, transaction.id, current_user, db)
+    if existing is not None:
+        return existing
+
+    # Excluding "id" here matters: model_dump() includes it as None on every
+    # ordinary online create, and passing id=None explicitly to the
+    # constructor would override the column's default=uuid.uuid4 (SQLAlchemy
+    # only applies a Python-side default when the attribute is absent, not
+    # when it's set to None) - inserting a NULL primary key. Only pass id
+    # through when the client actually supplied one.
+    data = transaction.model_dump(exclude={"id"})
+    if transaction.id is not None:
+        data["id"] = transaction.id
     new_transaction = Transaction(**data, created_by=current_user, updated_by=current_user)
 
     db.add(new_transaction)
@@ -69,10 +82,15 @@ async def delete_transaction(transaction_id: UUID, current_user: UUID, db: Async
     result = await db.execute(select(Transaction).where(Transaction.id == transaction_id))
     transaction = result.scalar_one_or_none()
 
-    if transaction is None:
-        raise ValueError("Transaction not found")
-    if transaction.created_by != current_user:
-        raise ValueError("Transaction not found")
+    # Idempotent delete (#204): a queued delete whose success response never
+    # reached the client retries against a row that's already gone. Returning
+    # quietly rather than 404ing means the retry doesn't dead-letter - the
+    # end state ("this id no longer exists") is identical either way. This
+    # also means deleting someone else's id now reports success instead of
+    # 404, same as it did before for a truly-missing id - both cases already
+    # returned an identical 404 previously, so nothing new is revealed.
+    if transaction is None or transaction.created_by != current_user:
+        return
 
     if transaction.paycheck_id is not None:
         paycheck_result = await db.execute(select(Paycheck).where(Paycheck.id == transaction.paycheck_id))

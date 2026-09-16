@@ -10,6 +10,7 @@ from app.schemas import (
     InstallmentInsightsResponse,
 )
 from app.services import installment_service
+from app.services.sync_utils import IdConflictError
 
 router = APIRouter(prefix="/installments", tags=["installments"])
 
@@ -45,7 +46,10 @@ async def get_installment_insights(installment_id: UUID, current_user: User = De
 
 @router.post("/", response_model=InstallmentResponse, status_code=201)
 async def create_installment(data: CreateInstallment, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    return await installment_service.create_installment(data, current_user.id, db)
+    try:
+        return await installment_service.create_installment(data, current_user.id, db)
+    except IdConflictError as e:
+        raise HTTPException(status_code=409, detail=str(e))
 
 
 @router.patch("/{installment_id}", response_model=InstallmentResponse)

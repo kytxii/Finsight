@@ -13,7 +13,8 @@ class TransactionBase(BaseModel):
     paid_with_cash: bool = False
 
 class CreateTransaction(TransactionBase):
-    pass
+    # Client-generated for offline creates (#204) - see sync_utils.find_existing_for_replay.
+    id: UUID | None = None
 
 class UpdateTransaction(TransactionBase):
     name: str | None = None

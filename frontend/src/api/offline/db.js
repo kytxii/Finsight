@@ -25,7 +25,16 @@ export const META = "meta";
 
 let dbPromise = null;
 
-function connect() {
+/**
+ * The one place that owns opening this database. outbox.js shares this
+ * rather than calling openDB() itself (#204 fix): idb only registers an
+ * upgrade handler on the openDB() call that passes an `upgrade` option, and
+ * IndexedDB only fires upgradeneeded on a version increase - so whichever
+ * module's bare, upgrade-less open() call happened to run first would
+ * silently create the database with zero object stores, forever, since no
+ * later open() at the same version gets a second chance to create them.
+ */
+export function connect() {
   if (!dbPromise) {
     dbPromise = openDB(DB_NAME, DB_VERSION, {
       upgrade(db) {

@@ -232,8 +232,16 @@ async def delete_payment(payment_id: UUID, current_user: UUID, db: AsyncSession)
     promoted transaction unlinked, not deleted (same reasoning as the anchor -
     real money already left the account); one left with zero allocations from
     any other payment is deleted outright, since without this record it never
-    became anything (#54)."""
-    payment = await _get_owned_payment(payment_id, current_user, db)
+    became anything (#54).
+
+    Uses its own lookup rather than _get_owned_payment (#204): that helper
+    raises for GET/allocate, where a missing id is a genuine 404, but a
+    queued delete retried after its success response was lost must not
+    dead-letter against a row it already removed - see
+    transaction_service.delete_transaction for the same reasoning."""
+    payment = await db.scalar(select(CreditCardPayment).where(CreditCardPayment.id == payment_id))
+    if payment is None or payment.created_by != current_user:
+        return
 
     anchor = await db.scalar(select(Transaction).where(Transaction.credit_card_payment_id == payment_id))
     if anchor is not None:

@@ -6,6 +6,7 @@ from app.models import User
 from app.schemas.transaction import CreateTransaction, TransactionResponse, UpdateTransaction
 from app.schemas.tip_deposit import TipDepositResponse
 from app.services import transaction_service, tip_deposit_service
+from app.services.sync_utils import IdConflictError
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
 
@@ -39,6 +40,8 @@ async def get_transaction_by_id(transaction_id: UUID, current_user: User = Depen
 async def create_transaction(transaction: CreateTransaction, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     try:
         result = await transaction_service.create_transaction(transaction, current_user.id, db)
+    except IdConflictError as e:
+        raise HTTPException(status_code=409, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return result

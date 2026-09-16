@@ -11,6 +11,7 @@ from app.models.paycheck_schedule import PaycheckFrequency
 from app.models.category import Category
 from app.schemas import CreatePaycheckSchedule, UpdatePaycheckSchedule, UpdatePaycheckAmount, SetBalanceAnchor
 from app.schemas.paycheck import SetSpendingReserve
+from app.services.sync_utils import find_existing_for_replay
 
 # "Recurring expenses" for the spendable surplus calc - categories that represent
 # money going out. INCOME, TIPS, and REIMBURSEMENT are inflows, not expenses.
@@ -126,7 +127,16 @@ def _generate_pay_dates_through(schedule: PaycheckSchedule, through: date) -> li
 
 
 async def create_paycheck_schedule(data: CreatePaycheckSchedule, current_user: UUID, db: AsyncSession):
-    schedule = PaycheckSchedule(**data.model_dump(), created_by=current_user, updated_by=current_user)
+    existing = await find_existing_for_replay(PaycheckSchedule, data.id, current_user, db)
+    if existing is not None:
+        return existing
+
+    # exclude id: see transaction_service.create_transaction for why id=None
+    # can't be passed through to the constructor.
+    fields = data.model_dump(exclude={"id"})
+    if data.id is not None:
+        fields["id"] = data.id
+    schedule = PaycheckSchedule(**fields, created_by=current_user, updated_by=current_user)
 
     db.add(schedule)
     await db.commit()

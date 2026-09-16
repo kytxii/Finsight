@@ -21,12 +21,16 @@ from app.schemas.paycheck import (
     EstimatedSavingsResponse,
 )
 from app.services import paycheck_service
+from app.services.sync_utils import IdConflictError
 
 router = APIRouter(prefix="/paychecks", tags=["paychecks"])
 
 @router.post("/schedules", response_model=PaycheckScheduleResponse, status_code=201)
 async def create_paycheck_schedule(schedule: CreatePaycheckSchedule, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    result = await paycheck_service.create_paycheck_schedule(schedule, current_user.id, db)
+    try:
+        result = await paycheck_service.create_paycheck_schedule(schedule, current_user.id, db)
+    except IdConflictError as e:
+        raise HTTPException(status_code=409, detail=str(e))
     return result
 
 @router.get("/schedules", response_model=list[PaycheckScheduleResponse])

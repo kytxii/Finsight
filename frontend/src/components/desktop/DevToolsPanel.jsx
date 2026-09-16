@@ -7,6 +7,7 @@ import {
 } from "./DevMenuControls";
 import { HOME_EXPENSE } from "../shared/categoryVisuals";
 import { isReachable, subscribe, probe } from "../../utils/connectivity";
+import { outboxDepth, deadLetters, subscribeToOutbox, drain } from "../../api/offline/outbox";
 import {
   NETWORK_DELAYS,
   formatDelay,
@@ -19,6 +20,7 @@ import {
 const TABS = [
   { key: "state", label: "State" },
   { key: "data", label: "Data" },
+  { key: "sync", label: "Sync" },
   { key: "session", label: "Session" },
   { key: "build", label: "Build" },
 ];
@@ -51,6 +53,18 @@ export default function DevToolsPanel({
   // is money quietly vanishing, so backend state is at least observable here.
   const [reachable, setReachable] = useState(isReachable());
   useEffect(() => subscribe(setReachable), []);
+  // No user-facing sync UI by design (#204) - a queued write that permanently
+  // fails would otherwise vanish with no trace, so it's surfaced here instead.
+  const [pending, setPending] = useState(0);
+  const [letters, setLetters] = useState([]);
+  useEffect(() => {
+    outboxDepth().then(setPending);
+    deadLetters().then(setLetters);
+    return subscribeToOutbox((depth) => {
+      setPending(depth);
+      deadLetters().then(setLetters);
+    });
+  }, []);
   const { surface, border, text, muted } = theme;
   const {
     forceEmpty,
@@ -256,6 +270,36 @@ export default function DevToolsPanel({
             <DevMenuSection label="DATA" border={border} muted={muted} />
             {stats.map((s) => info(s.label, s.value))}
             {info("Last fetch", lastFetch ? lastFetch.toLocaleTimeString() : "—")}
+          </>
+        )}
+
+        {tab === "sync" && (
+          <>
+            <DevMenuSection label="OUTBOX" border={border} muted={muted} />
+            {info("Pending", pending)}
+            {info("Dead-lettered", letters.length)}
+            <DevMenuButton
+              label="Drain now"
+              description="Retry queued writes"
+              onClick={() => drain()}
+              muted={muted}
+              text={text}
+              border={border}
+            />
+            {letters.length > 0 && (
+              <>
+                <DevMenuSection label="FAILED WRITES" border={border} muted={muted} />
+                {letters.map((op) => (
+                  <DevMenuInfo
+                    key={op.seq}
+                    label={`${op.method} ${op.url}`}
+                    value={op.error}
+                    muted={muted}
+                    text={HOME_EXPENSE}
+                  />
+                ))}
+              </>
+            )}
           </>
         )}
 

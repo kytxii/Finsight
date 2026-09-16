@@ -12,6 +12,7 @@ from app.schemas.recurring_payment import (
 )
 from app.schemas.transaction import TransactionResponse
 from app.services import recurring_payment_service, transaction_service
+from app.services.sync_utils import IdConflictError
 
 router = APIRouter(prefix="/recurring-payments", tags=["recurring-payments"])
 
@@ -37,6 +38,8 @@ async def get_recurring_payment_by_id(recurring_payment_id: UUID, current_user: 
 async def create_recurring_payments(recurring_payment: CreateRecurringPayment, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     try:
         result = await recurring_payment_service.create_recurring_payment(recurring_payment, current_user.id, db)
+    except IdConflictError as e:
+        raise HTTPException(status_code=409, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return result

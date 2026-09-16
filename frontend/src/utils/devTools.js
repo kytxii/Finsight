@@ -5,7 +5,7 @@
 
 export const NETWORK_DELAYS = [0, 500, 2000, 5000];
 
-export const DEV_TABS = ["state", "data", "session", "build"];
+export const DEV_TABS = ["state", "data", "sync", "session", "build"];
 
 export function formatDelay(ms) {
   if (ms === 0) return "Off";

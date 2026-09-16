@@ -7,6 +7,8 @@ from uuid import UUID
 class CreateTipDeposit(BaseModel):
     amount: Decimal = Field(gt=0)
     deposit_date: date
+    # Client-generated for offline creates (#204) - see sync_utils.find_existing_for_replay.
+    id: UUID | None = None
 
 
 class UpdateTipDeposit(BaseModel):

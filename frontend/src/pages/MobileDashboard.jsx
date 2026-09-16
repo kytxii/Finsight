@@ -29,6 +29,7 @@ import {
 import { useTheme } from "../hooks/mobile/useTheme";
 import { useAuth } from "../context/AuthContext";
 import { isReachable as backendReachable, subscribe as subscribeReachable, probe as probeBackend } from "../utils/connectivity";
+import { outboxDepth, deadLetters, subscribeToOutbox, drain as drainOutbox } from "../api/offline/outbox";
 import { NETWORK_DELAYS, DEV_TABS, formatDelay, tokenExpiry, tokenExpiresIn, buildInfo, localStorageSize } from "../utils/devTools";
 import { getMonthRange } from "../components/mobile/DateRangeFilter";
 import { getToday } from "../utils/time";
@@ -184,6 +185,16 @@ export default function MobileDashboard() {
   // See DevToolsPanel (#204): no user-facing sync UI, but observable here.
   const [devReachable, setDevReachable] = useState(backendReachable());
   useEffect(() => subscribeReachable(setDevReachable), []);
+  const [devPending, setDevPending] = useState(0);
+  const [devLetters, setDevLetters] = useState([]);
+  useEffect(() => {
+    outboxDepth().then(setDevPending);
+    deadLetters().then(setDevLetters);
+    return subscribeToOutbox((depth) => {
+      setDevPending(depth);
+      deadLetters().then(setDevLetters);
+    });
+  }, []);
   const navigate = useNavigate();
 
   const bg = dark ? "var(--dark-bg)" : "var(--light-bg)";
@@ -2251,6 +2262,25 @@ export default function MobileDashboard() {
                   <MDevInfo label="Last fetch" value={devLastFetch ? devLastFetch.toLocaleTimeString() : "—"} muted={HOME_MUTED} text={HOME_TEXT} />
                   <MDevInfo label="Nav tab" value={navTab} muted={HOME_MUTED} text={HOME_TEXT} />
                   <MDevInfo label="Date range" value={dashDateRange.from ? `${dashDateRange.from.toLocaleDateString("en-US",{month:"short",day:"numeric"})} → ${dashDateRange.to?.toLocaleDateString("en-US",{month:"short",day:"numeric"}) ?? "…"}` : "All time"} muted={HOME_MUTED} text={HOME_TEXT} />
+                </>
+              )}
+
+              {devTab === "sync" && (
+                <>
+                  <MDevSection label="OUTBOX" border={HOME_DIVIDER} muted={HOME_MUTED} first />
+                  <MDevInfo label="Pending" value={devPending} muted={HOME_MUTED} text={HOME_TEXT} />
+                  <MDevInfo label="Dead-lettered" value={devLetters.length} muted={HOME_MUTED} text={HOME_TEXT} />
+                  <DevRow label="Drain now" description="Retry queued writes">
+                    <button onClick={() => drainOutbox()} className="px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer border" style={{ color: HOME_TEXT, borderColor: HOME_DIVIDER, backgroundColor: "rgba(255,255,255,0.06)" }}>Run</button>
+                  </DevRow>
+                  {devLetters.length > 0 && (
+                    <>
+                      <MDevSection label="FAILED WRITES" border={HOME_DIVIDER} muted={HOME_MUTED} />
+                      {devLetters.map((op) => (
+                        <MDevInfo key={op.seq} label={`${op.method} ${op.url}`} value={op.error} muted={HOME_MUTED} text={HOME_EXPENSE} />
+                      ))}
+                    </>
+                  )}
                 </>
               )}
 
