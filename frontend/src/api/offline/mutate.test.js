@@ -99,6 +99,34 @@ describe("offlineUpdate", () => {
   });
 });
 
+describe("offlineUpdate deriveMerge", () => {
+  it("uses deriveMerge instead of a flat spread when provided", async () => {
+    client.patch.mockRejectedValue({ message: "Network Error" });
+    await (await connect()).put(
+      RESPONSES,
+      { value: [{ id: "1", total_amount: "1200", period_months: 12 }] },
+      "installments",
+    );
+
+    const deriveMerge = (item, data) => ({
+      ...item,
+      ...data,
+      monthly_payment: (data.total_amount ?? item.total_amount) / (data.period_months ?? item.period_months),
+    });
+
+    await offlineUpdate({
+      url: "/installments/1",
+      cacheKey: "installments",
+      id: "1",
+      data: { total_amount: "2400" },
+      deriveMerge,
+    });
+
+    const cached = await (await connect()).get(RESPONSES, "installments");
+    expect(cached.value[0].monthly_payment).toBe(200); // 2400 / 12, not the stale 1200/12
+  });
+});
+
 describe("offlineDelete", () => {
   it("removes the row from the cached list when unreachable", async () => {
     client.delete.mockRejectedValue({ message: "Network Error" });

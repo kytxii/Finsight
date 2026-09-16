@@ -47,7 +47,15 @@ export async function offlineCreate({ url, cacheKey, data, toListItem = (d) => d
   }
 }
 
-export async function offlineUpdate({ url, cacheKey, id, data }) {
+/**
+ * `deriveMerge` overrides the default flat `{...item, ...data}` merge for
+ * resources where a server-computed field depends on the edited ones - e.g.
+ * installments.js recomputing monthly_payment when total_amount or
+ * period_months changes. Without it, that field would sit stale (or blank,
+ * if the item doesn't have one yet from an offline create) until the queued
+ * update actually reaches the server.
+ */
+export async function offlineUpdate({ url, cacheKey, id, data, deriveMerge = (item, data) => ({ ...item, ...data }) }) {
   try {
     return await client.patch(url, data);
   } catch (err) {
@@ -55,9 +63,9 @@ export async function offlineUpdate({ url, cacheKey, id, data }) {
 
     await enqueue({ method: "PATCH", url, body: data });
     await applyOptimistic(cacheKey, (list) =>
-      list.map((item) => (item.id === id ? { ...item, ...data } : item)),
+      list.map((item) => (item.id === id ? deriveMerge(item, data) : item)),
     );
-    return { data: { id, ...data }, offline: true };
+    return { data: deriveMerge({ id }, data), offline: true };
   }
 }
 
