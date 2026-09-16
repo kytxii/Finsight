@@ -81,8 +81,13 @@
 | Service | Purpose                          |
 | ------- | ----------------------------------- |
 | Vercel  | Frontend hosting (production + preview) |
-| Render  | Backend hosting (production + preview) |
-| Neon    | Managed PostgreSQL, branched per environment |
+| Render  | Backend hosting (production only) |
+| Neon    | Managed PostgreSQL - `main` branch for production, a separate branch for the test suite |
+
+Preview deployments are frontend-only. There is no preview backend, so Vercel previews
+fall through to the production API and therefore read and write production data - verify
+anything involving mutations locally (`npm run dev` against `localhost:8000`) rather than
+on a preview URL.
 
 ---
 
