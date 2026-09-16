@@ -78,12 +78,7 @@ import TrendPill from "../components/desktop/TrendPill";
 import StackedFraction from "../components/desktop/StackedFraction";
 import OverviewColumn from "../components/desktop/OverviewColumn";
 import EmptyChartState from "../components/desktop/EmptyChartState";
-import {
-  DevMenuSection,
-  DevMenuInfo,
-  DevMenuButton,
-  DevMenuRow,
-} from "../components/desktop/DevMenuControls";
+import DevToolsPanel from "../components/desktop/DevToolsPanel";
 import { IconHandCash, IconBank } from "../components/shared/TipsIcons";
 import { useDevMenu } from "../hooks/shared/useDevMenu";
 import { useDashboardData } from "../hooks/shared/useDashboardData";
@@ -222,7 +217,7 @@ function loadTrendCategories() {
 }
 
 export default function Dashboard() {
-  const { isDemo } = useAuth();
+  const { isDemo, user } = useAuth();
   const [tipsCashOnHand, setTipsCashOnHand] = useState(0);
   const [upcomingRecurring, setUpcomingRecurring] = useState([]);
   const [upcomingRecurringLoading, setUpcomingRecurringLoading] = useState(true);
@@ -230,16 +225,11 @@ export default function Dashboard() {
   const [upcomingPaychecksLoading, setUpcomingPaychecksLoading] = useState(true);
 
   const devMenu = useDevMenu();
+  // Only what the page itself needs - the panel takes `devMenu` whole (#206).
   const {
     open: devMenuOpen,
     setOpen: setDevMenuOpen,
     forceEmpty: devForceEmpty,
-    setForceEmpty: setDevForceEmpty,
-    delay: devDelay,
-    setDelay: setDevDelay,
-    forceError: devForceError,
-    toggleForceError: toggleDevForceError,
-    lastFetch: devLastFetch,
   } = devMenu;
 
   function devFetch() {
@@ -1319,9 +1309,7 @@ export default function Dashboard() {
         transactions={transactions}
         onSelectTransaction={handleSelectTransaction}
         onOpenTool={openTool}
-        onCommand={(cmd, val) => {
-          if (cmd === "devtools") setDevMenuOpen(val);
-        }}
+        onOpenDevTools={() => setDevMenuOpen(true)}
       />
 
       {/* Own floating trigger + panel, bottom-right - independent of
@@ -3339,216 +3327,27 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {devMenuOpen && !isDemo() && (
-        <div
-          style={{
-            position: "fixed",
-            bottom: 24,
-            right: 24,
-            zIndex: 9999,
-            width: 280,
-            borderRadius: 14,
-            backgroundColor: surface,
-            border: `1px solid ${border}`,
-            boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
-            overflow: "hidden",
-            display: "flex",
-            flexDirection: "column",
-            maxHeight: "80vh",
-          }}
-        >
-          <div
-            style={{
-              padding: "10px 14px 9px",
-              borderBottom: `1px solid ${border}`,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              flexShrink: 0,
-            }}
-          >
-            <span
-              style={{
-                fontSize: 11,
-                fontWeight: 700,
-                letterSpacing: "0.08em",
-                color: HOME_EXPENSE,
-              }}
-            >
-              DEV TOOLS
-            </span>
-            <button
-              onClick={() => setDevMenuOpen(false)}
-              style={{
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                color: muted,
-                display: "flex",
-                padding: 2,
-              }}
-            >
-              <svg
-                width="13"
-                height="13"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M18 6 6 18M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-          <div style={{ overflowY: "auto", padding: "6px 0 10px" }}>
-            <DevMenuSection
-              label="LOADING & STATE"
-              border={border}
-              muted={muted}
-            />
-            <DevMenuRow
-              label="Skeletons"
-              active={loading}
-              onToggle={() => setLoading((v) => !v)}
-              muted={muted}
-              text={text}
-              border={border}
-            />
-            <DevMenuRow
-              label="Force empty"
-              active={devForceEmpty}
-              onToggle={() => setDevForceEmpty((v) => !v)}
-              muted={muted}
-              text={text}
-              border={border}
-            />
-            <DevMenuRow
-              label="Force next error"
-              active={devForceError}
-              onToggle={toggleDevForceError}
-              muted={muted}
-              text={text}
-              border={border}
-            />
-            <DevMenuButton
-              label="Re-fetch"
-              description="Reload transactions"
-              onClick={() => {
-                setLoading(true);
-                refreshTransactions();
-                setTimeout(() => setLoading(false), devDelay + 200);
-              }}
-              muted={muted}
-              text={text}
-              border={border}
-            />
-
-            <DevMenuSection label="NETWORK" border={border} muted={muted} />
-            <div
-              style={{
-                padding: "4px 14px 6px",
-                display: "flex",
-                flexDirection: "column",
-                gap: 4,
-              }}
-            >
-              <span style={{ fontSize: 11, color: muted }}>Slow network</span>
-              <div style={{ display: "flex", gap: 4 }}>
-                {[0, 500, 2000, 5000].map((ms) => (
-                  <button
-                    key={ms}
-                    onClick={() => setDevDelay(ms)}
-                    style={{
-                      flex: 1,
-                      padding: "3px 0",
-                      borderRadius: 6,
-                      border: `1px solid ${devDelay === ms ? HOME_EXPENSE : border}`,
-                      backgroundColor:
-                        devDelay === ms
-                          ? `color-mix(in srgb, ${HOME_EXPENSE} 12%, transparent)`
-                          : "transparent",
-                      color: devDelay === ms ? HOME_EXPENSE : muted,
-                      fontSize: 10,
-                      fontWeight: 600,
-                      cursor: "pointer",
-                    }}
-                  >
-                    {ms === 0 ? "Off" : ms < 1000 ? `${ms}ms` : `${ms / 1000}s`}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <DevMenuSection label="DATA" border={border} muted={muted} />
-            <DevMenuInfo
-              label="Transactions"
-              value={transactions.length}
-              muted={muted}
-              text={text}
-            />
-            <DevMenuInfo
-              label="Last fetch"
-              value={devLastFetch ? devLastFetch.toLocaleTimeString() : "—"}
-              muted={muted}
-              text={text}
-            />
-            <DevMenuInfo
-              label="Date range"
-              value={
-                dateRange.from
-                  ? `${dateRange.from.toLocaleDateString("en-US", { month: "short", day: "numeric" })} → ${dateRange.to?.toLocaleDateString("en-US", { month: "short", day: "numeric" }) ?? "…"}`
-                  : "All time"
-              }
-              muted={muted}
-              text={text}
-            />
-            <DevMenuInfo
-              label="Active tab"
-              value={activeTab}
-              muted={muted}
-              text={text}
-            />
-            <DevMenuInfo
-              label="Sort"
-              value={`${sortColumn} ${sortDir}`}
-              muted={muted}
-              text={text}
-            />
-
-            <DevMenuSection label="SESSION" border={border} muted={muted} />
-            <DevMenuInfo
-              label="Token expiry"
-              value={(() => {
-                try {
-                  const t = localStorage.getItem("token");
-                  if (!t) return "None";
-                  const p = JSON.parse(atob(t.split(".")[1]));
-                  return p.exp
-                    ? new Date(p.exp * 1000).toLocaleString()
-                    : "No exp";
-                } catch {
-                  return "Invalid";
-                }
-              })()}
-              muted={muted}
-              text={text}
-            />
-            <DevMenuButton
-              label="Clear localStorage"
-              description="Wipes all local data + reloads"
-              onClick={() => {
-                localStorage.clear();
-                window.location.reload();
-              }}
-              muted={muted}
-              text={HOME_EXPENSE}
-              border={border}
-              danger
-            />
-          </div>
-        </div>
+      {devMenuOpen && !isDemo() && user?.is_admin && (
+        <DevToolsPanel
+          onClose={() => setDevMenuOpen(false)}
+          devMenu={devMenu}
+          loading={loading}
+          setLoading={setLoading}
+          onRefetch={refreshTransactions}
+          user={user}
+          theme={{ surface, border, text, muted }}
+          stats={[
+            { label: "Transactions", value: transactions.length },
+            {
+              label: "Date range",
+              value: dateRange.from
+                ? `${dateRange.from.toLocaleDateString("en-US", { month: "short", day: "numeric" })} → ${dateRange.to?.toLocaleDateString("en-US", { month: "short", day: "numeric" }) ?? "…"}`
+                : "All time",
+            },
+            { label: "Active tab", value: activeTab },
+            { label: "Sort", value: `${sortColumn} ${sortDir}` },
+          ]}
+        />
       )}
 
       {isDemo() && (

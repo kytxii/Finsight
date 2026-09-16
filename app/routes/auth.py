@@ -6,6 +6,7 @@ import logging
 import uuid
 from app.schemas.user import RegisterRequest, LoginRequest, UserResponse, TokenResponse
 from app.services.auth_service import register_user, login_user, refresh_session, logout_user, oauth_login, link_oauth_account
+from app.services import user_service
 from app.dependencies import get_db
 from app.core.config import settings
 from app.core.limiter import limiter
@@ -33,7 +34,7 @@ async def register(request: Request, data: RegisterRequest, db: AsyncSession = D
     if data.email_address not in settings.WHITELIST:
         raise HTTPException(status_code=403, detail="Registration closed")
     user = await register_user(db, data)
-    return user
+    return user_service.to_user_response(user)
 
 
 @router.post("/login", response_model=TokenResponse)

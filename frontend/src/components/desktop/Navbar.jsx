@@ -81,7 +81,7 @@ function ToolTile({ tool, hovered, onEnter, onLeave, onClick, text }) {
   );
 }
 
-export default function Navbar({ transactions = [], onSelectTransaction, onOpenTool, onCommand }) {
+export default function Navbar({ transactions = [], onSelectTransaction, onOpenTool, onOpenDevTools }) {
   const { logout, user, isDemo } = useAuth();
   const navigate = useNavigate();
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -90,6 +90,7 @@ export default function Navbar({ transactions = [], onSelectTransaction, onOpenT
   const [hoveredTile, setHoveredTile] = useState(null);
   const [feedbackHovered, setFeedbackHovered] = useState(false);
   const [menuHovered, setMenuHovered] = useState(false);
+  const [devHovered, setDevHovered] = useState(false);
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -122,16 +123,6 @@ export default function Navbar({ transactions = [], onSelectTransaction, onOpenT
       setOpen(false);
       setQuery("");
       setDebouncedQuery("");
-    }
-    if (e.key === "Enter") {
-      const cmd = query.trim().toLowerCase();
-      if ((cmd === "/dev true" || cmd === "/dev false") && !isDemo()) {
-        onCommand?.("devtools", cmd === "/dev true");
-        setQuery("✓");
-        setDebouncedQuery("");
-        setOpen(false);
-        setTimeout(() => setQuery(""), 800);
-      }
     }
   };
 
@@ -447,6 +438,36 @@ export default function Navbar({ transactions = [], onSelectTransaction, onOpenT
             <div className="mx-5 border-t" style={{ borderColor: border }} />
 
             <div className="px-3 py-3 flex flex-col gap-3">
+              {/* Admin-only, replacing the old "/dev true" search incantation
+              (#206). Hiding this protects nothing on its own - every control
+              behind it is client-side - but admin endpoints added later must
+              use the require_admin dependency, not this check. */}
+              {!isDemo() && user?.is_admin && (
+                <button
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium cursor-pointer text-left"
+                  style={{
+                    color: HOME_EXPENSE,
+                    border: "1px solid",
+                    borderColor: devHovered
+                      ? `color-mix(in srgb, ${HOME_EXPENSE} 45%, transparent)`
+                      : `color-mix(in srgb, ${HOME_EXPENSE} 22%, transparent)`,
+                    backgroundColor: devHovered
+                      ? `color-mix(in srgb, ${HOME_EXPENSE} 12%, transparent)`
+                      : `color-mix(in srgb, ${HOME_EXPENSE} 6%, transparent)`,
+                    transition: "background-color 150ms ease, border-color 150ms ease",
+                  }}
+                  onMouseEnter={() => setDevHovered(true)}
+                  onMouseLeave={() => setDevHovered(false)}
+                  onClick={() => { setDrawerOpen(false); onOpenDevTools?.(); }}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+                    fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="16 18 22 12 16 6" />
+                    <polyline points="8 6 2 12 8 18" />
+                  </svg>
+                  Dev Tools
+                </button>
+              )}
               {!isDemo() && (
                 <a
                   href="https://forms.gle/BC6ebwbZtgYmSYBeA"

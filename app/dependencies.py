@@ -7,6 +7,7 @@ import uuid
 from app.database import AsyncSessionLocal
 from app.models import User
 from app.core.security import decode_access_token
+from app.services import user_service
 
 security = HTTPBearer()
                                                                             
@@ -27,3 +28,12 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         raise HTTPException(status_code=401, detail="Invalid token")
     
     return user
+
+
+async def require_admin(current_user: User = Depends(get_current_user)) -> User:
+    """Gate for admin-only endpoints. Nothing uses it yet - the dev tools panel
+    is entirely client-side - but hiding UI is not access control, so the first
+    server-backed admin endpoint should not have to invent this under pressure."""
+    if not user_service.is_admin(current_user.email_address):
+        raise HTTPException(status_code=403, detail="Forbidden")
+    return current_user
