@@ -3,6 +3,8 @@ import { initDemo, clearDemo } from "../api/demoStore";
 import { clearAllCached } from "../utils/pageCache";
 import { clearAllCached as clearOfflineCache } from "../api/offline/db";
 import client from "../api/client";
+import { isSessionExpired, recordVerified } from "../utils/sessionRetention";
+import { isUnreachableError } from "../utils/connectivity";
 
 const AuthContext = createContext(null);
 
@@ -49,6 +51,20 @@ export function AuthProvider({ children }) {
     // shared device (#204) - the durable version of the pageCache bug.
     clearOfflineCache();
     _setSession(newToken, userData);
+    // A fresh login is by definition current contact - starts the retention
+    // clock (#204 phase 5) rather than leaving it at whatever an old,
+    // just-cleared session last recorded.
+    recordVerified();
+  };
+
+  const _clearSession = () => {
+    clearDemo();
+    clearAllCached();
+    clearOfflineCache();
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    setToken(null);
+    setUser(null);
   };
 
   const logout = async () => {
@@ -57,13 +73,7 @@ export function AuthProvider({ children }) {
     } catch {
       // clear client state
     }
-    clearDemo();
-    clearAllCached();
-    clearOfflineCache();
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
-    setToken(null);
-    setUser(null);
+    _clearSession();
   };
 
   const enterDemoMode = () => {
@@ -111,12 +121,27 @@ export function AuthProvider({ children }) {
           setUser(res.data);
           localStorage.setItem("user", JSON.stringify(res.data));
         })
-        .catch((err) => {
-          // Unlike the branch above, a token existing but this failing is a
-          // genuine error (network blip, 500, ...), not an expected outcome.
-          // There's no panel to show it in this early in bootstrap, so this
-          // logs rather than staying fully silent (#175) - the app keeps
-          // running on the localStorage-cached profile set at mount above.
+        .catch(async (err) => {
+          // A genuine rejection (401 after the interceptor's own refresh
+          // attempt also failed) means the session really is invalid -
+          // force it out regardless of the retention window, same as any
+          // other expired session.
+          if (!isUnreachableError(err)) {
+            _clearSession();
+            return;
+          }
+
+          // Unreachable: this is the expected shape of a cold start or an
+          // outage (#175, #204 phase 1) - the app keeps running on the
+          // localStorage-cached profile set at mount above, UNLESS it's been
+          // more than RETENTION_DAYS since the backend last actually
+          // confirmed this session (#204 phase 5), in which case a cached
+          // session this stale is no longer trusted.
+          if (await isSessionExpired()) {
+            _clearSession();
+            return;
+          }
+
           console.error("Failed to sync user profile on startup:", err);
         });
     }

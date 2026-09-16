@@ -5,6 +5,7 @@ import {
   isUnreachableError,
 } from "../utils/connectivity";
 import { clearResponses } from "./offline/db";
+import { recordVerified } from "../utils/sessionRetention";
 
 // Free-tier Render spins the service down after ~15 min idle, and waking it
 // takes roughly 50 seconds. Before this the instance had no timeout at all, so
@@ -38,6 +39,11 @@ const processQueue = (error, token = null) => {
 client.interceptors.response.use(
   (response) => {
     reportReachable();
+    // Any successful response - authenticated or not - proves the backend
+    // is reachable and, if authenticated, that this token is still valid
+    // (see utils/sessionRetention.js). Cheap to call on every response;
+    // writeMeta is a single small IndexedDB put.
+    recordVerified();
     // Any successful write invalidates the read cache (#204). Centralised
     // here rather than per-endpoint so a new mutation can't forget to do it.
     if ((response.config?.method ?? "get").toLowerCase() !== "get") {
@@ -86,6 +92,7 @@ client.interceptors.response.use(
       const newToken = res.data.access_token;
       localStorage.setItem("token", newToken);
       reportReachable();
+      recordVerified();
       processQueue(null, newToken);
       original.headers.Authorization = `Bearer ${newToken}`;
       return client(original);
