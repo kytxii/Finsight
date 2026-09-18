@@ -7,6 +7,7 @@ from sqlalchemy import delete
 from app.main import app
 from app.dependencies import get_db
 from app.core.config import settings
+from app.core.limiter import limiter
 from app.models import User
 
 TEST_EMAIL = "test@finsight.dev"
@@ -24,6 +25,14 @@ if settings.TEST_DATABASE_URL == settings.DATABASE_URL:
         "suite mutates and deletes data, and must not run against whatever "
         "database local dev or production is pointed at."
     )
+
+# Rate limits are production behaviour, not something the suite should be
+# subject to: /auth/register is capped at 5/minute and the test_user fixture
+# registers once per test, so any file with more than five tests 429s when run
+# on its own. tests/test_auth.py already did this for itself; lifting it to
+# conftest applies the same rule to every file rather than only the one that
+# happened to hit the limit first.
+limiter.enabled = False
 
 test_engine = create_async_engine(
     settings.TEST_DATABASE_URL,

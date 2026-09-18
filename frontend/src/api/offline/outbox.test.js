@@ -138,3 +138,48 @@ describe("enqueue + drain", () => {
     expect(client.request).toHaveBeenCalledOnce();
   });
 });
+
+describe("cross-tab drain lock", () => {
+  it("drains under a named lock when the Web Locks API is available", async () => {
+    const request = vi.fn(async (name, opts, fn) => fn({ name }));
+    vi.stubGlobal("navigator", { ...navigator, locks: { request } });
+
+    client.request.mockResolvedValue({ status: 201 });
+    await enqueue(op());
+    await drain();
+
+    expect(request).toHaveBeenCalledWith(
+      "finsight-outbox-drain",
+      { ifAvailable: true },
+      expect.any(Function),
+    );
+    expect(await outboxDepth()).toBe(0);
+    vi.unstubAllGlobals();
+  });
+
+  it("does not replay anything when another tab already holds the lock", async () => {
+    // ifAvailable hands the callback null rather than a lock when it's held.
+    const request = vi.fn(async (name, opts, fn) => fn(null));
+    vi.stubGlobal("navigator", { ...navigator, locks: { request } });
+
+    client.request.mockResolvedValue({ status: 201 });
+    await enqueue(op());
+    await drain();
+
+    expect(client.request).not.toHaveBeenCalled();
+    expect(await outboxDepth()).toBe(1);
+    vi.unstubAllGlobals();
+  });
+
+  it("still drains where the Web Locks API is missing", async () => {
+    vi.stubGlobal("navigator", { ...navigator, locks: undefined });
+
+    client.request.mockResolvedValue({ status: 201 });
+    await enqueue(op());
+    await drain();
+
+    expect(client.request).toHaveBeenCalledTimes(1);
+    expect(await outboxDepth()).toBe(0);
+    vi.unstubAllGlobals();
+  });
+});

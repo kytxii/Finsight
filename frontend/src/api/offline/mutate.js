@@ -1,14 +1,16 @@
 import client from "../client";
 import { enqueue, generateId } from "./outbox";
 import { readCached, writeCached } from "./db";
+import { recomputeDerived } from "./recompute";
 import { isUnreachableError } from "../../utils/connectivity";
 
-// Offline-capable mutation helper (#204). Transactions is the pilot resource
-// this is wired into - see api/transactions.js. The other GET-cached
-// resources (recurring payments, paychecks, tip deposits, installments,
-// credit cards) still write straight to the network; they need the same
-// three functions below applied, following this module's pattern, as
-// separate follow-up work.
+// Offline-capable mutation helper (#204). Wired into transactions, recurring
+// payments, paycheck schedules, tip deposits, installments, and credit card
+// payments' two flat writes. What stays online-only is compound operations -
+// convertTransactionToTipDeposit, and credit cards' allocate /
+// from-transaction / remove-charge - where one call produces or rebalances
+// several rows at once. The outbox models one queued entry as one request
+// making one row, so those don't fit it without a multi-step entry format.
 //
 // The shared idea: try the network first regardless of what the connectivity
 // tracker currently believes, since that belief can be stale (nothing has
@@ -21,6 +23,11 @@ async function applyOptimistic(cacheKey, updater) {
   const entry = await readCached(cacheKey);
   const current = entry?.value ?? [];
   await writeCached(cacheKey, updater(current));
+  // The edited list isn't the only thing that changed: running balance,
+  // spendable surplus and the rest are computed from it, and offline no
+  // fresh response is coming to correct them (#204). Recomputed after the
+  // list is written so it reads the new rows.
+  await recomputeDerived();
 }
 
 /**

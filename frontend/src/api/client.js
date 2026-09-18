@@ -3,6 +3,7 @@ import {
   reportReachable,
   reportUnreachable,
   isUnreachableError,
+  isForcedOffline,
 } from "../utils/connectivity";
 import { clearResponses } from "./offline/db";
 import { recordVerified } from "../utils/sessionRetention";
@@ -21,6 +22,20 @@ const client = axios.create({
 });
 
 client.interceptors.request.use((config) => {
+  // Dev-tools offline switch (#206): fail before the request leaves, with the
+  // shape a real network failure has - no `response`, which is exactly what
+  // isUnreachableError treats as unreachable. Flipping the connectivity flag
+  // alone wouldn't be enough: every write tries the network first regardless
+  // of what that flag says (see api/offline/mutate.js), so without this the
+  // request would really go out and really succeed.
+  if (isForcedOffline()) {
+    return Promise.reject({
+      code: "ERR_NETWORK",
+      message: "Forced offline (dev tools)",
+      config,
+    });
+  }
+
   const token = localStorage.getItem("token");
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
@@ -84,6 +99,12 @@ client.interceptors.response.use(
     isRefreshing = true;
 
     try {
+      // Bare axios, so it skips the request interceptor above - the forced
+      // offline check has to be repeated here or the switch would still let a
+      // refresh reach the backend.
+      if (isForcedOffline()) {
+        throw { code: "ERR_NETWORK", message: "Forced offline (dev tools)" };
+      }
       const res = await axios.post(
         `${client.defaults.baseURL}/auth/refresh`,
         {},

@@ -111,6 +111,27 @@ function scheduleDrain(delay = 300) {
  */
 export async function drain() {
   if (draining || !isReachable()) return;
+
+  // The `draining` flag above is module state, so it only guards this tab.
+  // Two tabs open on the same device share one outbox, and without a
+  // cross-tab lock both would replay the same ops concurrently (#204).
+  // Idempotent creates and deletes make that survivable rather than
+  // corrupting, but it still means duplicate requests and a racing delete
+  // of the same queue row. navigator.locks serialises it properly;
+  // ifAvailable means a tab that finds the lock held gives up rather than
+  // queueing behind a drain that may run to a 60s timeout.
+  if (navigator.locks?.request) {
+    await navigator.locks.request("finsight-outbox-drain", { ifAvailable: true }, async (lock) => {
+      if (lock) await drainLocked();
+    });
+    return;
+  }
+
+  await drainLocked();
+}
+
+async function drainLocked() {
+  if (draining) return;
   draining = true;
 
   try {

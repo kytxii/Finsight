@@ -26,6 +26,21 @@ export const META = "meta";
 let dbPromise = null;
 
 /**
+ * Ask the browser to keep this origin's storage rather than treating it as
+ * evictable (#204). Without this, IndexedDB is "best-effort" and can be
+ * reclaimed under storage pressure - which for this app means losing cached
+ * financial history and, worse, unsent writes still sitting in the outbox.
+ *
+ * Fire-and-forget: a denial is not an error, and nothing downstream branches
+ * on the answer. An installed PWA is typically granted it without a prompt;
+ * a plain browser tab may be refused, which is exactly the case where the
+ * data was already evictable.
+ */
+function requestPersistence() {
+  navigator.storage?.persist?.().catch(() => {});
+}
+
+/**
  * The one place that owns opening this database. outbox.js shares this
  * rather than calling openDB() itself (#204 fix): idb only registers an
  * upgrade handler on the openDB() call that passes an `upgrade` option, and
@@ -36,6 +51,7 @@ let dbPromise = null;
  */
 export function connect() {
   if (!dbPromise) {
+    requestPersistence();
     dbPromise = openDB(DB_NAME, DB_VERSION, {
       upgrade(db) {
         if (!db.objectStoreNames.contains(RESPONSES)) {

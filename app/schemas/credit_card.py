@@ -35,6 +35,9 @@ class CreditCardPaymentResponse(BaseModel):
 # create_payment_from_transaction, which anchors the payment to real money
 # that's already left the account.
 class CreateCreditCardPayment(BaseModel):
+    # Client-supplied id for offline write sync (#204) - see
+    # app/services/sync_utils.find_existing_for_replay.
+    id: UUID | None = None
     total_amount: Decimal = Field(gt=0)
     payment_date: date
     due_date: date | None = None

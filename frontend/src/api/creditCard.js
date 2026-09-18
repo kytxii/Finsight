@@ -1,13 +1,20 @@
 import client from './client';
 import * as demo from './demoStore';
 import { cachedGet } from './offline/cache';
+import { offlineCreate, offlineDelete } from './offline/mutate';
 
 
 // GET endpoints read through the offline cache (#204): last-known response is
 // returned immediately and refreshed underneath, so a cold-starting or
-// unreachable backend doesn't leave the UI on skeletons. Mutations are
-// untouched here - they still go straight to the network, and client.js drops
-// the cache on every successful write.
+// unreachable backend doesn't leave the UI on skeletons.
+//
+// Only the two flat writes queue offline: creating a plain balance and
+// deleting one are each a single row, which is the only shape the outbox
+// models. allocate, from-transaction and remove-charge are compound - one
+// call producing or rebalancing several rows across payments, charges and
+// allocations - so they stay online-only and surface a normal error when
+// unreachable, the same line already drawn for
+// convertTransactionToTipDeposit.
 
 const isDemo = () => localStorage.getItem('demo') === 'true';
 
@@ -20,7 +27,23 @@ export const getCreditCardPayments = () =>
 export const createCreditCardPayment = (totalAmount, paymentDate, dueDate) =>
   isDemo()
     ? demo.createCreditCardPayment(totalAmount, paymentDate, dueDate)
-    : client.post('/credit-card-payments/', { total_amount: totalAmount, payment_date: paymentDate, due_date: dueDate ?? null });
+    : offlineCreate({
+        url: '/credit-card-payments/',
+        cacheKey: 'creditCardPayments',
+        data: { total_amount: totalAmount, payment_date: paymentDate, due_date: dueDate ?? null },
+        // The server returns a PaymentDetail, not the row as posted: name is
+        // assigned server-side and paid/left/charges are derived. A fresh
+        // balance has nothing allocated against it yet, so those are known
+        // exactly - no guessing, and the values the server sends back on
+        // reconnect will match.
+        toListItem: (body) => ({
+          ...body,
+          name: 'Credit Card Payment',
+          paid: '0.00',
+          left: body.total_amount,
+          charges: [],
+        }),
+      });
 
 export const createPaymentFromTransaction = (transactionId, dueDate) =>
   isDemo()
@@ -34,7 +57,13 @@ export const allocateCreditCardPayment = (paymentId, data) =>
   isDemo() ? demo.allocateCreditCardPayment(paymentId, data) : client.post(`/credit-card-payments/${paymentId}/allocate`, data);
 
 export const deleteCreditCardPayment = (paymentId) =>
-  isDemo() ? demo.deleteCreditCardPayment(paymentId) : client.delete(`/credit-card-payments/${paymentId}`);
+  isDemo()
+    ? demo.deleteCreditCardPayment(paymentId)
+    : offlineDelete({
+        url: `/credit-card-payments/${paymentId}`,
+        cacheKey: 'creditCardPayments',
+        id: paymentId,
+      });
 
 // Removes just this payment's allocation toward one charge - the balance
 // detail page's own edit mode (#146), distinct from deleting the whole

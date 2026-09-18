@@ -86,10 +86,12 @@ async def delete_recurring_payment(recurring_payment_id: UUID, current_user: UUI
     result = await db.execute(select(RecurringPayment).where(RecurringPayment.id == recurring_payment_id))
     recurring_payment = result.scalar_one_or_none()
 
-    if recurring_payment is None:
-        raise ValueError("Recurring payment not found")
-    if recurring_payment.created_by != current_user:
-        raise ValueError("Recurring payment not found")
+    # Idempotent delete (#204): a queued delete whose success response never
+    # reached the client retries against a row that may be gone. Returning
+    # quietly rather than 404ing means the retry doesn't dead-letter - see
+    # transaction_service.delete_transaction for the same reasoning.
+    if recurring_payment is None or recurring_payment.created_by != current_user:
+        return
 
     # Soft-deactivate rather than hard delete - preserves transactions.recurring_payment_id history.
     recurring_payment.active = False

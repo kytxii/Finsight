@@ -13,6 +13,7 @@ import client from "../client";
 import { enqueue } from "./outbox";
 import { offlineCreate, offlineUpdate, offlineDelete } from "./mutate";
 import { RESPONSES, connect, clearAllCached } from "./db";
+import { createCreditCardPayment, deleteCreditCardPayment } from "../creditCard";
 
 beforeEach(async () => {
   await (await connect()).clear(RESPONSES);
@@ -148,4 +149,58 @@ describe("offlineDelete", () => {
 // must not throw even when nothing has ever been cached.
 it("clearAllCached is a no-op-safe on an empty database", async () => {
   await expect(clearAllCached()).resolves.not.toThrow();
+});
+
+describe("credit card flat writes", () => {
+  it("queues a card payment create and fills in the server-derived fields", async () => {
+    client.post.mockRejectedValue({ message: "Network Error" });
+
+    const res = await createCreditCardPayment("400.00", "2026-04-01", "2026-04-15");
+
+    expect(res.offline).toBe(true);
+    expect(res.data).toEqual({
+      id: "generated-id",
+      total_amount: "400.00",
+      payment_date: "2026-04-01",
+      due_date: "2026-04-15",
+      name: "Credit Card Payment",
+      paid: "0.00",
+      left: "400.00",
+      charges: [],
+    });
+    expect(enqueue).toHaveBeenCalledWith({
+      method: "POST",
+      url: "/credit-card-payments/",
+      body: {
+        id: "generated-id",
+        total_amount: "400.00",
+        payment_date: "2026-04-01",
+        due_date: "2026-04-15",
+      },
+    });
+
+    const cached = await (await connect()).get(RESPONSES, "creditCardPayments");
+    expect(cached.value[0].id).toBe("generated-id");
+  });
+
+  it("queues a card payment delete and drops it from the cached list", async () => {
+    await (await connect()).put(
+      RESPONSES,
+      { value: [{ id: "cc-1" }, { id: "cc-2" }] },
+      "creditCardPayments",
+    );
+    client.delete.mockRejectedValue({ message: "Network Error" });
+
+    const res = await deleteCreditCardPayment("cc-1");
+
+    expect(res.offline).toBe(true);
+    expect(enqueue).toHaveBeenCalledWith({
+      method: "DELETE",
+      url: "/credit-card-payments/cc-1",
+      body: undefined,
+    });
+
+    const cached = await (await connect()).get(RESPONSES, "creditCardPayments");
+    expect(cached.value.map((p) => p.id)).toEqual(["cc-2"]);
+  });
 });

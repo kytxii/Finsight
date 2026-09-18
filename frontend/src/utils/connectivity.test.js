@@ -89,3 +89,63 @@ describe("reachability state", () => {
     stop2();
   });
 });
+
+describe("forced offline (dev tools)", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    localStorage.clear();
+  });
+
+  it("reports unreachable while forced, whatever the tracker believes", async () => {
+    const c = await import("./connectivity");
+    c.reportReachable();
+    expect(c.isReachable()).toBe(true);
+
+    c.setForcedOffline(true);
+
+    expect(c.isForcedOffline()).toBe(true);
+    expect(c.isReachable()).toBe(false);
+  });
+
+  it("ignores a success that lands while forced", async () => {
+    const c = await import("./connectivity");
+    c.setForcedOffline(true);
+
+    // A request that somehow completed must not quietly undo the switch.
+    c.reportReachable();
+
+    expect(c.isReachable()).toBe(false);
+  });
+
+  it("survives a reload", async () => {
+    const first = await import("./connectivity");
+    first.setForcedOffline(true);
+
+    // A fresh module registry is what a page reload amounts to here.
+    vi.resetModules();
+    const afterReload = await import("./connectivity");
+
+    expect(afterReload.isForcedOffline()).toBe(true);
+    expect(afterReload.isReachable()).toBe(false);
+  });
+
+  it("notifies subscribers when it flips on", async () => {
+    const c = await import("./connectivity");
+    c.reportReachable();
+    const seen = [];
+    c.subscribe((v) => seen.push(v));
+
+    c.setForcedOffline(true);
+
+    expect(seen).toEqual([false]);
+  });
+
+  it("does not leave the flag set once switched back off", async () => {
+    const c = await import("./connectivity");
+    c.setForcedOffline(true);
+    c.setForcedOffline(false);
+
+    expect(c.isForcedOffline()).toBe(false);
+    expect(localStorage.getItem("dev_force_offline")).toBe("false");
+  });
+});

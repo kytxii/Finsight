@@ -28,7 +28,7 @@ import {
 } from "../utils/finance";
 import { useTheme } from "../hooks/mobile/useTheme";
 import { useAuth } from "../context/AuthContext";
-import { isReachable as backendReachable, subscribe as subscribeReachable, probe as probeBackend } from "../utils/connectivity";
+import { isReachable as backendReachable, subscribe as subscribeReachable, probe as probeBackend, isForcedOffline, setForcedOffline } from "../utils/connectivity";
 import { outboxDepth, deadLetters, subscribeToOutbox, drain as drainOutbox } from "../api/offline/outbox";
 import { NETWORK_DELAYS, DEV_TABS, formatDelay, tokenExpiry, tokenExpiresIn, buildInfo, localStorageSize } from "../utils/devTools";
 import { getMonthRange } from "../components/mobile/DateRangeFilter";
@@ -185,6 +185,12 @@ export default function MobileDashboard() {
   // See DevToolsPanel (#204): no user-facing sync UI, but observable here.
   const [devReachable, setDevReachable] = useState(backendReachable());
   useEffect(() => subscribeReachable(setDevReachable), []);
+  const [devForcedOffline, setDevForcedOffline] = useState(isForcedOffline());
+  const toggleDevForcedOffline = () => {
+    const next = !devForcedOffline;
+    setForcedOffline(next);
+    setDevForcedOffline(next);
+  };
   const [devPending, setDevPending] = useState(0);
   const [devLetters, setDevLetters] = useState([]);
   useEffect(() => {
@@ -2267,7 +2273,13 @@ export default function MobileDashboard() {
 
               {devTab === "sync" && (
                 <>
-                  <MDevSection label="OUTBOX" border={HOME_DIVIDER} muted={HOME_MUTED} first />
+                  <MDevSection label="CONNECTIVITY" border={HOME_DIVIDER} muted={HOME_MUTED} first />
+                  <DevRow label="Force offline" description="Fail every request, survives reload">
+                    <DevToggle active={devForcedOffline} onToggle={toggleDevForcedOffline} />
+                  </DevRow>
+                  <MDevInfo label="Backend" value={devForcedOffline ? "forced offline" : devReachable ? "reachable" : "unreachable"} muted={HOME_MUTED} text={HOME_TEXT} />
+
+                  <MDevSection label="OUTBOX" border={HOME_DIVIDER} muted={HOME_MUTED} />
                   <MDevInfo label="Pending" value={devPending} muted={HOME_MUTED} text={HOME_TEXT} />
                   <MDevInfo label="Dead-lettered" value={devLetters.length} muted={HOME_MUTED} text={HOME_TEXT} />
                   <DevRow label="Drain now" description="Retry queued writes">

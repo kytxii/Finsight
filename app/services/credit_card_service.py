@@ -6,6 +6,7 @@ from datetime import date
 from typing import NamedTuple
 from app.models import CreditCardPayment, CreditCardCharge, CreditCardChargeAllocation, Transaction
 from app.schemas.credit_card import AllocateToNewCharge, AllocateExistingTransaction, CreateCreditCardPayment
+from app.services.sync_utils import find_existing_for_replay
 
 
 class InvalidAllocationError(Exception):
@@ -165,7 +166,11 @@ async def create_payment(
     so nothing gets written to the transactions table here (#54 follow-up).
     Contrast with create_payment_from_transaction below, which anchors the
     payment to money that's already left the account."""
-    payment = CreditCardPayment(
+    existing = await find_existing_for_replay(CreditCardPayment, data.id, current_user, db)
+    if existing is not None:
+        return (await _build_payment_details([existing], db))[0]
+
+    fields = dict(
         name="Credit Card Payment",
         total_amount=data.total_amount,
         payment_date=data.payment_date,
@@ -173,6 +178,12 @@ async def create_payment(
         created_by=current_user,
         updated_by=current_user,
     )
+    # exclude id when the client didn't supply one: see
+    # transaction_service.create_transaction for why id=None can't be passed
+    # through to the constructor.
+    if data.id is not None:
+        fields["id"] = data.id
+    payment = CreditCardPayment(**fields)
     db.add(payment)
     await db.flush()
 

@@ -167,7 +167,14 @@ async def update_installment(installment_id: UUID, data: UpdateInstallment, curr
 
 
 async def delete_installment(installment_id: UUID, current_user: UUID, db: AsyncSession):
-    installment = await _get_owned_installment(installment_id, current_user, db)
+    # Idempotent delete (#204): a queued delete retried after its success
+    # response was lost must not dead-letter against a row that's already
+    # gone, so this path does its own lookup rather than using _get_owned_installment,
+    # which raises for the GET/update callers where a missing id is a
+    # genuine 404 - see transaction_service.delete_transaction.
+    installment = await db.scalar(select(Installment).where(Installment.id == installment_id))
+    if installment is None or installment.created_by != current_user:
+        return
 
     # Soft-deactivate rather than hard delete, consistent with recurring payments.
     installment.active = False

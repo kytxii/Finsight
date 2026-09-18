@@ -22,6 +22,47 @@ const PROBE_TIMEOUT_MS = 8000;
 let reachable = true;
 const listeners = new Set();
 
+// Dev-tools offline switch (#204/#206).
+//
+// Chrome's own offline throttling is per-tab, resets on reload, and doesn't
+// exist on a phone - which rules it out for the case worth testing most, a
+// reload while offline. This flag is persisted instead, so the app comes back
+// up still believing the backend is gone, and it applies on any device with
+// the dev panel open.
+//
+// It sits here rather than in useDevMenu because it has to be readable from
+// api/client.js's interceptor, which is module-level and has no React context.
+const FORCE_OFFLINE_KEY = "dev_force_offline";
+
+function readForced() {
+  try {
+    return localStorage.getItem(FORCE_OFFLINE_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+let forcedOffline = typeof window !== "undefined" ? readForced() : false;
+if (forcedOffline) reachable = false;
+
+export function isForcedOffline() {
+  return forcedOffline;
+}
+
+/** Turning it off re-probes rather than assuming the backend is back: the
+ *  answer drives the outbox drain, and guessing wrong either way is worse
+ *  than one request. */
+export function setForcedOffline(next) {
+  forcedOffline = next;
+  try {
+    localStorage.setItem(FORCE_OFFLINE_KEY, String(next));
+  } catch {
+    // Private mode: the flag just won't survive a reload.
+  }
+  if (next) set(false);
+  else probe();
+}
+
 function set(next) {
   if (reachable === next) return;
   reachable = next;
@@ -35,7 +76,7 @@ function set(next) {
 }
 
 export function isReachable() {
-  return reachable;
+  return !forcedOffline && reachable;
 }
 
 export function subscribe(fn) {
@@ -44,6 +85,9 @@ export function subscribe(fn) {
 }
 
 export function reportReachable() {
+  // A response that somehow completed while forced offline must not undo the
+  // switch - the point is that the app behaves as though nothing is there.
+  if (forcedOffline) return;
   set(true);
 }
 
@@ -71,6 +115,10 @@ export function isUnreachableError(error) {
  *  report back into this module, and a probe routed through them would
  *  recurse. */
 export async function probe() {
+  if (forcedOffline) {
+    set(false);
+    return reachable;
+  }
   try {
     await axios.get(`${BASE_URL}/health`, { timeout: PROBE_TIMEOUT_MS });
     set(true);

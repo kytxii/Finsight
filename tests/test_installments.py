@@ -214,12 +214,18 @@ async def test_cross_user_scoping(test_user: dict, other_user: dict, client: Asy
     res = await client.patch(f"/installments/{installment_id}", json={"name": "Hijacked"}, headers=other_headers)
     assert res.status_code == 404
 
+    # 204, not 404: delete is idempotent for offline write replay (#204), so it
+    # reports success for any id it doesn't act on - already-deleted, never
+    # existed, or someone else's. That reveals nothing new, since a missing id
+    # and another user's id both returned an identical 404 before. What matters
+    # is that it didn't actually delete anything, which is asserted below.
     res = await client.delete(f"/installments/{installment_id}", headers=other_headers)
-    assert res.status_code == 404
+    assert res.status_code == 204
 
-    # Still there and untouched for its actual owner.
+    # Still there, still active, and untouched for its actual owner.
     res = await client.get(f"/installments/{installment_id}", headers=auth_headers(test_user["token"]))
     assert res.status_code == 200
     assert res.json()["name"] == "User A's Installment"
+    assert res.json()["active"] is True
 
     await client.delete(f"/installments/{installment_id}", headers=auth_headers(test_user["token"]))

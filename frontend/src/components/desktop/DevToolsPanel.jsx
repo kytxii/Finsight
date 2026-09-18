@@ -6,7 +6,13 @@ import {
   DevMenuRow,
 } from "./DevMenuControls";
 import { HOME_EXPENSE } from "../shared/categoryVisuals";
-import { isReachable, subscribe, probe } from "../../utils/connectivity";
+import {
+  isReachable,
+  subscribe,
+  probe,
+  isForcedOffline,
+  setForcedOffline,
+} from "../../utils/connectivity";
 import { outboxDepth, deadLetters, subscribeToOutbox, drain } from "../../api/offline/outbox";
 import {
   NETWORK_DELAYS,
@@ -53,6 +59,12 @@ export default function DevToolsPanel({
   // is money quietly vanishing, so backend state is at least observable here.
   const [reachable, setReachable] = useState(isReachable());
   useEffect(() => subscribe(setReachable), []);
+  const [forcedOffline, setForced] = useState(isForcedOffline());
+  const toggleForcedOffline = () => {
+    const next = !forcedOffline;
+    setForcedOffline(next);
+    setForced(next);
+  };
   // No user-facing sync UI by design (#204) - a queued write that permanently
   // fails would otherwise vanish with no trace, so it's surfaced here instead.
   const [pending, setPending] = useState(0);
@@ -275,6 +287,17 @@ export default function DevToolsPanel({
 
         {tab === "sync" && (
           <>
+            <DevMenuSection label="CONNECTIVITY" border={border} muted={muted} />
+            <DevMenuRow
+              label="Force offline"
+              active={forcedOffline}
+              onToggle={toggleForcedOffline}
+              muted={muted}
+              text={text}
+              border={border}
+            />
+            {info("Backend", forcedOffline ? "forced offline" : reachable ? "reachable" : "unreachable")}
+
             <DevMenuSection label="OUTBOX" border={border} muted={muted} />
             {info("Pending", pending)}
             {info("Dead-lettered", letters.length)}
