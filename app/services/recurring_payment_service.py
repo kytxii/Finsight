@@ -5,6 +5,7 @@ from datetime import date
 import calendar
 from app.models import RecurringPayment, Transaction
 from app.schemas import CreateRecurringPayment, UpdateRecurringPayment
+from app.services.sync_utils import find_existing_for_replay
 
 # Fields that also exist on Transaction - the only ones safe to mirror onto a
 # linked transaction when a recurring payment is edited.
@@ -32,7 +33,15 @@ async def get_recurring_payment_by_id(recurring_payment_id: UUID, current_user: 
     return recurring_payment
 
 async def create_recurring_payment(recurring_payment: CreateRecurringPayment, current_user: UUID, db: AsyncSession):
-    data = recurring_payment.model_dump()
+    existing = await find_existing_for_replay(RecurringPayment, recurring_payment.id, current_user, db)
+    if existing is not None:
+        return existing
+
+    # exclude id: see transaction_service.create_transaction for why id=None
+    # can't be passed through to the constructor.
+    data = recurring_payment.model_dump(exclude={"id"})
+    if recurring_payment.id is not None:
+        data["id"] = recurring_payment.id
     new_recurring_payment = RecurringPayment(**data, created_by=current_user, updated_by=current_user)
 
     db.add(new_recurring_payment)
@@ -77,10 +86,12 @@ async def delete_recurring_payment(recurring_payment_id: UUID, current_user: UUI
     result = await db.execute(select(RecurringPayment).where(RecurringPayment.id == recurring_payment_id))
     recurring_payment = result.scalar_one_or_none()
 
-    if recurring_payment is None:
-        raise ValueError("Recurring payment not found")
-    if recurring_payment.created_by != current_user:
-        raise ValueError("Recurring payment not found")
+    # Idempotent delete (#204): a queued delete whose success response never
+    # reached the client retries against a row that may be gone. Returning
+    # quietly rather than 404ing means the retry doesn't dead-letter - see
+    # transaction_service.delete_transaction for the same reasoning.
+    if recurring_payment is None or recurring_payment.created_by != current_user:
+        return
 
     # Soft-deactivate rather than hard delete - preserves transactions.recurring_payment_id history.
     recurring_payment.active = False

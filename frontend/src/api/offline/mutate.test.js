@@ -1,0 +1,206 @@
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import "fake-indexeddb/auto";
+
+vi.mock("../client", () => ({
+  default: { post: vi.fn(), patch: vi.fn(), delete: vi.fn() },
+}));
+vi.mock("./outbox", () => ({
+  enqueue: vi.fn().mockResolvedValue(undefined),
+  generateId: () => "generated-id",
+}));
+
+import client from "../client";
+import { enqueue } from "./outbox";
+import { offlineCreate, offlineUpdate, offlineDelete } from "./mutate";
+import { RESPONSES, connect, clearAllCached } from "./db";
+import { createCreditCardPayment, deleteCreditCardPayment } from "../creditCard";
+
+beforeEach(async () => {
+  await (await connect()).clear(RESPONSES);
+  vi.clearAllMocks();
+});
+
+describe("offlineCreate", () => {
+  it("returns the network response and never queues when online", async () => {
+    client.post.mockResolvedValue({ data: { id: "server-id", name: "Coffee" } });
+
+    const res = await offlineCreate({
+      url: "/transactions/",
+      cacheKey: "transactions",
+      data: { name: "Coffee" },
+    });
+
+    expect(res.data.id).toBe("server-id");
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it("mints a client id, queues, and applies optimistically when unreachable", async () => {
+    client.post.mockRejectedValue({ message: "Network Error" }); // no response = unreachable
+    await (await connect()).put(RESPONSES, { value: [{ id: "existing" }] }, "transactions");
+
+    const res = await offlineCreate({
+      url: "/transactions/",
+      cacheKey: "transactions",
+      data: { name: "Coffee" },
+    });
+
+    expect(res.offline).toBe(true);
+    expect(res.data.id).toBe("generated-id");
+    expect(enqueue).toHaveBeenCalledWith({
+      method: "POST",
+      url: "/transactions/",
+      body: { name: "Coffee", id: "generated-id" },
+    });
+
+    const cached = await (await connect()).get(RESPONSES, "transactions");
+    expect(cached.value).toEqual([{ name: "Coffee", id: "generated-id" }, { id: "existing" }]);
+  });
+
+  it("propagates a real rejection (bad request) without queuing", async () => {
+    client.post.mockRejectedValue({ response: { status: 422, data: { detail: "bad category" } } });
+
+    await expect(
+      offlineCreate({ url: "/transactions/", cacheKey: "transactions", data: { name: "x" } }),
+    ).rejects.toMatchObject({ response: { status: 422 } });
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it("reuses a client-supplied id rather than generating a new one", async () => {
+    client.post.mockRejectedValue({ message: "Network Error" });
+
+    const res = await offlineCreate({
+      url: "/transactions/",
+      cacheKey: "transactions",
+      data: { id: "already-set", name: "Coffee" },
+    });
+
+    expect(res.data.id).toBe("already-set");
+  });
+});
+
+describe("offlineUpdate", () => {
+  it("merges the patch into the cached list entry when unreachable", async () => {
+    client.patch.mockRejectedValue({ message: "Network Error" });
+    await (await connect()).put(
+      RESPONSES,
+      { value: [{ id: "1", name: "Old", amount: "5.00" }] },
+      "transactions",
+    );
+
+    await offlineUpdate({
+      url: "/transactions/1",
+      cacheKey: "transactions",
+      id: "1",
+      data: { name: "New" },
+    });
+
+    const cached = await (await connect()).get(RESPONSES, "transactions");
+    expect(cached.value).toEqual([{ id: "1", name: "New", amount: "5.00" }]);
+    expect(enqueue).toHaveBeenCalledWith({ method: "PATCH", url: "/transactions/1", body: { name: "New" } });
+  });
+});
+
+describe("offlineUpdate deriveMerge", () => {
+  it("uses deriveMerge instead of a flat spread when provided", async () => {
+    client.patch.mockRejectedValue({ message: "Network Error" });
+    await (await connect()).put(
+      RESPONSES,
+      { value: [{ id: "1", total_amount: "1200", period_months: 12 }] },
+      "installments",
+    );
+
+    const deriveMerge = (item, data) => ({
+      ...item,
+      ...data,
+      monthly_payment: (data.total_amount ?? item.total_amount) / (data.period_months ?? item.period_months),
+    });
+
+    await offlineUpdate({
+      url: "/installments/1",
+      cacheKey: "installments",
+      id: "1",
+      data: { total_amount: "2400" },
+      deriveMerge,
+    });
+
+    const cached = await (await connect()).get(RESPONSES, "installments");
+    expect(cached.value[0].monthly_payment).toBe(200); // 2400 / 12, not the stale 1200/12
+  });
+});
+
+describe("offlineDelete", () => {
+  it("removes the row from the cached list when unreachable", async () => {
+    client.delete.mockRejectedValue({ message: "Network Error" });
+    await (await connect()).put(
+      RESPONSES,
+      { value: [{ id: "1" }, { id: "2" }] },
+      "transactions",
+    );
+
+    await offlineDelete({ url: "/transactions/1", cacheKey: "transactions", id: "1" });
+
+    const cached = await (await connect()).get(RESPONSES, "transactions");
+    expect(cached.value).toEqual([{ id: "2" }]);
+    expect(enqueue).toHaveBeenCalledWith({ method: "DELETE", url: "/transactions/1", body: undefined });
+  });
+});
+
+// Not exercised above but relevant: clearAllCached (called on login/logout)
+// must not throw even when nothing has ever been cached.
+it("clearAllCached is a no-op-safe on an empty database", async () => {
+  await expect(clearAllCached()).resolves.not.toThrow();
+});
+
+describe("credit card flat writes", () => {
+  it("queues a card payment create and fills in the server-derived fields", async () => {
+    client.post.mockRejectedValue({ message: "Network Error" });
+
+    const res = await createCreditCardPayment("400.00", "2026-04-01", "2026-04-15");
+
+    expect(res.offline).toBe(true);
+    expect(res.data).toEqual({
+      id: "generated-id",
+      total_amount: "400.00",
+      payment_date: "2026-04-01",
+      due_date: "2026-04-15",
+      name: "Credit Card Payment",
+      paid: "0.00",
+      left: "400.00",
+      charges: [],
+    });
+    expect(enqueue).toHaveBeenCalledWith({
+      method: "POST",
+      url: "/credit-card-payments/",
+      body: {
+        id: "generated-id",
+        total_amount: "400.00",
+        payment_date: "2026-04-01",
+        due_date: "2026-04-15",
+      },
+    });
+
+    const cached = await (await connect()).get(RESPONSES, "creditCardPayments");
+    expect(cached.value[0].id).toBe("generated-id");
+  });
+
+  it("queues a card payment delete and drops it from the cached list", async () => {
+    await (await connect()).put(
+      RESPONSES,
+      { value: [{ id: "cc-1" }, { id: "cc-2" }] },
+      "creditCardPayments",
+    );
+    client.delete.mockRejectedValue({ message: "Network Error" });
+
+    const res = await deleteCreditCardPayment("cc-1");
+
+    expect(res.offline).toBe(true);
+    expect(enqueue).toHaveBeenCalledWith({
+      method: "DELETE",
+      url: "/credit-card-payments/cc-1",
+      body: undefined,
+    });
+
+    const cached = await (await connect()).get(RESPONSES, "creditCardPayments");
+    expect(cached.value.map((p) => p.id)).toEqual(["cc-2"]);
+  });
+});

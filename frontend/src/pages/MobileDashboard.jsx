@@ -28,6 +28,9 @@ import {
 } from "../utils/finance";
 import { useTheme } from "../hooks/mobile/useTheme";
 import { useAuth } from "../context/AuthContext";
+import { isReachable as backendReachable, subscribe as subscribeReachable, probe as probeBackend, isForcedOffline, setForcedOffline } from "../utils/connectivity";
+import { outboxDepth, deadLetters, subscribeToOutbox, drain as drainOutbox } from "../api/offline/outbox";
+import { NETWORK_DELAYS, DEV_TABS, formatDelay, tokenExpiry, tokenExpiresIn, buildInfo, localStorageSize } from "../utils/devTools";
 import { getMonthRange } from "../components/mobile/DateRangeFilter";
 import { getToday } from "../utils/time";
 import { useMonthPeriod, yearOptionsFromTransactions } from "../hooks/mobile/useMonthPeriod";
@@ -178,6 +181,26 @@ const newBatchRow = () => ({
 export default function MobileDashboard() {
   const dark = useTheme();
   const { logout, user, isDemo } = useAuth();
+  const [devTab, setDevTab] = useState("state");
+  // See DevToolsPanel (#204): no user-facing sync UI, but observable here.
+  const [devReachable, setDevReachable] = useState(backendReachable());
+  useEffect(() => subscribeReachable(setDevReachable), []);
+  const [devForcedOffline, setDevForcedOffline] = useState(isForcedOffline());
+  const toggleDevForcedOffline = () => {
+    const next = !devForcedOffline;
+    setForcedOffline(next);
+    setDevForcedOffline(next);
+  };
+  const [devPending, setDevPending] = useState(0);
+  const [devLetters, setDevLetters] = useState([]);
+  useEffect(() => {
+    outboxDepth().then(setDevPending);
+    deadLetters().then(setDevLetters);
+    return subscribeToOutbox((depth) => {
+      setDevPending(depth);
+      deadLetters().then(setDevLetters);
+    });
+  }, []);
   const navigate = useNavigate();
 
   const bg = dark ? "var(--dark-bg)" : "var(--light-bg)";
@@ -491,18 +514,6 @@ export default function MobileDashboard() {
       setSearchVisible(false);
       setQuery("");
       setDebouncedQuery("");
-    }
-    if (e.key === "Enter") {
-      const cmd = query.trim().toLowerCase();
-      if (cmd === "/dev true" || cmd === "/dev false") {
-        e.target.blur();
-        if (cmd === "/dev true") { setDrawerOpen(true); setDevOpen(true); }
-        else setDevOpen(false);
-        setQuery("✓");
-        setDebouncedQuery("");
-        setSearchOpen(false);
-        setTimeout(() => setQuery(""), 800);
-      }
     }
   };
 
@@ -2011,6 +2022,27 @@ export default function MobileDashboard() {
             </div>
             <div className="mx-5 border-t" style={{ borderColor: HOME_DIVIDER }} />
             <div className="px-3 py-3 flex-1 flex flex-col gap-3">
+              {/* Admin-only, replacing the old "/dev true" search incantation
+              (#206). Slides the drawer to the dev panel rather than opening a
+              separate surface. */}
+              {!isDemo() && user?.is_admin && (
+                <button
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-left cursor-pointer active:scale-[0.97] transition-transform duration-150"
+                  style={{
+                    color: HOME_EXPENSE,
+                    border: "none",
+                    backgroundColor: "color-mix(in srgb, var(--category-expense) 8%, transparent)",
+                  }}
+                  onClick={() => setDevOpen(true)}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+                    fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="16 18 22 12 16 6" />
+                    <polyline points="8 6 2 12 8 18" />
+                  </svg>
+                  Dev Tools
+                </button>
+              )}
               <a
                 href="https://forms.gle/BC6ebwbZtgYmSYBeA"
                 target="_blank"
@@ -2176,52 +2208,129 @@ export default function MobileDashboard() {
               </button>
               <span className="text-sm font-semibold" style={{ color: "var(--category-expense)" }}>Dev Tools</span>
             </div>
+            <div className="flex gap-1 px-3 py-2 border-b shrink-0" style={{ borderColor: HOME_DIVIDER }}>
+              {DEV_TABS.map(t => (
+                <button
+                  key={t}
+                  onClick={() => setDevTab(t)}
+                  className="flex-1 py-1.5 rounded-lg text-xs font-semibold cursor-pointer capitalize"
+                  style={{
+                    border: `1px solid ${devTab === t ? "var(--category-expense)" : "transparent"}`,
+                    backgroundColor: devTab === t ? "color-mix(in srgb, var(--category-expense) 12%, transparent)" : "transparent",
+                    color: devTab === t ? "var(--category-expense)" : HOME_MUTED,
+                  }}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
             <div className="flex-1 overflow-y-auto py-2 flex flex-col" style={{ color: HOME_TEXT }}>
 
-              <MDevSection label="LOADING & STATE" border={HOME_DIVIDER} muted={HOME_MUTED} first />
-              <DevRow label="Skeleton" description="Toggle loading state">
-                <DevToggle active={loading} onToggle={() => setLoading(v => !v)} />
-              </DevRow>
-              <DevRow label="Force empty" description="Zero out display data">
-                <DevToggle active={devForceEmpty} onToggle={() => setDevForceEmpty(v => !v)} />
-              </DevRow>
-              <DevRow label="Force next error" description="Next fetch throws">
-                <DevToggle active={devForceError} onToggle={toggleDevForceError} />
-              </DevRow>
-              <DevRow label="Re-fetch" description="Reload transactions">
-                <button onClick={() => { setLoading(true); refresh(); setTimeout(() => setLoading(false), devDelay + 200); }} className="px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer border" style={{ color: HOME_TEXT, borderColor: HOME_DIVIDER, backgroundColor: "rgba(255,255,255,0.06)" }}>Run</button>
-              </DevRow>
+              {devTab === "state" && (
+                <>
+                  <MDevSection label="LOADING" border={HOME_DIVIDER} muted={HOME_MUTED} first />
+                  <DevRow label="Skeleton" description="Toggle loading state">
+                    <DevToggle active={loading} onToggle={() => setLoading(v => !v)} />
+                  </DevRow>
+                  <DevRow label="Force empty" description="Zero out display data">
+                    <DevToggle active={devForceEmpty} onToggle={() => setDevForceEmpty(v => !v)} />
+                  </DevRow>
+                  <DevRow label="Force next error" description="Next fetch throws">
+                    <DevToggle active={devForceError} onToggle={toggleDevForceError} />
+                  </DevRow>
+                  <DevRow label="Re-fetch" description="Reload transactions">
+                    <button onClick={() => { setLoading(true); refresh(); setTimeout(() => setLoading(false), devDelay + 200); }} className="px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer border" style={{ color: HOME_TEXT, borderColor: HOME_DIVIDER, backgroundColor: "rgba(255,255,255,0.06)" }}>Run</button>
+                  </DevRow>
 
-              <MDevSection label="NETWORK" border={HOME_DIVIDER} muted={HOME_MUTED} />
-              <div className="px-5 py-2 flex flex-col gap-1">
-                <span className="text-xs" style={{ color: HOME_MUTED }}>Slow network</span>
-                <div className="flex gap-1">
-                  {[0, 500, 2000, 5000].map(ms => (
-                    <button key={ms} onClick={() => setDevDelay(ms)} style={{ flex: 1, padding: "4px 0", borderRadius: 6, border: `1px solid ${devDelay === ms ? "var(--category-expense)" : HOME_DIVIDER}`, backgroundColor: devDelay === ms ? "color-mix(in srgb, var(--category-expense) 12%, transparent)" : "transparent", color: devDelay === ms ? "var(--category-expense)" : HOME_MUTED, fontSize: 10, fontWeight: 600, cursor: "pointer" }}>
-                      {ms === 0 ? "Off" : ms < 1000 ? `${ms}ms` : `${ms/1000}s`}
+                  <MDevSection label="NETWORK" border={HOME_DIVIDER} muted={HOME_MUTED} />
+                  <div className="px-5 py-2 flex flex-col gap-1">
+                    <span className="text-xs" style={{ color: HOME_MUTED }}>Slow network</span>
+                    <div className="flex gap-1">
+                      {NETWORK_DELAYS.map(ms => (
+                        <button key={ms} onClick={() => setDevDelay(ms)} style={{ flex: 1, padding: "4px 0", borderRadius: 6, border: `1px solid ${devDelay === ms ? "var(--category-expense)" : HOME_DIVIDER}`, backgroundColor: devDelay === ms ? "color-mix(in srgb, var(--category-expense) 12%, transparent)" : "transparent", color: devDelay === ms ? "var(--category-expense)" : HOME_MUTED, fontSize: 10, fontWeight: 600, cursor: "pointer" }}>
+                          {formatDelay(ms)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <MDevSection label="UI" border={HOME_DIVIDER} muted={HOME_MUTED} />
+                  <DevRow label="Toggle theme" description="Flip dark / light">
+                    <button onClick={() => document.documentElement.classList.toggle("dark")} className="px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer border" style={{ color: HOME_TEXT, borderColor: HOME_DIVIDER, backgroundColor: "rgba(255,255,255,0.06)" }}>Flip</button>
+                  </DevRow>
+                </>
+              )}
+
+              {devTab === "data" && (
+                <>
+                  <MDevSection label="DATA" border={HOME_DIVIDER} muted={HOME_MUTED} first />
+                  <MDevInfo label="Transactions" value={transactions.length} muted={HOME_MUTED} text={HOME_TEXT} />
+                  <MDevInfo label="Last fetch" value={devLastFetch ? devLastFetch.toLocaleTimeString() : "—"} muted={HOME_MUTED} text={HOME_TEXT} />
+                  <MDevInfo label="Nav tab" value={navTab} muted={HOME_MUTED} text={HOME_TEXT} />
+                  <MDevInfo label="Date range" value={dashDateRange.from ? `${dashDateRange.from.toLocaleDateString("en-US",{month:"short",day:"numeric"})} → ${dashDateRange.to?.toLocaleDateString("en-US",{month:"short",day:"numeric"}) ?? "…"}` : "All time"} muted={HOME_MUTED} text={HOME_TEXT} />
+                </>
+              )}
+
+              {devTab === "sync" && (
+                <>
+                  <MDevSection label="CONNECTIVITY" border={HOME_DIVIDER} muted={HOME_MUTED} first />
+                  <DevRow label="Force offline" description="Fail every request, survives reload">
+                    <DevToggle active={devForcedOffline} onToggle={toggleDevForcedOffline} />
+                  </DevRow>
+                  <MDevInfo label="Backend" value={devForcedOffline ? "forced offline" : devReachable ? "reachable" : "unreachable"} muted={HOME_MUTED} text={HOME_TEXT} />
+
+                  <MDevSection label="OUTBOX" border={HOME_DIVIDER} muted={HOME_MUTED} />
+                  <MDevInfo label="Pending" value={devPending} muted={HOME_MUTED} text={HOME_TEXT} />
+                  <MDevInfo label="Dead-lettered" value={devLetters.length} muted={HOME_MUTED} text={HOME_TEXT} />
+                  <DevRow label="Drain now" description="Retry queued writes">
+                    <button onClick={() => drainOutbox()} className="px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer border" style={{ color: HOME_TEXT, borderColor: HOME_DIVIDER, backgroundColor: "rgba(255,255,255,0.06)" }}>Run</button>
+                  </DevRow>
+                  {devLetters.length > 0 && (
+                    <>
+                      <MDevSection label="FAILED WRITES" border={HOME_DIVIDER} muted={HOME_MUTED} />
+                      {devLetters.map((op) => (
+                        <MDevInfo key={op.seq} label={`${op.method} ${op.url}`} value={op.error} muted={HOME_MUTED} text={HOME_EXPENSE} />
+                      ))}
+                    </>
+                  )}
+                </>
+              )}
+
+              {devTab === "session" && (
+                <>
+                  <MDevSection label="ACCOUNT" border={HOME_DIVIDER} muted={HOME_MUTED} first />
+                  <MDevInfo label="User" value={user ? `${user.first_name} ${user.last_name}` : "—"} muted={HOME_MUTED} text={HOME_TEXT} />
+                  <MDevInfo label="Email" value={user?.email_address ?? "—"} muted={HOME_MUTED} text={HOME_TEXT} />
+                  <MDevInfo label="Admin" value={user?.is_admin ? "yes" : "no"} muted={HOME_MUTED} text={HOME_TEXT} />
+
+                  <MDevSection label="TOKEN" border={HOME_DIVIDER} muted={HOME_MUTED} />
+                  <MDevInfo label="Expires" value={tokenExpiry({ timeOnly: true })} muted={HOME_MUTED} text={HOME_TEXT} />
+                  <MDevInfo label="Expires in" value={tokenExpiresIn()} muted={HOME_MUTED} text={HOME_TEXT} />
+
+                  <MDevSection label="STORAGE" border={HOME_DIVIDER} muted={HOME_MUTED} />
+                  <MDevInfo label="localStorage" value={localStorageSize()} muted={HOME_MUTED} text={HOME_TEXT} />
+                  <div className="px-5 py-2">
+                    <button onClick={() => { localStorage.clear(); window.location.reload(); }} className="w-full py-2 rounded-xl text-xs font-bold cursor-pointer border" style={{ color: "var(--category-expense)", borderColor: "var(--category-expense)", backgroundColor: "color-mix(in srgb, var(--category-expense) 8%, transparent)" }}>
+                      Clear localStorage + Reload
                     </button>
+                  </div>
+                </>
+              )}
+
+              {devTab === "build" && (
+                <>
+                  <MDevSection label="BUILD" border={HOME_DIVIDER} muted={HOME_MUTED} first />
+                  {Object.entries({ Mode: buildInfo().mode, "API base": buildInfo().apiBase, Origin: buildInfo().origin, Viewport: buildInfo().viewport }).map(([label, value]) => (
+                    <MDevInfo key={label} label={label} value={value} muted={HOME_MUTED} text={HOME_TEXT} />
                   ))}
-                </div>
-              </div>
 
-              <MDevSection label="DATA" border={HOME_DIVIDER} muted={HOME_MUTED} />
-              <MDevInfo label="Transactions" value={transactions.length} muted={HOME_MUTED} text={HOME_TEXT} />
-              <MDevInfo label="Last fetch" value={devLastFetch ? devLastFetch.toLocaleTimeString() : "—"} muted={HOME_MUTED} text={HOME_TEXT} />
-              <MDevInfo label="Nav tab" value={navTab} muted={HOME_MUTED} text={HOME_TEXT} />
-              <MDevInfo label="Date range" value={dashDateRange.from ? `${dashDateRange.from.toLocaleDateString("en-US",{month:"short",day:"numeric"})} → ${dashDateRange.to?.toLocaleDateString("en-US",{month:"short",day:"numeric"}) ?? "…"}` : "All time"} muted={HOME_MUTED} text={HOME_TEXT} />
-
-              <MDevSection label="UI" border={HOME_DIVIDER} muted={HOME_MUTED} />
-              <DevRow label="Toggle theme" description="Flip dark / light">
-                <button onClick={() => document.documentElement.classList.toggle("dark")} className="px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer border" style={{ color: HOME_TEXT, borderColor: HOME_DIVIDER, backgroundColor: "rgba(255,255,255,0.06)" }}>Flip</button>
-              </DevRow>
-
-              <MDevSection label="SESSION" border={HOME_DIVIDER} muted={HOME_MUTED} />
-              <MDevInfo label="Token expiry" value={(() => { try { const t = localStorage.getItem("token"); if (!t) return "None"; const p = JSON.parse(atob(t.split(".")[1])); return p.exp ? new Date(p.exp * 1000).toLocaleTimeString() : "No exp"; } catch { return "Invalid"; } })()} muted={HOME_MUTED} text={HOME_TEXT} />
-              <div className="px-5 py-2">
-                <button onClick={() => { localStorage.clear(); window.location.reload(); }} className="w-full py-2 rounded-xl text-xs font-bold cursor-pointer border" style={{ color: "var(--category-expense)", borderColor: "var(--category-expense)", backgroundColor: "color-mix(in srgb, var(--category-expense) 8%, transparent)" }}>
-                  Clear localStorage + Reload
-                </button>
-              </div>
+                  <MDevSection label="BACKEND" border={HOME_DIVIDER} muted={HOME_MUTED} />
+                  <MDevInfo label="Reachable" value={devReachable ? "yes" : "no"} muted={HOME_MUTED} text={HOME_TEXT} />
+                  <DevRow label="Probe /health" description="Re-check now">
+                    <button onClick={() => probeBackend()} className="px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer border" style={{ color: HOME_TEXT, borderColor: HOME_DIVIDER, backgroundColor: "rgba(255,255,255,0.06)" }}>Run</button>
+                  </DevRow>
+                </>
+              )}
 
             </div>
           </div>

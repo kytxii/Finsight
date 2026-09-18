@@ -10,12 +10,12 @@ router = APIRouter(prefix="/users", tags=["users"])
 
 @router.get("/me", response_model=UserResponse)
 async def get_user(current_user: User = Depends(get_current_user)):
-    return current_user
+    return user_service.to_user_response(current_user)
 
 @router.patch("/me", response_model=UserResponse)
 async def update_user(data: UpdateUser, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     result = await user_service.update_user(data, current_user, db)
-    return result
+    return user_service.to_user_response(result)
 
 @router.delete("/me", status_code=204)
 async def delete_user(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):

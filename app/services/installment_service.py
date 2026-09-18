@@ -9,6 +9,7 @@ from app.models import Installment, Transaction, User
 from app.models.category import Category
 from app.schemas import CreateInstallment, UpdateInstallment
 from app.services import paycheck_service
+from app.services.sync_utils import find_existing_for_replay
 
 # Gauge bands, keyed off monthly_payment / available_cash. This is a cash-flow
 # impact measure, not an affordability judgement - it says how much of the
@@ -84,9 +85,18 @@ async def get_installment_by_id(installment_id: UUID, current_user: UUID, db: As
 
 
 async def create_installment(data: CreateInstallment, current_user: UUID, db: AsyncSession):
+    existing = await find_existing_for_replay(Installment, data.id, current_user, db)
+    if existing is not None:
+        return existing
+
     monthly_payment = compute_monthly_payment(data.total_amount, data.period_months) if data.period_months else None
+    # exclude id: model_dump() includes it as None on the ordinary online
+    # path, and passing id=None to the constructor would override the
+    # column's default=uuid.uuid4 (see transaction_service.create_transaction).
+    fields = data.model_dump(exclude={"id"})
     new_installment = Installment(
-        **data.model_dump(),
+        **fields,
+        **({"id": data.id} if data.id is not None else {}),
         monthly_payment=monthly_payment,
         category=Category.DEBT,  # always debt - not client-settable, see model docstring
         created_by=current_user,
@@ -157,7 +167,14 @@ async def update_installment(installment_id: UUID, data: UpdateInstallment, curr
 
 
 async def delete_installment(installment_id: UUID, current_user: UUID, db: AsyncSession):
-    installment = await _get_owned_installment(installment_id, current_user, db)
+    # Idempotent delete (#204): a queued delete retried after its success
+    # response was lost must not dead-letter against a row that's already
+    # gone, so this path does its own lookup rather than using _get_owned_installment,
+    # which raises for the GET/update callers where a missing id is a
+    # genuine 404 - see transaction_service.delete_transaction.
+    installment = await db.scalar(select(Installment).where(Installment.id == installment_id))
+    if installment is None or installment.created_by != current_user:
+        return
 
     # Soft-deactivate rather than hard delete, consistent with recurring payments.
     installment.active = False

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { subscribeToKey } from "../../api/offline/cache";
 import { getTransactions } from "../../api/transactions";
 import { getSpendableSurplus, getEstimatedSavings } from "../../api/paychecks";
 import { getTipDeposits } from "../../api/tipDeposits";
@@ -79,6 +80,25 @@ export function useDashboardData(fetchTransactions = getTransactions, extraLoade
     loadTipDeposits();
     extraLoaders.forEach((fn) => fn());
   }
+
+  // A cached read returns instantly and refreshes underneath (#204). Without
+  // this the dashboard would sit on last-known data until the next explicit
+  // refresh - these are the keys whose freshness is visible on first paint.
+  useEffect(() => {
+    const stops = [
+      subscribeToKey("transactions", setTransactions),
+      subscribeToKey("tipDeposits", setTipDeposits),
+      subscribeToKey("spendableSurplus", (data) => {
+        setSafeToSpend(data);
+        setSafeToSpendStatus("ok");
+      }),
+      subscribeToKey("estimatedSavings", (data) => {
+        setSavings(data);
+        setSavingsStatus("ok");
+      }),
+    ];
+    return () => stops.forEach((stop) => stop());
+  }, []);
 
   useEffect(() => {
     fetchTransactions()

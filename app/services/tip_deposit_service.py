@@ -8,10 +8,20 @@ from typing import NamedTuple
 from app.models import TipDeposit, Transaction
 from app.models.category import Category
 from app.schemas import CreateTipDeposit, UpdateTipDeposit
+from app.services.sync_utils import find_existing_for_replay
 
 
 async def create_tip_deposit(data: CreateTipDeposit, current_user: UUID, db: AsyncSession) -> TipDeposit:
-    deposit = TipDeposit(**data.model_dump(), created_by=current_user, updated_by=current_user)
+    existing = await find_existing_for_replay(TipDeposit, data.id, current_user, db)
+    if existing is not None:
+        return existing
+
+    # exclude id: see transaction_service.create_transaction for why id=None
+    # can't be passed through to the constructor.
+    fields = data.model_dump(exclude={"id"})
+    if data.id is not None:
+        fields["id"] = data.id
+    deposit = TipDeposit(**fields, created_by=current_user, updated_by=current_user)
     db.add(deposit)
     await db.commit()
     await db.refresh(deposit)
@@ -45,8 +55,10 @@ async def delete_tip_deposit(deposit_id: UUID, current_user: UUID, db: AsyncSess
     result = await db.execute(select(TipDeposit).where(TipDeposit.id == deposit_id))
     deposit = result.scalar_one_or_none()
 
+    # Idempotent delete (#204) - see transaction_service.delete_transaction
+    # for the full reasoning.
     if deposit is None or deposit.created_by != current_user:
-        raise ValueError("Tip deposit not found")
+        return
 
     await db.delete(deposit)
     await db.commit()

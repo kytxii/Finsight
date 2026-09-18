@@ -11,6 +11,7 @@ from app.models.paycheck_schedule import PaycheckFrequency
 from app.models.category import Category
 from app.schemas import CreatePaycheckSchedule, UpdatePaycheckSchedule, UpdatePaycheckAmount, SetBalanceAnchor
 from app.schemas.paycheck import SetSpendingReserve
+from app.services.sync_utils import find_existing_for_replay
 
 # "Recurring expenses" for the spendable surplus calc - categories that represent
 # money going out. INCOME, TIPS, and REIMBURSEMENT are inflows, not expenses.
@@ -126,7 +127,16 @@ def _generate_pay_dates_through(schedule: PaycheckSchedule, through: date) -> li
 
 
 async def create_paycheck_schedule(data: CreatePaycheckSchedule, current_user: UUID, db: AsyncSession):
-    schedule = PaycheckSchedule(**data.model_dump(), created_by=current_user, updated_by=current_user)
+    existing = await find_existing_for_replay(PaycheckSchedule, data.id, current_user, db)
+    if existing is not None:
+        return existing
+
+    # exclude id: see transaction_service.create_transaction for why id=None
+    # can't be passed through to the constructor.
+    fields = data.model_dump(exclude={"id"})
+    if data.id is not None:
+        fields["id"] = data.id
+    schedule = PaycheckSchedule(**fields, created_by=current_user, updated_by=current_user)
 
     db.add(schedule)
     await db.commit()
@@ -191,7 +201,14 @@ async def update_paycheck_schedule(schedule_id: UUID, data: UpdatePaycheckSchedu
 
 
 async def delete_paycheck_schedule(schedule_id: UUID, current_user: UUID, db: AsyncSession) -> None:
-    schedule = await _get_owned_schedule(schedule_id, current_user, db)
+    # Idempotent delete (#204): a queued delete retried after its success
+    # response was lost must not dead-letter against a row that's already
+    # gone, so this path does its own lookup rather than using _get_owned_schedule,
+    # which raises for the GET/update callers where a missing id is a
+    # genuine 404 - see transaction_service.delete_transaction.
+    schedule = await db.scalar(select(PaycheckSchedule).where(PaycheckSchedule.id == schedule_id))
+    if schedule is None or schedule.created_by != current_user:
+        return
 
     # Soft-deactivate rather than hard delete - stops generating new paychecks,
     # but past paychecks and their linked income transactions stay untouched.

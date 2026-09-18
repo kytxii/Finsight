@@ -5,6 +5,10 @@ class Settings(BaseSettings):
     TEST_DATABASE_URL: str | None = None
     SECRET_KEY: str
     WHITELIST: list[str]
+    # Who sees the dev tools panel. Config-driven rather than a column: there
+    # is no role model, and WHITELIST already decides who can hold an account
+    # at all. Defaults to empty so a missing entry denies rather than grants.
+    ADMIN_EMAILS: list[str] = []
     FRONTEND_URL: str
     DEV_URL: str
     ALGORITHM: str = "HS256"

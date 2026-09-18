@@ -13,7 +13,8 @@ class InstallmentBase(BaseModel):
 
 
 class CreateInstallment(InstallmentBase):
-    pass
+    # Client-generated for offline creates (#204) - see sync_utils.find_existing_for_replay.
+    id: UUID | None = None
 
 
 class UpdateInstallment(BaseModel):

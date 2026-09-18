@@ -6,13 +6,17 @@ from app.models import User
 from app.schemas import CreateTipDeposit, UpdateTipDeposit, TipDepositResponse, CashOnHandResponse
 from app.schemas.transaction import TransactionResponse
 from app.services import tip_deposit_service
+from app.services.sync_utils import IdConflictError
 
 router = APIRouter(prefix="/tip-deposits", tags=["tip-deposits"])
 
 
 @router.post("/", response_model=TipDepositResponse, status_code=201)
 async def create_tip_deposit(data: CreateTipDeposit, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    return await tip_deposit_service.create_tip_deposit(data, current_user.id, db)
+    try:
+        return await tip_deposit_service.create_tip_deposit(data, current_user.id, db)
+    except IdConflictError as e:
+        raise HTTPException(status_code=409, detail=str(e))
 
 
 @router.get("/", response_model=list[TipDepositResponse])

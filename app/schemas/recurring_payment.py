@@ -32,7 +32,8 @@ class RecurringPaymentBase(BaseModel):
         return _reject_income_and_tips(v)
 
 class CreateRecurringPayment(RecurringPaymentBase):
-    pass
+    # Client-generated for offline creates (#204) - see sync_utils.find_existing_for_replay.
+    id: UUID | None = None
 
 class UpdateRecurringPayment(BaseModel):
     name: str | None =  Field(default=None, min_length=1, max_length=100)

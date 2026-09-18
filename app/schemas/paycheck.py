@@ -10,7 +10,8 @@ class PaycheckScheduleBase(BaseModel):
     start_date: date
 
 class CreatePaycheckSchedule(PaycheckScheduleBase):
-    pass
+    # Client-generated for offline creates (#204) - see sync_utils.find_existing_for_replay.
+    id: UUID | None = None
 
 class UpdatePaycheckSchedule(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=100)

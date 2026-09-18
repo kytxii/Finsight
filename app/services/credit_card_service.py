@@ -6,6 +6,7 @@ from datetime import date
 from typing import NamedTuple
 from app.models import CreditCardPayment, CreditCardCharge, CreditCardChargeAllocation, Transaction
 from app.schemas.credit_card import AllocateToNewCharge, AllocateExistingTransaction, CreateCreditCardPayment
+from app.services.sync_utils import find_existing_for_replay
 
 
 class InvalidAllocationError(Exception):
@@ -165,7 +166,11 @@ async def create_payment(
     so nothing gets written to the transactions table here (#54 follow-up).
     Contrast with create_payment_from_transaction below, which anchors the
     payment to money that's already left the account."""
-    payment = CreditCardPayment(
+    existing = await find_existing_for_replay(CreditCardPayment, data.id, current_user, db)
+    if existing is not None:
+        return (await _build_payment_details([existing], db))[0]
+
+    fields = dict(
         name="Credit Card Payment",
         total_amount=data.total_amount,
         payment_date=data.payment_date,
@@ -173,6 +178,12 @@ async def create_payment(
         created_by=current_user,
         updated_by=current_user,
     )
+    # exclude id when the client didn't supply one: see
+    # transaction_service.create_transaction for why id=None can't be passed
+    # through to the constructor.
+    if data.id is not None:
+        fields["id"] = data.id
+    payment = CreditCardPayment(**fields)
     db.add(payment)
     await db.flush()
 
@@ -232,8 +243,16 @@ async def delete_payment(payment_id: UUID, current_user: UUID, db: AsyncSession)
     promoted transaction unlinked, not deleted (same reasoning as the anchor -
     real money already left the account); one left with zero allocations from
     any other payment is deleted outright, since without this record it never
-    became anything (#54)."""
-    payment = await _get_owned_payment(payment_id, current_user, db)
+    became anything (#54).
+
+    Uses its own lookup rather than _get_owned_payment (#204): that helper
+    raises for GET/allocate, where a missing id is a genuine 404, but a
+    queued delete retried after its success response was lost must not
+    dead-letter against a row it already removed - see
+    transaction_service.delete_transaction for the same reasoning."""
+    payment = await db.scalar(select(CreditCardPayment).where(CreditCardPayment.id == payment_id))
+    if payment is None or payment.created_by != current_user:
+        return
 
     anchor = await db.scalar(select(Transaction).where(Transaction.credit_card_payment_id == payment_id))
     if anchor is not None:

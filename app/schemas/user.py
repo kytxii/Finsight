@@ -37,6 +37,9 @@ class UserResponse(BaseModel):
     avatar: str | None = None
     created_at: datetime
     updated_at: datetime
+    # Derived from ADMIN_EMAILS, not stored - populated by
+    # user_service.to_user_response, never by ORM attribute lookup.
+    is_admin: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 
