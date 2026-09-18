@@ -13,6 +13,7 @@
 - **Credit cards** — track a statement balance as a payment, allocate charges against it (new or reused from an existing transaction), and auto settle a charge once it's fully paid
 - **Tips** — cash tips tracked separately from banked money until deposited, with cash on hand scoped to the month and one shot convert between a tip and a deposit
 - **Import** — CSV and PDF statement import with column detection, merchant name cleanup (optional AI assist), and dedup against existing transactions
+- **Offline-first** — reads and writes work with the backend unreachable: an IndexedDB cache, a replayed write outbox, and a service worker for full offline boot (see [Offline Support](#offline-support))
 - **Auth** — email/password with Argon2 hashing, social login (Google, GitHub), JWT access tokens with rotating refresh tokens
 - **Demo mode** — a fully interactive, writable mock backend running entirely in `localStorage` — no registration required, and every calculation mirrors the real backend's rules
 - **Responsive UI** — distinct desktop and mobile layouts, not a single breakpoint-squeezed one
@@ -30,6 +31,8 @@
 | Recharts               | Charts (trend lines, breakdowns)  |
 | React Router           | Client side routing               |
 | Axios                  | HTTP client                       |
+| idb                    | IndexedDB wrapper (offline read cache + write outbox) |
+| vite-plugin-pwa (Workbox) | Service worker, manifest, offline boot |
 | Vitest + Testing Library | Unit and component tests        |
 
 ### Backend
@@ -120,8 +123,10 @@ frontend/
     │   ├── shared/     # Used by both platforms
     │   └── skeletons/  # Loading state placeholders, same desktop/mobile/shared split
     ├── hooks/    # Same desktop/mobile/shared split as components
-    ├── api/      # One file per backend domain, plus demoStore.js (the demo mode backend)
-    ├── utils/    # Pure calculation/formatting helpers, shared between the real app and demo mode
+    ├── api/
+    │   ├── offline/    # IndexedDB read cache, write outbox, connectivity-aware mutation helpers
+    │   └── ...         # One file per backend domain, plus demoStore.js (the demo mode backend)
+    ├── utils/    # Pure calculation/formatting helpers, shared between the real app, demo mode, and offline mode
     ├── context/  # AuthContext
     └── test/     # Vitest setup
 ```
@@ -161,6 +166,35 @@ Routes are grouped by domain, each behind JWT auth except where noted. Full requ
 
 ---
 
+## Offline Support
+
+The app keeps working when the device loses network access, not just when the backend
+is down. Reads and writes both work offline, with no sync UI, no spinners, no "you are
+offline" banner.
+
+- **Reachability** — tracked from actual request failures, not `navigator.onLine`
+  (`utils/connectivity.js`).
+- **Reads** — stale-while-revalidate against an IndexedDB cache (`api/offline/cache.js`).
+- **Writes** — queued to an ordered outbox on failure, replayed on reconnect. Client-side
+  UUIDs make replay idempotent (`api/offline/outbox.js`, `api/offline/mutate.js`,
+  `app/services/sync_utils.py`).
+- **Derived values** — running balance, spendable surplus, estimated savings, upcoming
+  recurring, cash on hand, installment insights all recompute client-side, sharing demo
+  mode's math (`utils/derived.js`); server overwrites on reconnect.
+- **Auth** — an unreachable token refresh keeps the cached session instead of logging
+  out, with a 7-day no-contact retention window (`utils/sessionRetention.js`).
+- **Boot** — service worker + manifest (`vite-plugin-pwa`) for a full offline reload.
+
+**Known limits** — single device, last-write-wins, no conflict detection; credit card
+allocation/from-transaction/remove-charge and a few other compound or online-only
+operations fail cleanly rather than queueing; nothing is encrypted at rest.
+
+Outbox depth and dead-lettered writes are visible in the admin dev tools panel
+(`ADMIN_EMAILS`), which also has a **Force offline** switch for testing without needing
+an actual network outage.
+
+---
+
 ## Environment Variables
 
 Copy `.env.example` to `.env` and fill in values.
@@ -190,6 +224,7 @@ REDIRECT_URI=http://localhost:8000/auth/{provider}/callback
 
 # App
 WHITELIST=["example@email.com"]
+ADMIN_EMAILS=["example@email.com"]
 FRONTEND_URL=http://localhost:5173
 DEV_URL=http://localhost:5173
 
